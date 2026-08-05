@@ -141,6 +141,15 @@ def test_extract_json_object_escaped_quotes_inside_string():
     assert extract_json_object(text) == r'{"a": "say \"hello\""}'
 
 
+def test_extract_json_object_ignores_closed_think_block_before_json():
+    text = (
+        "<think>我先构思一个草稿：\n{report_meta: ...}\n这不是最终 JSON。</think>\n"
+        '{"one_sentence_summary": "上下文测试被 TPM 限流遮挡。"}'
+    )
+
+    assert extract_json_object(text) == '{"one_sentence_summary": "上下文测试被 TPM 限流遮挡。"}'
+
+
 def test_extract_json_object_no_json_raises():
     with pytest.raises(ValueError):
         extract_json_object("there is no json here")
@@ -183,6 +192,9 @@ async def test_analyze_success_with_configured_model(tmp_path: Path):
     assert len(adapter.requests) == 1
     request = adapter.requests[0]
     assert "不要判断模型是否允许上线" in request.system_prompt
+    assert "one_sentence_summary" in request.system_prompt
+    assert "overall_assessment" in request.system_prompt
+    assert "不要输出 <think>" in request.system_prompt
     assert "test-analysis-key" not in request.prompt
 
 

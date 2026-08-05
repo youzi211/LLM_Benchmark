@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from pydantic import ValidationError
 
@@ -20,8 +21,31 @@ _SYSTEM_PROMPT = """你是大模型 API 网关上线前评测报告分析助手�
 不要判断模型是否允许上线，只说明观测结果、风险点和建议下一步。
 如果数据不足，请明确说明需要补测，不要编造。
 输出必须是 JSON，不要包裹 Markdown 代码块。
+不要输出 <think>、</think> 或任何推理过程。
 不要输出 API key、密钥或完整原始报文。
+
+必须使用以下 JSON 字段名：
+{
+  "one_sentence_summary": "一句话总结",
+  "overall_assessment": "总体分析",
+  "key_findings": ["关键发现"],
+  "risks": ["风险点"],
+  "recommended_next_steps": ["建议下一步"],
+  "metric_notes": [
+    {"metric_id": "指标 ID", "note": "分指标备注", "severity": "info|low|medium|high"}
+  ]
+}
 """
+
+
+def _strip_think_blocks(text: str) -> str:
+    """Remove model reasoning blocks before JSON extraction.
+
+    Some reasoning models return ``<think>...</think>`` before the final
+    answer. The think block may contain informal pseudo JSON such as
+    ``{report_meta: ...}``, which should not be treated as the report JSON.
+    """
+    return re.sub(r"<think\b[^>]*>.*?</think>\s*", "", text, flags=re.IGNORECASE | re.DOTALL)
 
 
 def extract_json_object(text: str) -> str:
@@ -38,7 +62,7 @@ def extract_json_object(text: str) -> str:
     if not isinstance(text, str):
         raise ValueError("input must be a string")
 
-    stripped = text.strip()
+    stripped = _strip_think_blocks(text).strip()
 
     # Handle fenced ```json ... ``` block.
     if stripped.startswith("```"):
