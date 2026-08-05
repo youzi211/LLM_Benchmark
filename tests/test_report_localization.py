@@ -3,7 +3,7 @@ from pathlib import Path
 from app.core.models import MetricResult, TaskResult, utc_now
 from app.reports.facts import build_report_fact_pack
 from app.reports.markdown import redact_text, write_markdown_report
-from app.reports.schemas import ReportAnalysis
+from app.reports.schemas import ReportAnalysis, ReportAnalysisMetricNote
 
 
 def _completed_analysis() -> ReportAnalysis:
@@ -94,6 +94,49 @@ def test_markdown_report_separates_config_id_from_upstream_model_name(tmp_path):
     assert "- API 模型名称（model）：`GLM-5.2-FP8`" in text
     assert "- 协议：`chat_completions`" in text
     assert "- Model ID:" not in text
+
+
+def test_markdown_report_escapes_table_cells(tmp_path):
+    started = utc_now()
+    result = TaskResult(
+        task_id="task_table_escape",
+        status="completed",
+        model_id="demo-model",
+        plan_id="gateway_baseline_v1",
+        metric_ids=["custom_metric"],
+        started_at=started,
+        finished_at=started,
+        duration_ms=1.0,
+        results=[
+            MetricResult(
+                metric_id="custom_metric",
+                metric_name="指标|名称",
+                status="completed",
+                summary="左|右\n第二行",
+                observations={},
+            ),
+        ],
+    )
+    facts = build_report_fact_pack(result)
+    analysis = ReportAnalysis(
+        analysis_status="completed",
+        analysis_model_id="report-analyzer",
+        one_sentence_summary="摘要",
+        overall_assessment="评估",
+        metric_notes=[
+            ReportAnalysisMetricNote(
+                metric_id="custom_metric",
+                note="备注|内容\n第二行",
+                severity="medium",
+            )
+        ],
+    )
+
+    report_path = write_markdown_report(result, tmp_path, facts=facts, analysis=analysis)
+    text = Path(report_path).read_text(encoding="utf-8")
+
+    assert r"| 指标\|名称 | 已完成（completed） | 左\|右 第二行 |" in text
+    assert r"| `custom_metric` | 备注\|内容 第二行 | medium |" in text
 
 
 def test_markdown_report_redacts_secrets_in_observations_and_errors(tmp_path):

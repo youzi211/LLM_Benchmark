@@ -26,6 +26,14 @@ def redact_text(text: str) -> str:
     return _SECRET_RE.sub(_redact_match, text)
 
 
+def _inline_text(value) -> str:
+    return redact_text(str(value)).replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+
+
+def _table_cell(value) -> str:
+    return _inline_text(value).replace("|", r"\|")
+
+
 def _json_block(data) -> str:
     return redact_text(json.dumps(data, ensure_ascii=False, indent=2, default=str))
 
@@ -79,7 +87,9 @@ def _analysis_section(analysis: ReportAnalysis) -> list[str]:
             lines.append("| 指标 | 备注 | 严重级别 |")
             lines.append("|---|---|---|")
             for note in analysis.metric_notes:
-                lines.append(f"| `{note.metric_id}` | {note.note} | {note.severity} |")
+                lines.append(
+                    f"| `{_table_cell(note.metric_id)}` | {_table_cell(note.note)} | {_table_cell(note.severity)} |"
+                )
     else:
         reason = analysis.error_message or analysis.one_sentence_summary or analysis.overall_assessment or "未提供具体原因。"
         lines.append(f"- 说明：{reason}")
@@ -138,7 +148,8 @@ def _metrics_summary_section(facts: ReportFactPack) -> list[str]:
         else:
             metric_label = format_metric_label(fact.metric_id)
         lines.append(
-            f"| {metric_label} | {_status_label(fact.status)} | {fact.core_observation} | {fact.suggested_focus} |"
+            f"| {_table_cell(metric_label)} | {_table_cell(_status_label(fact.status))} | "
+            f"{_table_cell(fact.core_observation)} | {_table_cell(fact.suggested_focus)} |"
         )
     lines.append("")
     return lines
