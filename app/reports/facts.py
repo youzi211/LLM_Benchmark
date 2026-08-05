@@ -13,6 +13,9 @@ from app.reports.schemas import (
 )
 
 
+_MAX_CONTEXT_ERROR_MESSAGE_LEN = 200
+
+
 def _metric_display_name(item: MetricResult) -> str:
     if item.metric_name:
         return item.metric_name
@@ -27,12 +30,28 @@ def _bool_zh(value: Any) -> str:
     return "未知"
 
 
-def _first_error_code(errors: list[dict[str, Any]]) -> str:
-    if not errors:
-        return ""
-    first = errors[0]
-    code = first.get("code") if isinstance(first, dict) else None
-    return str(code) if code is not None else ""
+def _first_error_code(errors: list[Any]) -> str:
+    for err in errors:
+        if isinstance(err, dict):
+            code = err.get("code")
+            if code is not None:
+                return str(code)
+    return ""
+
+
+def _compact_context_error(error: Any) -> Any:
+    if not isinstance(error, dict):
+        return error
+    message = error.get("message")
+    if isinstance(message, str) and len(message) > _MAX_CONTEXT_ERROR_MESSAGE_LEN:
+        message = message[:_MAX_CONTEXT_ERROR_MESSAGE_LEN] + "..."
+    compact: dict[str, Any] = {}
+    code = error.get("code")
+    if code is not None:
+        compact["code"] = code
+    if message is not None:
+        compact["message"] = message
+    return compact if compact else error
 
 
 def build_report_fact_pack(result: TaskResult) -> ReportFactPack:
@@ -115,7 +134,11 @@ def metric_key_facts(item: MetricResult) -> dict[str, Any]:
             facts[key] = obs[key]
 
     if item.errors:
-        error_codes = [str(e.get("code")) for e in item.errors if isinstance(e, dict) and e.get("code")]
+        error_codes = [
+            str(e.get("code"))
+            for e in item.errors
+            if isinstance(e, dict) and e.get("code")
+        ]
         if error_codes:
             facts["error_codes"] = error_codes
 
@@ -142,7 +165,13 @@ def metric_raw_excerpts(item: MetricResult) -> list[ReportRawExcerpt]:
             compact = []
             for point in point_results:
                 if isinstance(point, dict):
-                    compact.append({k: point.get(k) for k in _CONTEXT_POINT_KEYS})
+                    compact_point = {
+                        k: _compact_context_error(point.get(k))
+                        if k == "error"
+                        else point.get(k)
+                        for k in _CONTEXT_POINT_KEYS
+                    }
+                    compact.append(compact_point)
                 else:
                     compact.append(point)
             excerpts.append(ReportRawExcerpt(label="context_point_results", data=compact))
@@ -166,17 +195,11 @@ def metric_raw_excerpts(item: MetricResult) -> list[ReportRawExcerpt]:
         excerpts.append(ReportRawExcerpt(label="observations", data=selected))
 
     if item.errors:
-        error_excerpt = []
-        for err in item.errors[:3]:
-            if isinstance(err, dict):
-                error_excerpt.append(
-                    {
-                        "code": err.get("code"),
-                        "message": err.get("message"),
-                    }
-                )
-            else:
-                error_excerpt.append(str(err))
+        error_excerpt = [
+            {"code": err.get("code"), "message": err.get("message")}
+            for err in item.errors[:3]
+            if isinstance(err, dict)
+        ]
         if error_excerpt:
             excerpts.append(ReportRawExcerpt(label="errors", data=error_excerpt))
 
@@ -229,12 +252,12 @@ def metric_core_observation_text(item: MetricResult) -> str:
     content = obs.get("content_present")
     if content is not None:
         parts.append(f"内容返回：{_bool_zh(content)}")
-    finish = obs.get("finish_reason") or obs.get("finish_reason_present")
-    if finish is not None:
-        if isinstance(finish, bool):
-            parts.append(f"finish_reason：{_bool_zh(finish)}")
-        else:
-            parts.append(f"finish_reason：{finish}")
+    if "finish_reason_present" in obs:
+        parts.append(
+            f"finish_reason_present：{_bool_zh(obs['finish_reason_present'])}"
+        )
+    if "finish_reason" in obs:
+        parts.append(f"finish_reason：{obs['finish_reason']}")
     usage = obs.get("usage")
     if isinstance(usage, dict):
         parts.append(f"usage：{usage}")
@@ -257,4 +280,3 @@ def suggested_focus_text(item: MetricResult) -> str:
     if item.status == "skipped":
         return "确认该指标是否仍需评测。"
     return "关注该指标结果。"
-
