@@ -41,7 +41,10 @@ class ModelStore:
         return value if isinstance(value, str) else None
 
     def set_analysis_model_id(self, model_id: str | None) -> None:
-        self._write(self._load(), model_id)
+        models = self._load()
+        if model_id is not None and not any(m.id == model_id for m in models):
+            raise KeyError(f"model_not_found:{model_id}")
+        self._write(models, model_id)
 
     def list(self) -> list[ModelConfig]:
         return self._load()
@@ -76,5 +79,8 @@ class ModelStore:
         filtered = [m for m in models if m.id != model_id]
         if len(filtered) == len(models):
             return False
-        self._save(filtered)
+        if self.get_analysis_model_id() == model_id:
+            self._write(filtered, None)
+        else:
+            self._save(filtered)
         return True
