@@ -80,6 +80,38 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/models' -Method Post -ContentT
 
 接口响应会脱敏 `api_key`，但 `data/models.json` 会按内网测试服务假设保存本地明文密钥，请不要提交该文件。
 
+### 报告分析模型配置
+
+报告生成阶段可以额外调用一个固定的“报告分析模型”，基于结构化评测事实包生成中文摘要、关键发现、风险点和建议下一步。该步骤只做辅助分析，不改变基础评测任务状态，也不输出“上线通过 / 失败”结论。
+
+在 `data/models.json` 顶层配置 `analysis_model_id`，指向 `models` 数组中的某个模型配置 ID：
+
+```json
+{
+  "analysis_model_id": "report-analyzer",
+  "models": [
+    {
+      "id": "report-analyzer",
+      "name": "报告分析模型",
+      "protocol": "chat_completions",
+      "base_url": "https://analysis.example.com/v1",
+      "api_key": "<your-api-key>",
+      "model": "report-analysis-model",
+      "timeout_seconds": 60,
+      "enabled": true,
+      "concurrency_levels": [1]
+    }
+  ]
+}
+```
+
+说明：
+
+- `analysis_model_id` 未配置时，评测仍正常完成，Markdown 报告会显示“未配置报告分析模型”。
+- 报告分析模型调用失败、返回非 JSON 或字段校验失败时，基础评测任务仍保持完成；报告中会记录分析失败原因和脱敏后的原始摘要。
+- 分析模型可复用普通模型配置，`protocol` 需要显式指定为 `chat_completions` 或 `responses`。
+- `data/models.json` 可能包含明文密钥，必须保留在本地运行目录，不要提交到 Git。
+
 ## 执行评测
 
 ```powershell

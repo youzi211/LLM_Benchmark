@@ -18,6 +18,8 @@ from app.metrics.probes import (
     run_stream_probe,
     run_usage_probe,
 )
+from app.reports.analyzer import ReportAnalyzer
+from app.reports.facts import build_report_fact_pack
 from app.reports.markdown import write_markdown_report
 from app.storage.model_store import ModelStore
 from app.storage.task_store import TaskStore
@@ -102,7 +104,11 @@ class TaskRunner:
         result.results = metric_results
         result.finished_at = utc_now()
         result.duration_ms = elapsed_ms(start)
-        report_path = write_markdown_report(result, self.reports_dir)
+        facts = build_report_fact_pack(result)
+        analysis = await ReportAnalyzer(model_store=self.model_store, adapter_factory=self.adapter_factory).analyze(facts)
+        result.analysis_model_id = analysis.analysis_model_id
+        result.analysis = analysis.model_dump(mode="json")
+        report_path = write_markdown_report(result, self.reports_dir, facts=facts, analysis=analysis)
         result.report_path = str(report_path)
         self.task_store.save(result)
         return result

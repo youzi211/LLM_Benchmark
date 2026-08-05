@@ -173,4 +173,6 @@ class TaskResult(BaseModel):
     duration_ms: float | None = None
     results: list[MetricResult] = Field(default_factory=list)
     report_path: str | None = None
+    analysis_model_id: str | None = None
+    analysis: dict[str, Any] | None = None
     error: dict[str, Any] | None = None
