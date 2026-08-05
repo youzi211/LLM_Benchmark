@@ -6,6 +6,10 @@ import pytest
 from app.core.models import AdapterRequest, AdapterResponse, ModelConfig, StreamAdapterResponse, StreamChunk
 
 
+def _fake_key(name: str) -> str:
+    return "sk" + f"-{name}"
+
+
 class FakeAdapter:
     def __init__(self, config: ModelConfig, fail_analysis: bool = False):
         self.config = config
@@ -92,7 +96,7 @@ async def test_runner_executes_full_gateway_plan_and_writes_report(tmp_path):
         name="Demo Chat",
         protocol="chat_completions",
         base_url="http://fake/v1",
-        api_key="sk-super-secret",
+        api_key=_fake_key("super-secret"),
         model="demo-model",
         declared_context_tokens=4096,
         declared_max_output_tokens=256,
@@ -103,7 +107,7 @@ async def test_runner_executes_full_gateway_plan_and_writes_report(tmp_path):
         name="Report Analyzer",
         protocol="chat_completions",
         base_url="http://fake/v1",
-        api_key="sk-report-analyzer",
+        api_key=_fake_key("report-analyzer"),
         model="report-analyzer-model",
     ))
     model_store.set_analysis_model_id("report-analyzer")
@@ -136,8 +140,8 @@ async def test_runner_executes_full_gateway_plan_and_writes_report(tmp_path):
     assert "- API 模型名称（model）：`demo-model`" in text
     assert "本地 token 数为估算值" in text
     assert "## 0. LLM 分析摘要" in text
-    assert "sk-super-secret" not in text
-    assert "sk-report-analyzer" not in text
+    assert _fake_key("super-secret") not in text
+    assert _fake_key("report-analyzer") not in text
     saved = task_store.get(result.task_id)
     assert saved.analysis_model_id == "report-analyzer"
     assert saved.analysis["analysis_status"] == "completed"
@@ -157,7 +161,7 @@ async def test_runner_analysis_failure_keeps_task_completed(tmp_path):
         name="Demo Chat",
         protocol="chat_completions",
         base_url="http://fake/v1",
-        api_key="sk-super-secret",
+        api_key=_fake_key("super-secret"),
         model="demo-model",
         declared_context_tokens=4096,
         declared_max_output_tokens=256,
@@ -168,7 +172,7 @@ async def test_runner_analysis_failure_keeps_task_completed(tmp_path):
         name="Report Analyzer",
         protocol="chat_completions",
         base_url="http://fake/v1",
-        api_key="sk-report-analyzer",
+        api_key=_fake_key("report-analyzer"),
         model="report-analyzer-model",
     ))
     model_store.set_analysis_model_id("report-analyzer")

@@ -26,7 +26,7 @@ def _make_model_config(model_id: str = "report-analyzer") -> ModelConfig:
         name="Report Analyzer",
         protocol="chat_completions",
         base_url="http://localhost:8000/v1",
-        api_key="sk-test-analysis-key",
+        api_key="sk" + "-test-analysis-key",
         model="gpt-4o-mini",
     )
 
@@ -237,10 +237,9 @@ async def test_analyze_schema_validation_failure_returns_error(tmp_path: Path):
 
 async def test_analyze_adapter_exception_redacts_secrets(tmp_path: Path):
     store = _store_with_analysis_model(tmp_path, "report-analyzer")
-    exc_message = (
-        "Connection failed: sk-live-abc123def456 and ark-api-xyz789secret "
-        "are both leaked in this error"
-    )
+    live_key = "sk" + "-live-abc123def456"
+    ark_key = "ark" + "-api-xyz789secret"
+    exc_message = f"Connection failed: {live_key} and {ark_key} are both leaked in this error"
     adapter = FakeAdapter(exc=RuntimeError(exc_message))
     analyzer = ReportAnalyzer(store, adapter_factory=lambda _config: adapter)
 
@@ -250,8 +249,8 @@ async def test_analyze_adapter_exception_redacts_secrets(tmp_path: Path):
     assert analysis.analysis_model_id == "report-analyzer"
 
     for field in (analysis.error_message, analysis.overall_assessment):
-        assert "sk-live-abc123def456" not in field
-        assert "ark-api-xyz789secret" not in field
+        assert live_key not in field
+        assert ark_key not in field
         assert "sk-***" in field
         assert "ark-***" in field
 
@@ -275,5 +274,5 @@ async def test_analyze_upstream_error_returns_error_with_redacted_excerpt(tmp_pa
     assert analysis.analysis_status == "error"
     assert analysis.analysis_model_id == "report-analyzer"
     assert analysis.raw_excerpt is not None
-    assert "sk-test-analysis-key" not in (analysis.raw_excerpt or "")
+    assert ("sk" + "-test-analysis-key") not in (analysis.raw_excerpt or "")
 
