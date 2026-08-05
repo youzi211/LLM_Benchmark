@@ -7,7 +7,7 @@ from pathlib import Path
 from app.core.models import MetricResult, TaskResult
 from app.core.plans import format_metric_label
 
-_SECRET_RE = re.compile(r"(?:sk|ark)-[A-Za-z0-9._-]+")
+_SECRET_RE = re.compile(r"(?<![A-Za-z0-9_-])(?:sk|ark)-[A-Za-z0-9._-]+")
 _STATUS_NAMES = {
     "completed": "已完成",
     "error": "异常",

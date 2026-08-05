@@ -70,3 +70,24 @@ def test_markdown_report_separates_config_id_from_upstream_model_name(tmp_path):
     assert "- API 模型名称（model）：`GLM-5.2-FP8`" in text
     assert "- 协议：`chat_completions`" in text
     assert "- Model ID:" not in text
+
+
+
+from app.reports.markdown import redact_text
+
+
+def test_redact_text_does_not_redact_ordinary_identifiers():
+    assert redact_text("minimax-m3-ark-real") == "minimax-m3-ark-real"
+    assert redact_text("task-risk-management") == "task-risk-management"
+    assert redact_text("park-secret123") == "park-secret123"
+    assert redact_text("ask-secret123") == "ask-secret123"
+
+
+def test_redact_text_redacts_isolated_sk_ark_tokens():
+    assert redact_text("sk-live-abc123") == "sk-***"
+    assert redact_text("ark-api-xyz789") == "ark-***"
+    assert redact_text('"sk-live-abc123"') == '"sk-***"'
+    assert (
+        redact_text("Connection failed: sk-live-abc123 and ark-api-xyz789")
+        == "Connection failed: sk-*** and ark-***"
+    )
