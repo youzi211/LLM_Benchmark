@@ -28,6 +28,13 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 Invoke-RestMethod -Uri 'http://127.0.0.1:8000/health'
 ```
 
+## 项目文档
+
+- [API 接口文档](docs/api.md)：记录所有服务接口、请求/响应结构、错误格式、协议兼容说明和调用示例。
+- [指标测试方法文档](docs/metric-test-methods.md)：记录默认评测计划中每个指标的测试目标、调用方式、观测字段、状态规则和人工关注点。
+
+后续接口或指标发生新增、删除或行为变更时，必须同步更新上述文档，并检查 `README.md` 中的入口和摘要是否仍然准确。
+
 ## 可选：启动假上游服务验证完整流程
 
 另开一个 PowerShell：
@@ -66,7 +73,7 @@ $body = @{
   name = 'Demo Chat'
   protocol = 'chat_completions'
   base_url = 'http://127.0.0.1:9001/v1'
-  api_key = 'sk-demo-secret'
+  api_key = '<your-api-key>'
   model = 'demo-model'
   timeout_seconds = 60
   enabled = $true
