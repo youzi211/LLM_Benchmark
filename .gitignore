@@ -1,0 +1,20 @@
+# Local environment
+.env
+/.venv/
+/.pytest_cache/
+
+# Runtime data containing local model configs, task history, and possible API keys
+/data/models.json
+/data/tasks/
+
+# Generated benchmark reports
+/reports/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local brainstorming / visual companion artifacts
+.superpowers/
+
