@@ -7,7 +7,7 @@ from pathlib import Path
 from app.core.models import MetricResult, TaskResult
 from app.core.plans import format_metric_label
 
-_SECRET_RE = re.compile(r"sk-[A-Za-z0-9._-]+")
+_SECRET_RE = re.compile(r"(?:sk|ark)-[A-Za-z0-9._-]+")
 _STATUS_NAMES = {
     "completed": "已完成",
     "error": "异常",
@@ -15,8 +15,13 @@ _STATUS_NAMES = {
 }
 
 
+def _redact_match(match: re.Match) -> str:
+    prefix = match.group(0).split("-")[0]
+    return f"{prefix}-***"
+
+
 def redact_text(text: str) -> str:
-    return _SECRET_RE.sub("sk-***", text)
+    return _SECRET_RE.sub(_redact_match, text)
 
 
 def _json_block(data) -> str:

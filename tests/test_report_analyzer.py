@@ -57,15 +57,24 @@ def _make_fact_pack() -> ReportFactPack:
 
 
 class FakeAdapter(BaseAdapter):
-    def __init__(self, response: AdapterResponse):
+    def __init__(
+        self,
+        response: AdapterResponse | None = None,
+        exc: Exception | None = None,
+    ):
         # Bypass BaseAdapter __init__ to avoid requiring a ModelConfig/transport.
         self.config = None
         self.transport = None
         self.response = response
+        self.exc = exc
         self.requests: list[AdapterRequest] = []
 
     async def complete(self, request: AdapterRequest) -> AdapterResponse:
         self.requests.append(request)
+        if self.exc is not None:
+            raise self.exc
+        if self.response is None:
+            raise RuntimeError("FakeAdapter configured without response or exc")
         return self.response
 
     async def stream(self, request: AdapterRequest) -> None:  # pragma: no cover
@@ -101,7 +110,7 @@ def test_extract_json_object_fenced_without_language():
 def test_extract_json_object_from_prose():
     text = (
         "Here is the analysis result:\n"
-        "{\"status\": \"completed\", \"summary\": \"ok\"}\n"
+        '{"status": "completed", "summary": "ok"}\n'
         "Hope this helps."
     )
     assert extract_json_object(text) == '{"status": "completed", "summary": "ok"}'
@@ -110,6 +119,26 @@ def test_extract_json_object_from_prose():
 def test_extract_json_object_nested_braces():
     text = 'prefix {"outer": {"inner": 1}} suffix'
     assert extract_json_object(text) == '{"outer": {"inner": 1}}'
+
+
+def test_extract_json_object_stops_at_first_balanced_object():
+    text = '{"a": 1} trailing }'
+    assert extract_json_object(text) == '{"a": 1}'
+
+
+def test_extract_json_object_prefers_first_object():
+    text = '{"a": 1} ... {"b": 2}'
+    assert extract_json_object(text) == '{"a": 1}'
+
+
+def test_extract_json_object_braces_inside_string():
+    text = '{"a": "{nested}"}'
+    assert extract_json_object(text) == '{"a": "{nested}"}'
+
+
+def test_extract_json_object_escaped_quotes_inside_string():
+    text = r'{"a": "say \"hello\""}'
+    assert extract_json_object(text) == r'{"a": "say \"hello\""}'
 
 
 def test_extract_json_object_no_json_raises():
@@ -194,6 +223,41 @@ async def test_analyze_invalid_json_returns_error(tmp_path: Path):
     assert analysis.raw_excerpt is not None
 
 
+async def test_analyze_schema_validation_failure_returns_error(tmp_path: Path):
+    store = _store_with_analysis_model(tmp_path, "report-analyzer")
+    adapter = FakeAdapter(AdapterResponse(ok=True, content='{"metric_notes": "not a list"}'))
+    analyzer = ReportAnalyzer(store, adapter_factory=lambda _config: adapter)
+
+    analysis = await analyzer.analyze(_make_fact_pack())
+
+    assert analysis.analysis_status == "error"
+    assert analysis.analysis_model_id == "report-analyzer"
+    assert "校验失败" in analysis.error_message
+
+
+async def test_analyze_adapter_exception_redacts_secrets(tmp_path: Path):
+    store = _store_with_analysis_model(tmp_path, "report-analyzer")
+    exc_message = (
+        "Connection failed: sk-live-abc123def456 and ark-api-xyz789secret "
+        "are both leaked in this error"
+    )
+    adapter = FakeAdapter(exc=RuntimeError(exc_message))
+    analyzer = ReportAnalyzer(store, adapter_factory=lambda _config: adapter)
+
+    analysis = await analyzer.analyze(_make_fact_pack())
+
+    assert analysis.analysis_status == "error"
+    assert analysis.analysis_model_id == "report-analyzer"
+
+    for field in (analysis.error_message, analysis.overall_assessment):
+        assert "sk-live-abc123def456" not in field
+        assert "ark-api-xyz789secret" not in field
+        assert "sk-***" in field
+        assert "ark-***" in field
+
+    assert analysis.raw_excerpt is None
+
+
 async def test_analyze_upstream_error_returns_error_with_redacted_excerpt(tmp_path: Path):
     store = _store_with_analysis_model(tmp_path, "report-analyzer")
     adapter = FakeAdapter(
@@ -212,3 +276,4 @@ async def test_analyze_upstream_error_returns_error_with_redacted_excerpt(tmp_pa
     assert analysis.analysis_model_id == "report-analyzer"
     assert analysis.raw_excerpt is not None
     assert "sk-test-analysis-key" not in (analysis.raw_excerpt or "")
+

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 
 from pydantic import ValidationError
 
-from app.adapters.base import BaseAdapter, create_adapter
+from app.adapters.base import AdapterFactory, BaseAdapter, create_adapter
 from app.core.models import AdapterRequest, ModelConfig
 from app.reports.markdown import redact_text
 from app.reports.schemas import (
@@ -24,16 +23,15 @@ _SYSTEM_PROMPT = """你是大模型 API 网关上线前评测报告分析助手�
 不要输出 API key、密钥或完整原始报文。
 """
 
-AdapterFactory = Callable[[ModelConfig], BaseAdapter]
-
 
 def extract_json_object(text: str) -> str:
-    """Extract the first/outer JSON object from text.
+    """Extract the first complete JSON object from text.
 
     Accepts:
     - Plain JSON object string.
     - Fenced ```json ... ``` block.
-    - Surrounding prose: uses first ``{`` and last ``}``.
+    - Surrounding prose: finds the first ``{`` and returns the first
+      balanced object using brace counting with proper string handling.
 
     Raises ``ValueError`` when no JSON object exists.
     """
@@ -53,13 +51,34 @@ def extract_json_object(text: str) -> str:
             lines = lines[:-1]
         stripped = "\n".join(lines).strip()
 
-    first_brace = stripped.find("{")
-    last_brace = stripped.rfind("}")
-
-    if first_brace == -1 or last_brace == -1 or first_brace > last_brace:
+    start = stripped.find("{")
+    if start == -1:
         raise ValueError("no JSON object found in text")
 
-    return stripped[first_brace : last_brace + 1]
+    depth = 0
+    in_string = False
+    escape = False
+
+    for i, char in enumerate(stripped[start:], start=start):
+        if escape:
+            escape = False
+            continue
+        if char == "\\" and in_string:
+            escape = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+
+        if not in_string:
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return stripped[start : i + 1]
+
+    raise ValueError("no complete JSON object found in text")
 
 
 class ReportAnalyzer:
@@ -106,7 +125,7 @@ class ReportAnalyzer:
             response = await adapter.complete(request)
         except Exception as exc:  # pragma: no cover - defensive fallback
             return errored_analysis(
-                f"调用报告分析模型异常：{exc}",
+                f"调用报告分析模型异常：{redact_text(str(exc))}",
                 analysis_model_id=analysis_model_id,
             )
 
@@ -153,3 +172,4 @@ class ReportAnalyzer:
             )
 
         return analysis
+
