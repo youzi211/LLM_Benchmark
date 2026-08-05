@@ -4,8 +4,8 @@ import json
 
 from pydantic import ValidationError
 
-from app.adapters.base import AdapterFactory, BaseAdapter, create_adapter
-from app.core.models import AdapterRequest, ModelConfig
+from app.adapters.base import AdapterFactory, create_adapter
+from app.core.models import AdapterRequest
 from app.reports.markdown import redact_text
 from app.reports.schemas import (
     ReportAnalysis,
@@ -123,7 +123,7 @@ class ReportAnalyzer:
 
         try:
             response = await adapter.complete(request)
-        except Exception as exc:  # pragma: no cover - defensive fallback
+        except Exception as exc:
             return errored_analysis(
                 f"调用报告分析模型异常：{redact_text(str(exc))}",
                 analysis_model_id=analysis_model_id,
