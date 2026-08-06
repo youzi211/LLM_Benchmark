@@ -327,3 +327,54 @@ def test_build_fact_pack_handles_all_skipped():
         mf.suggested_focus == "确认该指标是否仍需评测。"
         for mf in facts.metric_facts
     )
+
+
+
+def test_cache_behavior_fact_pack_highlights_cache_observations():
+    item = MetricResult(
+        metric_id="cache_behavior",
+        metric_name="缓存能力（Prompt Cache）",
+        status="completed",
+        summary="缓存能力观测完成",
+        observations={
+            "request_count": 3,
+            "successful_count": 3,
+            "cache_signal_present": True,
+            "usage_field_paths_detected": ["prompt_tokens_details.cached_tokens"],
+            "max_cached_tokens": 1536,
+            "cache_hit_count": 2,
+            "latency_baseline_ms": 300,
+            "repeated_latency_avg_ms": 120,
+            "latency_reduction_ms": 180,
+            "latency_reduction_ratio": 0.6,
+            "rounds": [
+                {
+                    "round": "warmup_same_prompt",
+                    "http_status": 200,
+                    "ok": True,
+                    "latency_ms": 300,
+                    "cached_tokens": 0,
+                    "cache_hit": False,
+                },
+                {
+                    "round": "repeat_same_prompt",
+                    "http_status": 200,
+                    "ok": True,
+                    "latency_ms": 120,
+                    "cached_tokens": 1536,
+                    "cache_hit": True,
+                },
+            ],
+        },
+    )
+
+    text = metric_core_observation_text(item)
+    facts = build_report_fact_pack(_make_task_result([item])).metric_facts[0]
+
+    assert "缓存字段：是" in text
+    assert "最大 cached tokens：1536" in text
+    assert facts.key_facts["cache_signal_present"] is True
+    assert facts.key_facts["cache_hit_count"] == 2
+    assert facts.key_facts["latency_reduction_ratio"] == 0.6
+    assert facts.important_raw_excerpt[0].label == "cache_rounds"
+    assert facts.important_raw_excerpt[0].data[1]["cached_tokens"] == 1536

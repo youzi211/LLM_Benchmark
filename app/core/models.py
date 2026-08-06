@@ -100,7 +100,7 @@ class PlanInfo(BaseModel):
 
 class RunTaskRequest(BaseModel):
     model_id: str
-    plan_id: str = "gateway_baseline_v1"
+    plan_id: str = "gateway_acceptance_v1"
     metric_ids: list[str] | None = None
 
 

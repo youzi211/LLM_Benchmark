@@ -25,3 +25,17 @@ __pycache__/
 /data/evalscope.json
 /data/intelligence_tasks/
 /reports/intelligence/
+/data/stress_tasks/
+
+# Local deployment smoke-test logs and temp files
+/.tmp/
+
+
+/data/suite_runs/
+/data/suite_schedules/
+/data/overview_reports/
+
+
+/data/evalscope_datasets/
+
+/outputs/

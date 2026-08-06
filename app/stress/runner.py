@@ -1,0 +1,334 @@
+from __future__ import annotations
+
+import os
+import re
+import threading
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Protocol
+from uuid import uuid4
+
+from app.core.models import ModelConfig, utc_now
+from app.intelligence.config_store import EvalScopeConfigStore
+from app.reports.markdown import redact_text
+from app.storage.model_store import ModelStore
+from app.storage.stress_task_store import StressTaskStore
+from app.stress.evalscope_direct import EvalScopeStressExecutor
+from app.stress.report import write_stress_report
+from app.stress.schemas import (
+    StressDefaultRunRequest,
+    StressNormalizedResult,
+    StressRemoteSubmitPayload,
+    StressRunResult,
+    StressTask,
+)
+
+TERMINAL_STATUSES = {"completed", "failed"}
+ALLOWED_STATUSES = {"pending", "running", "completed", "failed"}
+IN_PROCESS_EVALSCOPE = "in-process"
+
+
+class StressExecutor(Protocol):
+    def run(self, *, task_id: str, payload: StressRemoteSubmitPayload) -> dict[str, Any]: ...
+
+
+def new_stress_task_id() -> str:
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    return f"stress_task_{stamp}_{uuid4().hex[:8]}"
+
+
+def _coerce_status(value: Any, fallback: str = "pending") -> str:
+    text = str(value or fallback)
+    return text if text in ALLOWED_STATUSES else fallback
+
+
+def _parse_dt(value: Any) -> datetime | None:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _safe_error(exc: Exception) -> dict[str, Any]:
+    return {"message": redact_text(str(exc)), "type": exc.__class__.__name__}
+
+
+def _endpoint_url(model: ModelConfig) -> str:
+    base = model.base_url.rstrip("/")
+    if model.protocol == "chat_completions":
+        if base.endswith("/chat/completions"):
+            return base
+        return f"{base}/chat/completions"
+    if model.protocol == "responses":
+        if base.endswith("/responses"):
+            return base
+        return f"{base}/responses"
+    raise ValueError(f"unsupported_protocol:{model.protocol}")
+
+
+def _api_type(model: ModelConfig) -> str:
+    if model.protocol == "chat_completions":
+        return "openai"
+    if model.protocol == "responses":
+        return "openai_responses"
+    raise ValueError(f"unsupported_protocol:{model.protocol}")
+
+
+def _set_if_not_none(payload: dict[str, Any], key: str, value: Any) -> None:
+    if value is not None:
+        payload[key] = value
+
+
+def _parse_parallel_number(label: str) -> tuple[int | None, int | None]:
+    match = re.search(r"parallel_(\d+)_number_(\d+)", label)
+    if not match:
+        return None, None
+    return int(match.group(1)), int(match.group(2))
+
+
+def _percentile_value(rows: Any, percentile: str, key: str) -> Any:
+    if not isinstance(rows, list):
+        return None
+    wanted = {percentile, percentile.replace("%", ""), f"p{percentile.replace('%', '')}".lower()}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        label = str(row.get("percentile", "")).lower()
+        if label in wanted:
+            return row.get(key)
+    return None
+
+
+def _perf_mapping_rows(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, dict):
+        return []
+    rows: list[dict[str, Any]] = []
+    for label, value in raw.items():
+        if not isinstance(value, dict) or not isinstance(value.get("metrics"), dict):
+            continue
+        parallel, number = _parse_parallel_number(str(label))
+        metrics = dict(value["metrics"])
+        percentile_rows = (value.get("percentiles") or {}).get("rows") if isinstance(value.get("percentiles"), dict) else []
+        if parallel is not None:
+            metrics.setdefault("parallel", parallel)
+            metrics.setdefault("concurrency", parallel)
+        if number is not None:
+            metrics.setdefault("number", number)
+        metrics.setdefault("total", metrics.get("total_requests"))
+        metrics.setdefault("success", metrics.get("succeed_requests", metrics.get("success_requests")))
+        metrics.setdefault("failed", metrics.get("failed_requests"))
+        metrics.setdefault("output_throughput", metrics.get("output_token_throughput"))
+        metrics.setdefault("total_throughput", metrics.get("total_token_throughput"))
+        metrics.setdefault("avg_latency_seconds", metrics.get("avg_latency"))
+        metrics.setdefault("avg_ttft_ms", metrics.get("avg_ttft"))
+        metrics.setdefault("avg_tpot_ms", metrics.get("avg_tpot"))
+        metrics.setdefault("p50_latency_seconds", _percentile_value(percentile_rows, "50%", "latency"))
+        metrics.setdefault("p95_latency_seconds", _percentile_value(percentile_rows, "95%", "latency"))
+        metrics.setdefault("p99_latency_seconds", _percentile_value(percentile_rows, "99%", "latency"))
+        metrics.setdefault("p95_ttft_ms", _percentile_value(percentile_rows, "95%", "ttft"))
+        metrics.setdefault("p99_ttft_ms", _percentile_value(percentile_rows, "99%", "ttft"))
+        metrics["raw"] = value
+        rows.append(metrics)
+    return rows
+
+
+class StressRunner:
+    def __init__(
+        self,
+        *,
+        model_store: ModelStore | None = None,
+        task_store: StressTaskStore | None = None,
+        config_store: EvalScopeConfigStore | None = None,
+        executor: StressExecutor | None = None,
+        reports_dir: Path | None = None,
+        run_in_background: bool = True,
+    ):
+        self.model_store = model_store or ModelStore()
+        self.task_store = task_store or StressTaskStore()
+        self.config_store = config_store or EvalScopeConfigStore()
+        self.config = self.config_store.load()
+        self.executor = executor or EvalScopeStressExecutor(self.config)
+        self.reports_dir = reports_dir or Path(os.getenv("LLM_BENCHMARK_REPORTS_DIR", "reports"))
+        self.run_in_background = run_in_background
+
+    async def submit_default(self, model_id: str, options: StressDefaultRunRequest | None = None) -> StressTask:
+        options = options or StressDefaultRunRequest(model_id=model_id)
+        model = self.model_store.get(model_id)
+        if model is None:
+            raise ValueError(f"model_not_found:{model_id}")
+        if not model.enabled:
+            raise ValueError(f"model_disabled:{model_id}")
+
+        payload = self._build_payload(model, options)
+        task = StressTask(
+            task_id=new_stress_task_id(),
+            model_id=model.id,
+            model_config_name=model.name,
+            upstream_model_name=model.model,
+            protocol=model.protocol,
+            evalscope_base_url=IN_PROCESS_EVALSCOPE,
+            request_config=self._public_request_config(payload),
+            status="pending",
+            progress="任务已创建，等待本地 EvalScope 执行",
+        )
+        task.raw_submit_response = {"mode": IN_PROCESS_EVALSCOPE, "task_id": task.task_id, "status": "pending"}
+        self.task_store.save(task)
+        self._start(task.task_id, payload)
+        return self.task_store.get(task.task_id) or task
+
+    def _start(self, task_id: str, payload: StressRemoteSubmitPayload) -> None:
+        if self.run_in_background:
+            thread = threading.Thread(target=self._execute, args=(task_id, payload), daemon=True)
+            thread.start()
+        else:
+            self._execute(task_id, payload)
+
+    def _execute(self, task_id: str, payload: StressRemoteSubmitPayload) -> None:
+        task = self.task_store.get(task_id)
+        if task is None:
+            return
+        task.status = "running"
+        task.progress = "正在通过 Python 包直接执行 EvalScope 压测"
+        task.updated_at = utc_now()
+        self.task_store.save(task)
+        try:
+            raw_result = self.executor.run(task_id=task.task_id, payload=payload)
+            task.raw_result = raw_result
+            task.normalized_result = self._normalize(task, raw_result)
+            task.status = _coerce_status(raw_result.get("status"), "completed")
+            task.completed_at = _parse_dt(raw_result.get("completed_at")) or utc_now()
+            task.progress = "压测完成" if task.status == "completed" else "压测失败"
+            report_path = write_stress_report(task, self.reports_dir)
+            task.report_path = str(report_path)
+        except Exception as exc:
+            task.status = "failed"
+            task.error = _safe_error(exc)
+            task.progress = f"压测失败：{task.error['message']}"
+            task.completed_at = utc_now()
+            report_path = write_stress_report(task, self.reports_dir)
+            task.report_path = str(report_path)
+        finally:
+            task.updated_at = utc_now()
+            self.task_store.save(task)
+
+    def _build_payload(self, model: ModelConfig, options: StressDefaultRunRequest) -> StressRemoteSubmitPayload:
+        data: dict[str, Any] = {
+            "model": model.model,
+            "url": _endpoint_url(model),
+            "api_key": model.api_key or "EMPTY",
+            "api": _api_type(model),
+        }
+        for key in (
+            "parallel",
+            "number",
+            "dataset",
+            "stream",
+            "min_prompt_length",
+            "max_prompt_length",
+            "min_tokens",
+            "max_tokens",
+            "rate",
+            "tokenizer_path",
+            "prefix_length",
+            "dataset_args",
+            "extra_args",
+        ):
+            _set_if_not_none(data, key, getattr(options, key, None))
+        return StressRemoteSubmitPayload.model_validate(data)
+
+    def _public_request_config(self, payload: StressRemoteSubmitPayload) -> dict[str, Any]:
+        data = payload.model_dump(mode="json")
+        data.pop("api_key", None)
+        return data
+
+    async def refresh_status(self, task_id: str) -> StressTask | None:
+        return self.task_store.get(task_id)
+
+    async def fetch_result(self, task_id: str) -> StressTask | None:
+        task = self.task_store.get(task_id)
+        if task is None:
+            return None
+        if task.status in TERMINAL_STATUSES and not task.report_path:
+            report_path = write_stress_report(task, self.reports_dir)
+            task.report_path = str(report_path)
+            task.updated_at = utc_now()
+            self.task_store.save(task)
+        return task
+
+    def _normalize(self, task: StressTask, raw_result: dict[str, Any]) -> StressNormalizedResult:
+        raw_runs = raw_result.get("runs") or raw_result.get("results") or []
+        if not raw_runs:
+            raw_runs = _perf_mapping_rows(raw_result.get("raw_result"))
+        if not raw_runs:
+            raw_runs = _perf_mapping_rows(raw_result)
+        runs: list[StressRunResult] = []
+        if isinstance(raw_runs, list):
+            for row in raw_runs:
+                if not isinstance(row, dict):
+                    continue
+                runs.append(self._normalize_run(row))
+        errors = raw_result.get("errors") if isinstance(raw_result.get("errors"), list) else []
+        return StressNormalizedResult(
+            task_id=task.task_id,
+            evalscope_stress_task_id=raw_result.get("task_id") or task.evalscope_stress_task_id or task.task_id,
+            model=raw_result.get("model") or task.upstream_model_name,
+            status=raw_result.get("status") or task.status,
+            summary=raw_result.get("summary") if isinstance(raw_result.get("summary"), dict) else self._summary_from_runs(runs),
+            runs=runs,
+            errors=[item for item in errors if isinstance(item, dict)],
+            raw_result=raw_result,
+        )
+
+    def _normalize_run(self, row: dict[str, Any]) -> StressRunResult:
+        def first(*keys: str) -> Any:
+            for key in keys:
+                if key in row:
+                    return row[key]
+            return None
+
+        total = first("total", "total_requests", "number")
+        success = first("success", "successful", "success_requests", "succeed_requests")
+        success_rate = first("success_rate")
+        if success_rate is None and isinstance(total, (int, float)) and total:
+            success_rate = (success or 0) / total
+        return StressRunResult(
+            parallel=first("parallel", "concurrency"),
+            number=first("number"),
+            total=total,
+            success=success,
+            failed=first("failed", "fail", "failed_requests"),
+            success_rate=success_rate,
+            request_throughput=first("request_throughput", "req_throughput", "rps"),
+            output_throughput=first("output_throughput", "output_token_throughput", "output_tps", "tps"),
+            total_throughput=first("total_throughput", "total_token_throughput", "total_tps"),
+            avg_latency_seconds=first("avg_latency_seconds", "avg_latency", "latency_avg"),
+            p50_latency_seconds=first("p50_latency_seconds", "p50_latency", "latency_p50"),
+            p95_latency_seconds=first("p95_latency_seconds", "p95_latency", "latency_p95"),
+            p99_latency_seconds=first("p99_latency_seconds", "p99_latency", "latency_p99"),
+            avg_ttft_ms=first("avg_ttft_ms", "avg_ttft", "ttft_avg"),
+            p95_ttft_ms=first("p95_ttft_ms", "p95_ttft", "ttft_p95"),
+            p99_ttft_ms=first("p99_ttft_ms", "p99_ttft", "ttft_p99"),
+            avg_tpot_ms=first("avg_tpot_ms", "avg_tpot", "tpot_avg"),
+            p95_tpot_ms=first("p95_tpot_ms", "p95_tpot", "tpot_p95"),
+            p99_tpot_ms=first("p99_tpot_ms", "p99_tpot", "tpot_p99"),
+            raw=row,
+        )
+
+    def _summary_from_runs(self, runs: list[StressRunResult]) -> dict[str, Any]:
+        summary: dict[str, Any] = {}
+        successful = [run for run in runs if run.failed in (None, 0)]
+        if successful:
+            summary["max_success_parallel"] = max((run.parallel or 0) for run in successful)
+        throughputs = [run.request_throughput for run in runs if run.request_throughput is not None]
+        if throughputs:
+            summary["best_req_throughput"] = max(throughputs)
+        output_throughputs = [run.output_throughput for run in runs if run.output_throughput is not None]
+        if output_throughputs:
+            summary["best_output_throughput"] = max(output_throughputs)
+        first_error = next((run.parallel for run in runs if run.failed and run.failed > 0), None)
+        summary["first_error_parallel"] = first_error
+        return summary

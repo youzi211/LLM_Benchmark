@@ -11,13 +11,29 @@ IntelligenceTaskStatus = Literal["pending", "running", "completed", "failed"]
 
 
 class EvalScopeConfig(BaseModel):
-    base_url: str = "http://localhost:8010/api/v1"
+    # Deprecated compatibility field: older configs pointed at the removed EvalScope HTTP sub-service.
+    # New execution is always in-process through the evalscope Python package.
+    base_url: str | None = None
+    datasets_dir: str | None = None
+    outputs_dir: str | None = None
     poll_interval_seconds: int = Field(default=5, ge=1, le=3600)
     default_timeout_seconds: int = Field(default=14400, ge=1, le=86400)
+    stress_timeout_seconds: int = Field(default=86400, ge=1, le=172800)
+    judge_model_id: str | None = None
+    judge_api_url: str | None = None
+    judge_api_key: str | None = None
+    judge_generation_config: dict[str, Any] = Field(default_factory=lambda: {"temperature": 0.0, "max_tokens": 4096})
+    judge_worker_num: int = Field(default=5, ge=1, le=128)
+    ignore_dataset_errors: bool = True
 
-    @field_validator("base_url")
+    @field_validator("base_url", "datasets_dir", "outputs_dir", "judge_model_id", "judge_api_url", "judge_api_key")
     @classmethod
-    def strip_trailing_slash(cls, value: str) -> str:
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            return None
         return value.rstrip("/")
 
 

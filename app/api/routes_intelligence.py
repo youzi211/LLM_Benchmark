@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 
 from app.api.errors import api_error
 from app.intelligence.config_store import EvalScopeConfigStore
-from app.intelligence.evalscope_client import EvalScopeClient, EvalScopeClientError
+from app.intelligence.evalscope_direct import dataset_metadata, evalscope_health, judge_config_status, local_dataset_metadata
 from app.intelligence.runner import IntelligenceRunner
 from app.intelligence.schemas import IntelligenceDefaultRunRequest, IntelligenceRunRequest
 from app.storage.intelligence_task_store import IntelligenceTaskStore
@@ -15,56 +15,40 @@ from app.storage.intelligence_task_store import IntelligenceTaskStore
 router = APIRouter(prefix="/intelligence", tags=["intelligence"])
 
 
-def _client() -> EvalScopeClient:
-    return EvalScopeClient(EvalScopeConfigStore().load())
+def _config():
+    return EvalScopeConfigStore().load()
 
 
 def _runner() -> IntelligenceRunner:
     return IntelligenceRunner()
 
 
-def _map_evalscope_error(exc: EvalScopeClientError):
-    raise api_error(502, "evalscope_error", str(exc), {"status_code": exc.status_code})
-
-
 @router.get("/evalscope/health")
-async def evalscope_health():
-    try:
-        return await _client().health()
-    except EvalScopeClientError as exc:
-        _map_evalscope_error(exc)
+def evalscope_health_route():
+    health = evalscope_health()
+    if health.get("status") != "ok":
+        raise api_error(502, "evalscope_error", health.get("error") or "EvalScope package is not available")
+    return health
 
 
 @router.get("/evalscope/judge-config")
-async def evalscope_judge_config():
-    try:
-        return await _client().judge_config()
-    except EvalScopeClientError as exc:
-        _map_evalscope_error(exc)
+def evalscope_judge_config():
+    return judge_config_status(_config())
 
 
 @router.get("/evalscope/tasks")
-async def evalscope_tasks():
-    try:
-        return await _client().tasks()
-    except EvalScopeClientError as exc:
-        _map_evalscope_error(exc)
+def evalscope_tasks(limit: int = 50):
+    return {"mode": "in_process", "tasks": IntelligenceTaskStore().list(limit=limit)}
 
 
 @router.get("/datasets")
-async def datasets():
-    try:
-        return await _client().datasets()
-    except EvalScopeClientError as exc:
-        _map_evalscope_error(exc)
+def datasets():
+    return dataset_metadata(_config())
 
 
 @router.get("/datasets/local")
-async def local_datasets():
-    try:
-        return await _client().local_datasets()
-    except EvalScopeClientError as exc:
-        _map_evalscope_error(exc)
+def local_datasets():
+    return local_dataset_metadata(_config())
 
 
 @router.post("/tasks/default")
@@ -78,8 +62,6 @@ async def submit_default_task(request: IntelligenceDefaultRunRequest):
         if text.startswith("model_disabled:"):
             raise api_error(400, "model_disabled", f"Model config is disabled: {request.model_id}")
         raise api_error(400, "invalid_intelligence_task_request", text)
-    if task.status == "failed" and not task.evalscope_task_id:
-        raise api_error(502, "evalscope_error", task.error.get("message", "EvalScope submit failed") if task.error else "EvalScope submit failed")
     return task
 
 
@@ -100,8 +82,6 @@ async def submit_custom_task(request: IntelligenceRunRequest):
         if text.startswith("model_disabled:"):
             raise api_error(400, "model_disabled", f"Model config is disabled: {request.model_id}")
         raise api_error(400, "invalid_intelligence_task_request", text)
-    if task.status == "failed" and not task.evalscope_task_id:
-        raise api_error(502, "evalscope_error", task.error.get("message", "EvalScope submit failed") if task.error else "EvalScope submit failed")
     return task
 
 

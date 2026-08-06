@@ -167,6 +167,9 @@ def _metric_details_section(result: TaskResult) -> list[str]:
         if item.metric_id == "token_usage_accuracy":
             lines.append("")
             lines.append("本地 token 数为估算值，仅用于辅助观察，不作为自动判定依据。")
+        if item.metric_id == "cache_behavior":
+            lines.append("")
+            lines.append("缓存能力指标只输出冷/热请求、缓存字段和延迟变化观测，不设置自动通过阈值。")
         lines.append("")
         lines.append("#### 观测数据")
         lines.append("")

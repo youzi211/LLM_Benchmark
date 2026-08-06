@@ -10,6 +10,7 @@ from app.core.models import MetricResult, TaskResult, utc_now
 from app.core.registry import resolve_metric_ids
 from app.core.statuses import SUPPORTED_PROTOCOLS
 from app.metrics.probes import (
+    run_cache_behavior_probe,
     run_concurrency_probe,
     run_connectivity_probe,
     run_context_length_probe,
@@ -40,7 +41,7 @@ class TaskRunner:
         self.reports_dir = reports_dir or Path(os.getenv("LLM_BENCHMARK_REPORTS_DIR", "reports"))
         self.adapter_factory = adapter_factory or create_adapter
 
-    async def run(self, model_id: str, plan_id: str = "gateway_baseline_v1", metric_ids: list[str] | None = None) -> TaskResult:
+    async def run(self, model_id: str, plan_id: str = "gateway_acceptance_v1", metric_ids: list[str] | None = None) -> TaskResult:
         started_at = utc_now()
         start = now_monotonic()
         resolved = resolve_metric_ids(plan_id, metric_ids)
@@ -80,6 +81,8 @@ class TaskRunner:
             metric_results.append(await run_connectivity_probe(adapter))
         if "token_usage_accuracy" in selected:
             metric_results.append(await run_usage_probe(adapter))
+        if "cache_behavior" in selected:
+            metric_results.append(await run_cache_behavior_probe(adapter, model))
         if "latency_breakdown" in selected or "stream_spec" in selected:
             latency, spec = await run_stream_probe(adapter)
             if "latency_breakdown" in selected:

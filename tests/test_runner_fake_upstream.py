@@ -83,7 +83,7 @@ class FakeAdapter:
 
 
 @pytest.mark.asyncio
-async def test_runner_executes_full_gateway_plan_and_writes_report(tmp_path):
+async def test_runner_executes_gateway_acceptance_alias_plan_and_writes_report(tmp_path):
     from app.core.models import ModelConfigCreate
     from app.core.runner import TaskRunner
     from app.storage.model_store import ModelStore
@@ -126,8 +126,10 @@ async def test_runner_executes_full_gateway_plan_and_writes_report(tmp_path):
     assert result.protocol == "chat_completions"
     assert {r.metric_id for r in result.results} == {
         "connectivity", "latency_breakdown", "context_length", "output_length",
-        "concurrency", "rate_limit", "error_handling", "token_usage_accuracy", "stream_spec",
+        "error_handling", "token_usage_accuracy", "cache_behavior", "stream_spec",
     }
+    assert "concurrency" not in result.metric_ids
+    assert "rate_limit" not in result.metric_ids
     assert result.analysis_model_id == "report-analyzer"
     assert result.analysis is not None
     assert result.analysis["analysis_status"] == "completed"
@@ -139,12 +141,50 @@ async def test_runner_executes_full_gateway_plan_and_writes_report(tmp_path):
     assert "- 模型配置名称：`Demo Chat`" in text
     assert "- API 模型名称（model）：`demo-model`" in text
     assert "本地 token 数为估算值" in text
+    assert "缓存能力指标只输出冷/热请求" in text
     assert "## 0. LLM 分析摘要" in text
     assert _fake_key("super-secret") not in text
     assert _fake_key("report-analyzer") not in text
     saved = task_store.get(result.task_id)
     assert saved.analysis_model_id == "report-analyzer"
     assert saved.analysis["analysis_status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_runner_can_explicitly_execute_legacy_perf_smoke_metrics(tmp_path):
+    from app.core.models import ModelConfigCreate
+    from app.core.runner import TaskRunner
+    from app.storage.model_store import ModelStore
+    from app.storage.task_store import TaskStore
+
+    model_store = ModelStore(tmp_path / "data" / "models.json")
+    task_store = TaskStore(tmp_path / "data" / "tasks")
+    model_store.create(ModelConfigCreate(
+        id="demo-chat",
+        name="Demo Chat",
+        protocol="chat_completions",
+        base_url="http://fake/v1",
+        api_key=_fake_key("super-secret"),
+        model="demo-model",
+        concurrency_levels=[1, 2],
+    ))
+
+    runner = TaskRunner(
+        model_store=model_store,
+        task_store=task_store,
+        reports_dir=tmp_path / "reports",
+        adapter_factory=lambda config: FakeAdapter(config),
+    )
+
+    result = await runner.run(
+        model_id="demo-chat",
+        plan_id="gateway_acceptance_v1",
+        metric_ids=["concurrency", "rate_limit"],
+    )
+
+    assert result.status == "completed"
+    assert result.metric_ids == ["concurrency", "rate_limit"]
+    assert {r.metric_id for r in result.results} == {"concurrency", "rate_limit"}
 
 
 @pytest.mark.asyncio

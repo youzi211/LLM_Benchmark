@@ -7,7 +7,7 @@ from app.intelligence.schemas import EvalScopeConfig
 def test_evalscope_config_store_loads_defaults(tmp_path):
     config = EvalScopeConfigStore(tmp_path / "missing.json").load()
 
-    assert config.base_url == "http://localhost:8010/api/v1"
+    assert config.base_url is None
     assert config.poll_interval_seconds == 5
     assert config.default_timeout_seconds == 14400
 

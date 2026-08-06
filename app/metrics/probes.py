@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from typing import Callable
+from typing import Any, Callable
 
 from app.adapters.base import BaseAdapter
 from app.core.models import AdapterRequest, AdapterResponse, MetricResult, ModelConfig
@@ -36,6 +36,223 @@ def _usage_total(usage: dict | None) -> int | None:
     if not usage:
         return None
     return usage.get("total_tokens")
+
+
+_CACHE_CACHED_TOKEN_PATHS = (
+    ("prompt_tokens_details", "cached_tokens"),
+    ("input_tokens_details", "cached_tokens"),
+    ("cached_tokens",),
+    ("prompt_cached_tokens",),
+    ("input_cached_tokens",),
+    ("cached_input_tokens",),
+    ("cache_read_input_tokens",),
+)
+_CACHE_CREATION_TOKEN_PATHS = (
+    ("cache_creation_input_tokens",),
+    ("prompt_cache_creation_tokens",),
+)
+_CACHE_HIT_PATHS = (
+    ("cache_hit",),
+    ("prompt_cache_hit",),
+    ("input_cache_hit",),
+)
+
+
+def _as_int(value: Any) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _get_nested(data: dict[str, Any], path: tuple[str, ...]) -> Any:
+    current: Any = data
+    for key in path:
+        if not isinstance(current, dict) or key not in current:
+            return None
+        current = current[key]
+    return current
+
+
+def _collect_usage_cache_paths(data: Any, prefix: tuple[str, ...] = ()) -> set[str]:
+    if not isinstance(data, dict):
+        return set()
+    found: set[str] = set()
+    for key, value in data.items():
+        path = prefix + (str(key),)
+        lowered = str(key).lower()
+        if "cache" in lowered or "cached" in lowered:
+            found.add(".".join(path))
+        found.update(_collect_usage_cache_paths(value, path))
+    return found
+
+
+def _extract_cache_usage(usage: dict | None) -> dict[str, Any]:
+    if not usage:
+        return {
+            "cached_tokens": None,
+            "cache_creation_tokens": None,
+            "cache_read_tokens": None,
+            "cache_hit": None,
+            "field_paths": [],
+        }
+
+    field_paths = _collect_usage_cache_paths(usage)
+
+    cached_values: list[int] = []
+    for path in _CACHE_CACHED_TOKEN_PATHS:
+        value = _as_int(_get_nested(usage, path))
+        if value is not None:
+            cached_values.append(value)
+            field_paths.add(".".join(path))
+
+    creation_values: list[int] = []
+    for path in _CACHE_CREATION_TOKEN_PATHS:
+        value = _as_int(_get_nested(usage, path))
+        if value is not None:
+            creation_values.append(value)
+            field_paths.add(".".join(path))
+
+    read_value = _as_int(usage.get("cache_read_input_tokens"))
+    if read_value is not None:
+        field_paths.add("cache_read_input_tokens")
+
+    hit: bool | None = None
+    for path in _CACHE_HIT_PATHS:
+        value = _get_nested(usage, path)
+        if isinstance(value, bool):
+            hit = hit or value if hit is not None else value
+            field_paths.add(".".join(path))
+
+    cached_tokens = max(cached_values) if cached_values else None
+    creation_tokens = max(creation_values) if creation_values else None
+    cache_read_tokens = read_value if read_value is not None else cached_tokens
+    return {
+        "cached_tokens": cached_tokens,
+        "cache_creation_tokens": creation_tokens,
+        "cache_read_tokens": cache_read_tokens,
+        "cache_hit": hit,
+        "field_paths": sorted(field_paths),
+    }
+
+
+def _cache_probe_target_tokens(config: ModelConfig) -> int:
+    declared = config.declared_context_tokens
+    if declared is None:
+        return 4096
+    if declared <= 2048:
+        return max(256, declared // 2)
+    return min(8192, max(1024, declared // 4))
+
+
+def _build_cache_probe_prefix(target_tokens: int) -> str:
+    block = (
+        "缓存能力评测固定前缀。"
+        "本段内容用于观察模型网关或上游模型是否复用相同 Prompt 前缀，"
+        "请在后续回答时只根据最后的问题作答，不要复述本前缀。"
+        "编号={index:04d}；关键短语：LAKALA-CACHE-PROBE-STABLE-PREFIX。\n"
+    )
+    parts: list[str] = []
+    current_tokens = 0
+    index = 1
+    while current_tokens < target_tokens and index <= 2000:
+        parts.append(block.format(index=index))
+        index += 1
+        current_tokens = estimate_tokens("".join(parts))
+    return "".join(parts)
+
+
+async def run_cache_behavior_probe(adapter: BaseAdapter, config: ModelConfig) -> MetricResult:
+    target_tokens = _cache_probe_target_tokens(config)
+    stable_prefix = _build_cache_probe_prefix(target_tokens)
+    estimated_prefix_tokens = estimate_tokens(stable_prefix)
+    suffix_a = "请用一句话回答：缓存探测第一轮的目的是什么？"
+    suffix_b = "请用一句话回答：如果缓存命中，通常哪些观测值会发生变化？"
+    prompts = [
+        ("warmup_same_prompt", suffix_a),
+        ("repeat_same_prompt", suffix_a),
+        ("repeat_same_prefix_variant_suffix", suffix_b),
+    ]
+
+    rounds: list[dict[str, Any]] = []
+    usage_field_paths: set[str] = set()
+    cached_token_values: list[int] = []
+    cache_hit_count = 0
+    successful_count = 0
+
+    for label, suffix in prompts:
+        prompt = f"{stable_prefix}\n\n最后问题：{suffix}"
+        response = await adapter.complete(AdapterRequest(prompt=prompt, max_tokens=64, temperature=0))
+        cache_usage = _extract_cache_usage(response.usage)
+        usage_field_paths.update(cache_usage["field_paths"])
+        cached_tokens = cache_usage["cached_tokens"]
+        cache_read_tokens = cache_usage["cache_read_tokens"]
+        cache_hit = cache_usage["cache_hit"]
+        if cached_tokens is not None:
+            cached_token_values.append(cached_tokens)
+        if (cache_hit is True) or (cache_read_tokens is not None and cache_read_tokens > 0):
+            cache_hit_count += 1
+        if response.ok:
+            successful_count += 1
+        rounds.append({
+            "round": label,
+            "http_status": response.http_status,
+            "ok": response.ok,
+            "latency_ms": response.latency_ms,
+            "usage_prompt_tokens": _usage_prompt(response.usage),
+            "usage_completion_tokens": _usage_completion(response.usage),
+            "cached_tokens": cached_tokens,
+            "cache_creation_tokens": cache_usage["cache_creation_tokens"],
+            "cache_read_tokens": cache_read_tokens,
+            "cache_hit": cache_hit,
+            "usage_field_paths": cache_usage["field_paths"],
+            "finish_reason": response.finish_reason,
+            "error": response.error,
+        })
+
+    latencies = [r.get("latency_ms") for r in rounds]
+    latency_baseline = latencies[0] if latencies and isinstance(latencies[0], (int, float)) else None
+    repeated_latencies = [value for value in latencies[1:] if isinstance(value, (int, float))]
+    repeated_avg = round(sum(repeated_latencies) / len(repeated_latencies), 3) if repeated_latencies else None
+    latency_reduction_ms = None
+    latency_reduction_ratio = None
+    if latency_baseline is not None and repeated_avg is not None:
+        latency_reduction_ms = round(latency_baseline - repeated_avg, 3)
+        if latency_baseline > 0:
+            latency_reduction_ratio = round(latency_reduction_ms / latency_baseline, 4)
+
+    observations = {
+        "request_count": len(prompts),
+        "successful_count": successful_count,
+        "stable_prefix_estimated_tokens": estimated_prefix_tokens,
+        "target_prefix_tokens": target_tokens,
+        "cache_signal_present": bool(usage_field_paths),
+        "usage_field_paths_detected": sorted(usage_field_paths),
+        "max_cached_tokens": max(cached_token_values) if cached_token_values else None,
+        "cache_hit_count": cache_hit_count,
+        "latency_baseline_ms": latency_baseline,
+        "repeated_latency_avg_ms": repeated_avg,
+        "latency_reduction_ms": latency_reduction_ms,
+        "latency_reduction_ratio": latency_reduction_ratio,
+        "rounds": rounds,
+    }
+    failed_rounds = [r for r in rounds if not r.get("ok")]
+    if failed_rounds:
+        return errored(
+            "cache_behavior",
+            "缓存能力探测请求存在失败轮次",
+            observations,
+            [{"code": "cache_probe_request_failed", "message": "至少一轮缓存探测请求失败", "failed_rounds": failed_rounds[:3]}],
+        )
+    return completed("cache_behavior", "缓存能力观测完成", observations)
 
 
 async def run_connectivity_probe(adapter: BaseAdapter) -> MetricResult:

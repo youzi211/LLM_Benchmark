@@ -80,7 +80,7 @@ enabled, declared_context_tokens, declared_max_output_tokens, concurrency_levels
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |---|---:|---:|---:|---|
 | `model_id` | string | 是 | 无 | 要评测的本地模型配置 ID。 |
-| `plan_id` | string | 否 | `gateway_baseline_v1` | 评测计划 ID。 |
+| `plan_id` | string | 否 | `gateway_acceptance_v1` | 评测计划 ID。`gateway_baseline_v1` 为兼容旧名，指标集合相同。 |
 | `metric_ids` | string[]/null | 否 | `null` | 指定只执行某些指标；为空时执行计划内全部指标。 |
 
 ### 3.4 TaskResult
@@ -116,6 +116,8 @@ enabled, declared_context_tokens, declared_max_output_tokens, concurrency_levels
 | `summary` | string | 指标摘要。 |
 | `observations` | object | 观测数据。不同指标字段不同，详见 `docs/metric-test-methods.md`。 |
 | `errors` | object[] | 错误列表。 |
+
+缓存能力指标 `cache_behavior` 会在 `observations` 中返回三轮冷/热请求明细、缓存字段路径、cached tokens、命中轮次和延迟变化；具体字段以 `docs/metric-test-methods.md` 为准。
 
 ## 4. 健康检查
 
@@ -333,23 +335,39 @@ enabled, declared_context_tokens, declared_max_output_tokens, concurrency_levels
 ```json
 [
   {
-    "id": "gateway_baseline_v1",
-    "name": "模型网关基础工程评测 V1",
-    "description": "默认基础评测计划：覆盖连通性、延迟、上下文、输出、并发、限流、错误处理、Token 用量和流式规范性。",
+    "id": "gateway_acceptance_v1",
+    "name": "模型网关接入验收 V1",
+    "description": "收缩后的默认自研指标计划：只做网关链路、协议兼容、错误结构、usage、长度与缓存 smoke；正式能力评测和正式性能压测交给 EvalScope。",
     "metric_ids": [
       "connectivity",
       "latency_breakdown",
       "context_length",
       "output_length",
-      "concurrency",
-      "rate_limit",
       "error_handling",
       "token_usage_accuracy",
+      "cache_behavior",
+      "stream_spec"
+    ]
+  },
+  {
+    "id": "gateway_baseline_v1",
+    "name": "模型网关接入验收 V1（兼容旧名）",
+    "description": "兼容旧 plan_id；不再包含并发/限流正式压测，正式性能结果请使用 EvalScope stress。",
+    "metric_ids": [
+      "connectivity",
+      "latency_breakdown",
+      "context_length",
+      "output_length",
+      "error_handling",
+      "token_usage_accuracy",
+      "cache_behavior",
       "stream_spec"
     ]
   }
 ]
 ```
+
+`concurrency` 与 `rate_limit` 仍会出现在 `/api/metrics`，可通过 `metric_ids` 显式运行，但不再属于默认计划；正式并发、吞吐、延迟分位数和限流/容量边界请使用 `/api/stress/*`。
 
 ### GET `/api/plans/{plan_id}`
 
@@ -382,7 +400,7 @@ enabled, declared_context_tokens, declared_max_output_tokens, concurrency_levels
 ```json
 {
   "model_id": "demo-chat",
-  "plan_id": "gateway_baseline_v1"
+  "plan_id": "gateway_acceptance_v1"
 }
 ```
 
@@ -391,7 +409,7 @@ enabled, declared_context_tokens, declared_max_output_tokens, concurrency_levels
 ```json
 {
   "model_id": "demo-chat",
-  "plan_id": "gateway_baseline_v1",
+  "plan_id": "gateway_acceptance_v1",
   "metric_ids": ["connectivity", "stream_spec"]
 }
 ```
@@ -524,35 +542,39 @@ GET /api/tasks?limit=20
 
 ## 10. 智力评测接口（EvalScope）
 
-智力评测用于接入另一个 EvalScope 评测服务，执行 GSM8K、HumanEval、MMLU Pro 等数据集评测。它是独立能力，不合并到基础工程指标 `/api/tasks/run` 中。
+智力评测用于调用 EvalScope Python package 执行公开数据集能力测试。当前执行模式为 `in_process`：主服务直接 `import evalscope` 并调用 `evalscope.run_task(TaskConfig)`，不再代理到外部 HTTP 包装服务。`data/evalscope.json` 只保存本地数据集目录、输出目录、超时和可选 Judge 配置；历史 `base_url` 字段仅兼容旧配置读取。
 
-### 10.1 外部 EvalScope 只读代理
+### 10.1 辅助查询接口
 
 #### GET `/api/intelligence/evalscope/health`
 
-检查 EvalScope 服务状态、数据集数量和 Judge 配置状态。成功时直接返回 EvalScope 的 JSON，例如 `status`、`datasets_available`、`judge_configured`、`judge_model`。
+检查当前 Python 环境是否可 import EvalScope。成功示例：
+
+```json
+{
+  "status": "ok",
+  "mode": "in_process",
+  "evalscope_version": "1.10.0"
+}
+```
+
+EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 
 #### GET `/api/intelligence/evalscope/judge-config`
 
-查看 EvalScope Judge LLM 配置。第一版只读取，不代理 `POST /judge-config`，不会替用户写入 Judge Key。
+检查本地 Judge 配置是否完整。响应不会返回 `judge_api_key` 明文。
 
 #### GET `/api/intelligence/evalscope/tasks`
 
-只读查看 EvalScope 侧任务列表，用于排查本系统任务与 EvalScope 原始任务的对应关系。
+兼容旧入口，返回本系统本地归档的智力评测任务列表，响应包含 `mode: in_process`。
 
 #### GET `/api/intelligence/datasets`
 
-列出 EvalScope 支持的数据集。注意：该接口表示“支持”，不代表本地已下载。
+列出本系统内置的 EvalScope 数据集元数据和默认数据集组合。注意：该接口表示“支持”，不代表本地已下载。
 
 #### GET `/api/intelligence/datasets/local`
 
-列出 EvalScope 本地已下载、可直接评测的数据集。自定义评测前建议先调用该接口确认数据集可用。
-
-上述接口如果 EvalScope 返回非 2xx，本服务统一返回：
-
-| 状态码 | `error.code` | 场景 |
-|---|---|---|
-| `502` | `evalscope_error` | EvalScope 服务不可用、返回错误或返回非 JSON。 |
+扫描 `data/evalscope.json.datasets_dir` 或默认 `data/evalscope_datasets`，列出本地已下载、可直接评测的数据集。自定义评测前建议先调用该接口确认数据集可用。
 
 ### 10.2 IntelligenceDefaultRunRequest
 
@@ -575,14 +597,14 @@ GET /api/tasks?limit=20
 | 字段 | 类型 | 说明 |
 |---|---:|---|
 | `task_id` | string | 本系统智力评测任务 ID，例如 `intel_task_yyyymmddhhmmss_xxxxxxxx`。 |
-| `evalscope_task_id` | string/null | EvalScope 返回的原始任务 ID，例如 `eval-1785979420259-1`。 |
+| `evalscope_task_id` | string/null | 兼容字段；当前通常等于本系统任务 ID 或 EvalScope 原始结果中的任务 ID。 |
 | `model_id` | string | 本系统模型配置 ID。 |
 | `model_config_name` | string/null | 模型配置名称。 |
 | `upstream_model_name` | string/null | 传给 EvalScope 的被测模型名，来自 `ModelConfig.model`。 |
-| `evalscope_base_url` | string | EvalScope API 根地址。默认 `http://localhost:8010/api/v1`，可通过 `data/evalscope.json` 持久化配置。 |
-| `datasets` | string[] | 本次评测数据集。默认评测提交后可能为空，刷新状态或获取结果后由 EvalScope 回填。 |
+| `evalscope_base_url` | string | 兼容字段；当前固定为 `in-process`，表示主服务内直接调用 EvalScope。 |
+| `datasets` | string[] | 本次评测数据集。 |
 | `status` | string | `pending`、`running`、`completed`、`failed`。 |
-| `progress` | string/null | EvalScope 进度文本，例如 `正在评测 (2/3): humaneval`。 |
+| `progress` | string/null | 本地进度文本，例如正在执行哪个数据集。 |
 | `report_path` | string/null | 本地 Markdown 报告路径。 |
 | `normalized_result` | object/null | 标准化后的数据集分数、分类汇总、原始 `report_table` 等。 |
 | `error` | object/null | 脱敏后的任务错误。 |
@@ -591,13 +613,13 @@ GET /api/tasks?limit=20
 
 #### POST `/api/intelligence/tasks/default`
 
-提交 EvalScope 默认评测。请求只需要本系统 `model_id`，服务会读取模型配置并映射：
+提交默认数据集组合。服务会读取模型配置并映射到 EvalScope `TaskConfig`：
 
 | 本系统字段 | EvalScope 字段 |
 |---|---|
 | `ModelConfig.model` | `model` |
-| `ModelConfig.base_url` | `api_url` |
-| `ModelConfig.api_key` | `api_key` |
+| `ModelConfig.base_url` + `protocol` | `api_url`，自动拼接 `/chat/completions` 或 `/responses` |
+| `ModelConfig.api_key` | `api_key`，仅运行时使用，不写入本地任务配置或报告 |
 
 请求示例：
 
@@ -607,7 +629,7 @@ GET /api/tasks?limit=20
 }
 ```
 
-成功响应：`200 OK`，返回 `IntelligenceTask`。若 EvalScope 提交失败，返回 `502 evalscope_error`。
+成功响应：`200 OK`，返回 `IntelligenceTask`。模型不存在返回 `404 model_not_found`；模型禁用返回 `400 model_disabled`；参数错误返回 `400 invalid_intelligence_task_request`。
 
 ### 10.6 提交自定义智力评测
 
@@ -644,14 +666,11 @@ GET /api/tasks?limit=20
 
 #### GET `/api/intelligence/tasks/{task_id}`
 
-读取本地任务，并尝试刷新 EvalScope 状态。任务不存在返回 `404 intelligence_task_not_found`。
+读取本地任务。任务不存在返回 `404 intelligence_task_not_found`。
 
 #### GET `/api/intelligence/tasks/{task_id}/result`
 
-获取智力评测结果。服务会先刷新 EvalScope 状态：
-
-1. 若 EvalScope 仍为 `pending` 或 `running`，返回当前 `IntelligenceTask`，不会调用 EvalScope result 接口。
-2. 若 EvalScope 为 `completed` 或 `failed`，调用 EvalScope result 接口，标准化结果，生成 Markdown 报告，并返回更新后的 `IntelligenceTask`。
+读取本地任务结果。若任务已结束但报告尚未生成，服务会补写 Markdown 报告并返回更新后的 `IntelligenceTask`。
 
 ### 10.8 下载智力评测报告
 
@@ -664,7 +683,310 @@ GET /api/tasks?limit=20
 | 状态码 | `error.code` | 场景 |
 |---|---|---|
 | `404` | `intelligence_report_not_found` | 任务不存在、任务还未生成报告或报告文件不存在。 |
-## 11. OpenAI 兼容协议说明
+
+## 11. EvalScope 压测接口（Stress）
+
+压测能力用于把本系统的模型配置交给 EvalScope `perf` 执行，当前执行模式同样为 `in_process`：主服务直接构造 `evalscope.perf.arguments.Arguments` 并调用 `evalscope.perf.main.run_perf_benchmark`。本系统负责任务编排、本地 JSON 落库、结果标准化和 Markdown 报告生成；正式并发、吞吐、延迟分位数和限流/容量边界以该接口为准。基础 `/api/tasks/run` 中的 `latency_breakdown` 只是单次链路 smoke，`concurrency` 与 `rate_limit` 仅作为显式兼容 smoke 指标保留。
+
+> 配置位置：`data/evalscope.json`。常用字段为 `outputs_dir`、`datasets_dir`、`stress_timeout_seconds`。该文件可能包含 Judge 地址或密钥，不提交。
+
+### 11.1 StressDefaultRunRequest / StressRunRequest
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|---|---:|---:|---:|---|
+| `model_id` | string | 是 | - | 本系统模型配置 ID。 |
+| `parallel` | integer[]/null | 否 | `[1, 5, 10]` | EvalScope 并发档位。 |
+| `number` | integer[]/null | 否 | `[10, 50, 100]` | 每个并发档位请求数。 |
+| `rate` | number[]/null | 否 | `null` | 限速档位，传给 EvalScope。 |
+| `dataset` | string/null | 否 | `null` | EvalScope perf 数据集。为空时使用长度生成参数。 |
+| `dataset_args` | object/null | 否 | `{}` | 数据集参数，例如自定义 prompt 文件。 |
+| `min_prompt_length` / `max_prompt_length` | integer/null | 否 | `1024` | 随机 prompt 长度范围。 |
+| `min_tokens` / `max_tokens` | integer/null | 否 | `512` | 输出 token 范围。 |
+| `stream` | boolean/null | 否 | `true` | 是否使用流式请求；TTFT 统计通常要求开启。 |
+| `tokenizer_path` | string/null | 否 | `null` | EvalScope tokenizer 路径。 |
+| `prefix_length` | integer/null | 否 | `0` | 前缀长度，用于后续缓存/前缀压测。 |
+| `extra_args` | object/null | 否 | `{}` | 透传给 EvalScope perf 的扩展参数。 |
+
+`POST /api/stress/tasks` 当前与默认入口使用同一请求结构，便于后续扩展。
+
+### 11.2 StressTask
+
+| 字段 | 类型 | 说明 |
+|---|---:|---|
+| `task_id` | string | 本系统压测任务 ID。 |
+| `evalscope_stress_task_id` | string/null | 兼容字段；当前通常等于本系统任务 ID。 |
+| `model_id` | string | 本系统模型配置 ID。 |
+| `model_config_name` | string/null | 模型配置名称。 |
+| `upstream_model_name` | string/null | 传给上游模型服务的 `model` 名称。 |
+| `protocol` | string/null | `chat_completions` 或 `responses`。 |
+| `evalscope_base_url` | string | 兼容字段；当前固定为 `in-process`。 |
+| `status` | string | `pending`、`running`、`completed`、`failed`。 |
+| `request_config` | object | 已脱敏的压测请求配置，不包含 `api_key`。 |
+| `normalized_result` | object/null | 标准化后的并发档位结果、吞吐、延迟、TTFT/TPOT 和异常摘要。 |
+| `report_path` | string/null | 本地 Markdown 压测报告路径。 |
+| `error` | object/null | 脱敏后的错误。 |
+
+### 11.3 本系统压测接口
+
+#### GET `/api/stress/evalscope/health`
+
+检查当前 Python 环境是否可 import EvalScope。成功时返回 `status`、`mode` 和 `evalscope_version`。EvalScope 不可用时返回 `502 evalscope_stress_error`。
+
+#### POST `/api/stress/tasks/default`
+
+按默认压测参数提交任务。服务会读取模型配置并映射：
+
+| 本系统字段 | EvalScope perf 字段 |
+|---|---|
+| `ModelConfig.model` | `model` |
+| `ModelConfig.base_url` + `protocol` | `url`，自动拼接 `/chat/completions` 或 `/responses` |
+| `ModelConfig.protocol` | `api`，映射为 `openai` 或 `openai_responses` |
+| `ModelConfig.api_key` | `api_key`，只在运行时传给 EvalScope，不落本地任务配置 |
+
+请求示例：
+
+```json
+{
+  "model_id": "demo-chat",
+  "parallel": [1, 5],
+  "number": [10, 50],
+  "stream": true,
+  "min_prompt_length": 1024,
+  "max_prompt_length": 1024,
+  "max_tokens": 512
+}
+```
+
+成功响应：`200 OK`，返回 `StressTask`。模型不存在返回 `404 model_not_found`；模型禁用返回 `400 model_disabled`；参数错误返回 `400 invalid_stress_task_request`。
+
+#### POST `/api/stress/tasks`
+
+提交自定义压测任务。当前字段同 `StressDefaultRunRequest`，用于显式传入 `parallel`、`number`、`rate`、`prefix_length`、`dataset_args` 等参数。
+
+#### GET `/api/stress/tasks`
+
+读取本地压测任务列表，不触发新的 EvalScope 调用。可选 query 参数：`limit`，默认 `50`。
+
+#### GET `/api/stress/tasks/{task_id}`
+
+读取本地任务。任务不存在返回 `404 stress_task_not_found`。
+
+#### GET `/api/stress/tasks/{task_id}/result`
+
+获取压测结果。若任务已结束但报告尚未生成，服务会补写 Markdown 报告并返回更新后的 `StressTask`。
+
+#### GET `/api/stress/reports/{task_id}`
+
+下载本地 Markdown 压测报告。报告尚未生成或文件不存在时返回 `404 stress_report_not_found`。
+
+## 12. 统一总览报告接口（Overview）
+
+统一总览报告用于把已有的网关接入验收任务、EvalScope 能力评测任务和 EvalScope 压测任务组合成一份中文 Markdown 导航摘要。本接口不自动触发新的评测任务，也不重做 EvalScope 可视化；它只负责汇总状态、关键指标、风险提示和三类详情报告入口。
+
+### 12.1 OverviewReportRequest
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|---|---:|---:|---:|---|
+| `model_id` | string/null | 否 | 自动推断 | 模型配置 ID；为空时从已提供任务中按网关、能力、压测顺序推断。 |
+| `gateway_task_id` | string/null | 否 | `null` | `/api/tasks/run` 生成的网关接入验收任务 ID。 |
+| `intelligence_task_id` | string/null | 否 | `null` | `/api/intelligence/*` 生成的能力评测任务 ID。 |
+| `stress_task_id` | string/null | 否 | `null` | `/api/stress/*` 生成的压测任务 ID。 |
+| `title` | string/null | 否 | `模型评测总览报告` | Markdown 报告标题。 |
+
+至少需要提供一个任务 ID。第一版允许只生成部分总览；未提供的模块会在报告中显示为“未提供”。
+
+### 12.2 OverviewReport
+
+| 字段 | 类型 | 说明 |
+|---|---:|---|
+| `overview_id` | string | 总览报告 ID，例如 `overview_report_yyyymmddhhmmss_xxxxxxxx`。 |
+| `title` | string | 报告标题。 |
+| `model_id` | string/null | 模型配置 ID。 |
+| `created_at` | string | 创建时间。 |
+| `gateway_task_id` / `intelligence_task_id` / `stress_task_id` | string/null | 三类被引用任务 ID。 |
+| `components` | object[] | 三类模块摘要，包括状态、摘要、详情入口、关键观测和关注点。 |
+| `summary` | object | 已提供模块数、完成模块数、关注点数量等总览统计。 |
+| `report_path` | string/null | 本地 Markdown 总览报告路径。 |
+
+### 12.3 创建总览报告
+
+#### POST `/api/overview/reports`
+
+请求示例：
+
+```json
+{
+  "gateway_task_id": "task_20260806120000_aaaaaaaa",
+  "intelligence_task_id": "intel_task_20260806121000_bbbbbbbb",
+  "stress_task_id": "stress_task_20260806122000_cccccccc"
+}
+```
+
+成功响应：`200 OK`，返回 `OverviewReport`，并写入本地 `data/overview_reports/` 和 `reports/overview/YYYY-MM-DD/`。
+
+### 12.4 查询总览报告列表
+
+#### GET `/api/overview/reports`
+
+读取本地总览报告列表。可选 query 参数：`limit`，默认 `50`。
+
+### 12.5 查询总览报告元数据
+
+#### GET `/api/overview/reports/{overview_id}`
+
+返回已生成的 `OverviewReport` 元数据。不存在时返回 `404 overview_report_not_found`。
+
+### 12.6 下载总览 Markdown
+
+#### GET `/api/overview/reports/{overview_id}/markdown`
+
+下载统一总览 Markdown 报告。报告包含“一眼看懂”、模型与任务信息、网关接入验收摘要、EvalScope 能力评测摘要、EvalScope 压测摘要和详细报告入口。报告不存在或文件丢失时返回 `404 overview_report_not_found`。
+
+## 13. 一键评测套件接口（Suites）
+
+Suites 是“一键评测模型并出报告”的编排层。它复用已有三类能力：先执行网关接入验收 smoke，再提交 EvalScope 能力评测和 EvalScope 压测，最后自动生成统一总览报告。Suites 不新增评测指标，也不重造 EvalScope 可视化，只负责串联、等待终态、归档 suite 状态和生成 overview 入口。
+
+### 13.1 SuiteDefaultRunRequest
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|---|---:|---:|---:|---|
+| `model_id` | string | 是 | - | 要评测的模型配置 ID。 |
+| `title` | string/null | 否 | `null` | 总览报告标题；为空时使用默认标题。 |
+| `run_gateway` | boolean | 否 | `true` | 是否执行网关接入验收。 |
+| `run_intelligence` | boolean | 否 | `true` | 是否执行 EvalScope 能力评测。 |
+| `run_stress` | boolean | 否 | `true` | 是否执行 EvalScope 压测。 |
+| `gateway_plan_id` | string | 否 | `gateway_acceptance_v1` | 网关验收计划。 |
+| `gateway_metric_ids` | string[]/null | 否 | `null` | 显式指定网关验收指标；为空时按计划默认指标执行。 |
+| `stress_options` | object | 否 | `{}` | 压测参数子集，例如 `parallel`、`number`、`rate`、`prefix_length`、`dataset_args`。 |
+| `wait_for_completion` | boolean | 否 | `false` | `false` 时后台运行并立即返回 suite；`true` 时接口等待整套评测完成后返回。 |
+| `poll_interval_seconds` | number/null | 否 | runner 默认值 | 等待 EvalScope 任务终态时的轮询间隔。 |
+| `timeout_seconds` | number/null | 否 | `null` | 单个 EvalScope 等待阶段的超时时间。 |
+
+至少需要启用一个模块。默认请求会执行三类评测；如果只想半夜跑压测，可以把 `run_gateway`、`run_intelligence` 设为 `false`。
+
+### 13.2 SuiteRun
+
+| 字段 | 类型 | 说明 |
+|---|---:|---|
+| `suite_id` | string | 一键评测套件 ID，例如 `suite_yyyymmddhhmmss_xxxxxxxx`。 |
+| `model_id` | string | 模型配置 ID。 |
+| `status` | string | `queued`、`running`、`completed`、`partial`、`failed`。 |
+| `current_step` | string/null | 当前执行步骤：`gateway`、`intelligence`、`stress`、`overview`。 |
+| `gateway_task_id` / `intelligence_task_id` / `stress_task_id` | string/null | 三类子任务 ID。 |
+| `overview_id` | string/null | 自动生成的统一总览报告 ID。 |
+| `overview_report_path` | string/null | 总览 Markdown 本地路径。 |
+| `steps` | object[] | 每个步骤的状态、任务 ID、开始/完成时间和消息。 |
+| `errors` | object[] | 步骤异常摘要，写入前会脱敏。 |
+
+### 13.3 立即启动一键评测
+
+#### POST `/api/suites/default`
+
+后台运行示例：
+
+```json
+{
+  "model_id": "demo-chat",
+  "stress_options": {
+    "parallel": [1, 5],
+    "number": [10, 50]
+  }
+}
+```
+
+脚本同步等待示例：
+
+```json
+{
+  "model_id": "demo-chat",
+  "wait_for_completion": true,
+  "poll_interval_seconds": 10,
+  "timeout_seconds": 86400,
+  "stress_options": {
+    "parallel": [1, 5],
+    "number": [10, 50]
+  }
+}
+```
+
+成功响应：`200 OK`，返回 `SuiteRun`。后台模式初始状态通常为 `queued`，随后可通过 `GET /api/suites/{suite_id}` 查询进度。
+
+### 13.4 查询 suite 列表
+
+#### GET `/api/suites`
+
+读取本地 suite 列表。可选 query 参数：`limit`，默认 `50`。
+
+### 13.5 查询 suite 详情
+
+#### GET `/api/suites/{suite_id}`
+
+返回 suite 元数据、步骤状态、三类子任务 ID 和 overview ID。不存在时返回 `404 suite_not_found`。
+
+### 13.6 下载 suite 总览报告
+
+#### GET `/api/suites/{suite_id}/report`
+
+下载 suite 自动生成的 overview Markdown。suite 尚未完成、没有生成 overview 或文件丢失时返回 `404 suite_report_not_found`。
+
+### 13.7 创建定时评测计划
+
+#### POST `/api/suites/schedules`
+
+定时计划保存在本地 `data/suite_schedules/`。服务启动后内置轻量轮询器会检查 `next_run_at`，到点后自动触发 `SuiteDefaultRunRequest`。适合半夜低峰期执行模型评测。
+
+请求示例：
+
+```json
+{
+  "name": "nightly-demo-chat",
+  "model_id": "demo-chat",
+  "time_of_day": "02:00",
+  "timezone": "Asia/Shanghai",
+  "interval_days": 1,
+  "stress_parallel": [1, 5],
+  "stress_number": [10, 50]
+}
+```
+
+关键字段：
+
+| 字段 | 类型 | 默认值 | 说明 |
+|---|---:|---:|---|
+| `name` | string | - | 计划名称。 |
+| `model_id` | string | - | 要评测的模型配置 ID。 |
+| `enabled` | boolean | `true` | 是否启用。 |
+| `time_of_day` | string | `02:00` | 每次触发的本地时间，格式 `HH:MM`。 |
+| `timezone` | string | `Asia/Shanghai` | 计算 `next_run_at` 使用的时区。 |
+| `interval_days` | integer | `1` | 每隔多少天运行一次。 |
+| `next_run_at` | datetime/null | 自动计算 | 可显式指定下一次 UTC 触发时间，便于测试或临时调度。 |
+| `stress_parallel` / `stress_number` | integer[]/null | `null` | 常用压测参数快捷字段。 |
+| `stress_options` | object | `{}` | 更完整的压测参数。 |
+
+### 13.8 查询定时计划列表
+
+#### GET `/api/suites/schedules`
+
+读取本地定时计划列表。可选 query 参数：`limit`，默认 `50`。
+
+### 13.9 查询定时计划详情
+
+#### GET `/api/suites/schedules/{schedule_id}`
+
+返回定时计划、下一次运行时间、最近一次 suite ID、运行次数和最近错误。不存在时返回 `404 suite_schedule_not_found`。
+
+### 13.10 删除定时计划
+
+#### DELETE `/api/suites/schedules/{schedule_id}`
+
+删除本地定时计划。不存在时返回 `404 suite_schedule_not_found`。
+
+### 13.11 手动触发定时计划
+
+#### POST `/api/suites/schedules/{schedule_id}/trigger`
+
+立即按该定时计划保存的请求启动一次 suite。可选 query 参数：`wait_for_completion`，默认 `false`。返回新建的 `SuiteRun`。
+## 14. OpenAI 兼容协议说明
 
 模型配置中的 `protocol` 决定上游调用风格：
 
@@ -673,7 +995,7 @@ GET /api/tasks?limit=20
 | `chat_completions` | `{base_url}/chat/completions` | `model`、`messages`、`temperature`、`stream`、可选 `max_tokens`。 | 读取 `choices[0].message.content` 或 `reasoning_content`、`finish_reason`、`usage`。 |
 | `responses` | `{base_url}/responses` | `model`、`input`、`temperature`、`stream`、可选 `max_output_tokens`。 | 读取 `output_text`，或从 `output[].content[]` 拼接文本，读取 `usage`。 |
 
-## 12. PowerShell 调用示例
+## 15. PowerShell 调用示例
 
 ### 创建模型
 
@@ -701,7 +1023,7 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/models' `
 ### 执行评测并下载报告
 
 ```powershell
-$runBody = @{ model_id = 'demo-chat'; plan_id = 'gateway_baseline_v1' } | ConvertTo-Json
+$runBody = @{ model_id = 'demo-chat'; plan_id = 'gateway_acceptance_v1' } | ConvertTo-Json
 $result = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/tasks/run' `
   -Method Post `
   -ContentType 'application/json' `
@@ -710,4 +1032,48 @@ $result = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/tasks/run' `
 $result | ConvertTo-Json -Depth 20
 $taskId = $result.task_id
 Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/reports/$taskId" -OutFile "$taskId.md"
+```
+
+
+### 一键评测并下载总览报告
+
+```powershell
+$suiteBody = @{
+  model_id = 'demo-chat'
+  wait_for_completion = $true
+  poll_interval_seconds = 10
+  timeout_seconds = 86400
+  stress_options = @{
+    parallel = @(1, 5)
+    number = @(10, 50)
+  }
+} | ConvertTo-Json -Depth 10
+$suite = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/suites/default' -Method Post -ContentType 'application/json' -Body $suiteBody
+Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/suites/$($suite.suite_id)/report" -OutFile "suite-overview.md"
+```
+
+### 创建半夜定时评测计划
+
+```powershell
+$scheduleBody = @{
+  name = 'nightly-demo-chat'
+  model_id = 'demo-chat'
+  time_of_day = '02:00'
+  timezone = 'Asia/Shanghai'
+  interval_days = 1
+  stress_parallel = @(1, 5)
+  stress_number = @(10, 50)
+} | ConvertTo-Json -Depth 10
+Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/suites/schedules' -Method Post -ContentType 'application/json' -Body $scheduleBody | ConvertTo-Json -Depth 20
+```
+### 生成统一总览报告
+
+```powershell
+$overviewBody = @{
+  gateway_task_id = $taskId
+  intelligence_task_id = '<intel-task-id>'
+  stress_task_id = '<stress-task-id>'
+} | ConvertTo-Json
+$overview = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/overview/reports' -Method Post -ContentType 'application/json' -Body $overviewBody
+Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/overview/reports/$($overview.overview_id)/markdown" -OutFile "overview.md"
 ```

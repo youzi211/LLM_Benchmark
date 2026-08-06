@@ -113,6 +113,25 @@ def metric_key_facts(item: MetricResult) -> dict[str, Any]:
                 facts[key] = obs[key]
         return facts
 
+    if item.metric_id == "cache_behavior":
+        for key in (
+            "request_count",
+            "successful_count",
+            "stable_prefix_estimated_tokens",
+            "target_prefix_tokens",
+            "cache_signal_present",
+            "usage_field_paths_detected",
+            "max_cached_tokens",
+            "cache_hit_count",
+            "latency_baseline_ms",
+            "repeated_latency_avg_ms",
+            "latency_reduction_ms",
+            "latency_reduction_ratio",
+        ):
+            if key in obs:
+                facts[key] = obs[key]
+        return facts
+
     # Generic / stream_spec stable fields
     for key in (
         "http_status",
@@ -177,6 +196,30 @@ def metric_raw_excerpts(item: MetricResult) -> list[ReportRawExcerpt]:
             excerpts.append(ReportRawExcerpt(label="context_point_results", data=compact))
         return excerpts
 
+    if item.metric_id == "cache_behavior":
+        rounds = obs.get("rounds")
+        if isinstance(rounds, list):
+            compact = []
+            for round_item in rounds:
+                if isinstance(round_item, dict):
+                    compact.append({
+                        "round": round_item.get("round"),
+                        "http_status": round_item.get("http_status"),
+                        "ok": round_item.get("ok"),
+                        "latency_ms": round_item.get("latency_ms"),
+                        "usage_prompt_tokens": round_item.get("usage_prompt_tokens"),
+                        "cached_tokens": round_item.get("cached_tokens"),
+                        "cache_creation_tokens": round_item.get("cache_creation_tokens"),
+                        "cache_read_tokens": round_item.get("cache_read_tokens"),
+                        "cache_hit": round_item.get("cache_hit"),
+                        "usage_field_paths": round_item.get("usage_field_paths"),
+                        "error": _compact_context_error(round_item.get("error")),
+                    })
+                else:
+                    compact.append(round_item)
+            excerpts.append(ReportRawExcerpt(label="cache_rounds", data=compact))
+        return excerpts
+
     # Bounded generic excerpt: selected stable observation fields only
     selected: dict[str, Any] = {}
     for key in (
@@ -238,6 +281,23 @@ def metric_core_observation_text(item: MetricResult) -> str:
         if not parts:
             parts.append(item.summary)
         return "；".join(parts) + "。"
+
+    if item.metric_id == "cache_behavior":
+        parts = [f"缓存字段：{_bool_zh(obs.get('cache_signal_present'))}"]
+        if obs.get("max_cached_tokens") is not None:
+            parts.append(f"最大 cached tokens：{obs['max_cached_tokens']}")
+        if obs.get("cache_hit_count") is not None:
+            parts.append(f"缓存命中轮次：{obs['cache_hit_count']}/{obs.get('request_count', '未知')}")
+        baseline = obs.get("latency_baseline_ms")
+        repeated_avg = obs.get("repeated_latency_avg_ms")
+        if baseline is not None:
+            parts.append(f"首轮延迟 {baseline} ms")
+        if repeated_avg is not None:
+            parts.append(f"重复轮平均延迟 {repeated_avg} ms")
+        reduction_ratio = obs.get("latency_reduction_ratio")
+        if isinstance(reduction_ratio, (int, float)):
+            parts.append(f"延迟下降比例 {round(reduction_ratio * 100, 2)}%")
+        return "，".join(parts) + "。"
 
     # Generic observation
     parts = []

@@ -1,40 +1,35 @@
-def test_gateway_plan_contains_expected_metrics():
+def test_gateway_acceptance_plan_contains_expected_smoke_metrics():
     from app.core.registry import resolve_metric_ids
 
-    assert resolve_metric_ids("gateway_baseline_v1", None) == [
+    expected = [
         "connectivity",
         "latency_breakdown",
         "context_length",
         "output_length",
-        "concurrency",
-        "rate_limit",
         "error_handling",
         "token_usage_accuracy",
+        "cache_behavior",
         "stream_spec",
     ]
+    assert resolve_metric_ids("gateway_acceptance_v1", None) == expected
+    # gateway_baseline_v1 is kept as a compatibility alias with the reduced semantics.
+    assert resolve_metric_ids("gateway_baseline_v1", None) == expected
 
 
-def test_invalid_metric_is_rejected():
-    from app.core.registry import resolve_metric_ids
+def test_legacy_perf_smoke_metrics_remain_explicitly_runnable_but_not_default():
+    from app.core.registry import list_metrics, resolve_metric_ids
 
-    try:
-        resolve_metric_ids("gateway_baseline_v1", ["not_exist"])
-    except ValueError as exc:
-        assert str(exc) == "invalid_metric:not_exist"
-    else:
-        raise AssertionError("expected ValueError")
-from app.core.registry import get_metric, list_metrics
+    assert resolve_metric_ids("gateway_acceptance_v1", ["concurrency", "rate_limit"]) == ["concurrency", "rate_limit"]
+    by_id = {metric.id: metric for metric in list_metrics()}
+    assert by_id["concurrency"].default_in_gateway_baseline_v1 is False
+    assert by_id["rate_limit"].default_in_gateway_baseline_v1 is False
+    assert by_id["concurrency"].priority == "P2"
+    assert by_id["rate_limit"].priority == "P2"
 
 
-def test_metric_catalog_is_chinese_friendly_while_ids_remain_stable():
-    metrics = {metric.id: metric for metric in list_metrics()}
+def test_run_task_defaults_to_gateway_acceptance_plan():
+    from app.core.models import RunTaskRequest
 
-    assert metrics["connectivity"].name == "连通性"
-    assert metrics["latency_breakdown"].name == "延迟拆解"
-    assert metrics["stream_spec"].name == "流式规范性"
-    assert "检查" in metrics["connectivity"].description
-    assert "TTFT" in metrics["latency_breakdown"].description
-    assert "SSE" in metrics["stream_spec"].description
-    assert "gateway_baseline_v1 metric" not in metrics["connectivity"].description
+    request = RunTaskRequest(model_id="demo-chat")
 
-    assert get_metric("token_usage_accuracy").name == "Token 用量观测（Usage）"
+    assert request.plan_id == "gateway_acceptance_v1"

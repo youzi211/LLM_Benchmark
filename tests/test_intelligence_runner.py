@@ -1,93 +1,101 @@
-import httpx
 import pytest
 
 from app.core.models import ModelConfigCreate
-from app.intelligence.evalscope_client import EvalScopeClient
-from app.intelligence.runner import IntelligenceRunner, new_intelligence_task_id
-from app.intelligence.schemas import EvalScopeConfig
+from app.intelligence.runner import IntelligenceRunner
 from app.storage.intelligence_task_store import IntelligenceTaskStore
 from app.storage.model_store import ModelStore
 
 
-def _model_store(path):
+class FakeIntelligenceExecutor:
+    def __init__(self):
+        self.calls = []
+
+    def run(self, **kwargs):
+        self.calls.append(kwargs)
+        return {
+            "task_id": kwargs["task_id"],
+            "model": kwargs["model"],
+            "datasets": kwargs["datasets"],
+            "status": "completed",
+            "results": [
+                {"dataset": dataset, "report": {"dataset_name": dataset.upper(), "score": 80.0, "metrics": [{"name": "acc", "score": 0.8}]}}
+                for dataset in kwargs["datasets"]
+            ],
+            "report_table": "table",
+            "completed_at": "2026-08-06T12:00:00+00:00",
+        }
+
+
+def _model_store(path, protocol="chat_completions"):
     store = ModelStore(path)
-    store.create(ModelConfigCreate(id="m1", name="模型一", protocol="chat_completions", base_url="http://model/v1", api_key="test-key", model="upstream-model"))
+    store.create(ModelConfigCreate(
+        id="m1",
+        name="模型一",
+        protocol=protocol,
+        base_url="http://model.local/v1",
+        api_key="dummy-api-key-should-not-leak",
+        model="upstream-model",
+    ))
     return store
 
 
 @pytest.mark.asyncio
-async def test_intelligence_runner_submit_refresh_and_fetch_result(tmp_path):
-    async def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/eval/default"):
-            return httpx.Response(200, json={"task_id": "eval-1", "status": "pending", "message": "ok"})
-        if request.url.path.endswith("/tasks/eval-1/result"):
-            return httpx.Response(200, json={
-                "task_id": "eval-1",
-                "model": "upstream-model",
-                "datasets": ["gsm8k"],
-                "status": "completed",
-                "results": [{"dataset": "gsm8k", "report": {"score": 0.9, "metrics": [{"name": "mean_acc"}]}}],
-                "report_table": "table",
-                "completed_at": "2026-08-06T01:45:20+00:00",
-                "error": None,
-            })
-        if request.url.path.endswith("/tasks/eval-1"):
-            return httpx.Response(200, json={"task_id": "eval-1", "status": "completed", "progress": "评测完成 (1/1)", "datasets": ["gsm8k"]})
-        if request.url.path.endswith("/datasets/local"):
-            return httpx.Response(200, json={"datasets": {"gsm8k": {"pretty_name": "GSM8K", "categories": ["Math", "Reasoning"], "needs_judge": False}}})
-        if request.url.path.endswith("/judge-config"):
-            return httpx.Response(200, json={"configured": True, "model_id": "judge"})
-        return httpx.Response(404, json={"detail": "missing"})
-
+async def test_intelligence_runner_runs_evalscope_in_process_and_generates_report(tmp_path):
+    executor = FakeIntelligenceExecutor()
     runner = IntelligenceRunner(
         model_store=_model_store(tmp_path / "models.json"),
-        task_store=IntelligenceTaskStore(tmp_path / "tasks"),
-        client=EvalScopeClient(EvalScopeConfig(base_url="http://evalscope/api/v1"), transport=httpx.MockTransport(handler)),
+        task_store=IntelligenceTaskStore(tmp_path / "intelligence_tasks"),
+        executor=executor,
         reports_dir=tmp_path / "reports",
+        run_in_background=False,
     )
 
-    submitted = await runner.submit_default("m1")
-    assert submitted.evalscope_task_id == "eval-1"
-    assert submitted.upstream_model_name == "upstream-model"
+    task = await runner.submit_custom(model_id="m1", datasets=["gsm8k"], limit=3, eval_batch_size=2)
 
-    fetched = await runner.fetch_result(submitted.task_id)
-    assert fetched is not None
-    assert fetched.status == "completed"
-    assert fetched.normalized_result is not None
-    assert fetched.normalized_result.dataset_results[0].pretty_name == "GSM8K"
-    assert fetched.normalized_result.category_summaries[0].average_score == 0.9
-    assert fetched.report_path is not None
+    assert task.evalscope_base_url == "in-process"
+    assert task.status == "completed"
+    assert executor.calls[0]["api_url"] == "http://model.local/v1/chat/completions"
+    assert executor.calls[0]["api_key"] == "dummy-api-key-should-not-leak"
+    assert executor.calls[0]["limit"] == 3
+    assert executor.calls[0]["eval_batch_size"] == 2
+    assert task.normalized_result.dataset_results[0].dataset == "gsm8k"
+    assert task.normalized_result.dataset_results[0].score == 80.0
+    assert task.normalized_result.category_summaries
+    assert task.report_path is not None
+    report_text = open(task.report_path, encoding="utf-8").read()
+    assert "dummy-api-key-should-not-leak" not in report_text
+    assert "GSM8K" in report_text
 
 
 @pytest.mark.asyncio
-async def test_intelligence_runner_does_not_fetch_result_until_terminal(tmp_path):
-    called_result = False
+async def test_intelligence_runner_maps_responses_endpoint(tmp_path):
+    executor = FakeIntelligenceExecutor()
+    runner = IntelligenceRunner(
+        model_store=_model_store(tmp_path / "models.json", protocol="responses"),
+        task_store=IntelligenceTaskStore(tmp_path / "intelligence_tasks"),
+        executor=executor,
+        reports_dir=tmp_path / "reports",
+        run_in_background=False,
+    )
 
-    async def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal called_result
-        if request.url.path.endswith("/eval/default"):
-            return httpx.Response(200, json={"task_id": "eval-1", "status": "pending"})
-        if request.url.path.endswith("/tasks/eval-1/result"):
-            called_result = True
-            return httpx.Response(200, json={})
-        if request.url.path.endswith("/tasks/eval-1"):
-            return httpx.Response(200, json={"task_id": "eval-1", "status": "running", "progress": "正在评测 (1/1): gsm8k"})
-        return httpx.Response(200, json={})
+    await runner.submit_custom(model_id="m1", datasets=["gsm8k"])
 
+    assert executor.calls[0]["api_url"] == "http://model.local/v1/responses"
+
+
+@pytest.mark.asyncio
+async def test_intelligence_runner_default_uses_curated_dataset_suite(tmp_path):
+    executor = FakeIntelligenceExecutor()
     runner = IntelligenceRunner(
         model_store=_model_store(tmp_path / "models.json"),
-        task_store=IntelligenceTaskStore(tmp_path / "tasks"),
-        client=EvalScopeClient(EvalScopeConfig(base_url="http://evalscope/api/v1"), transport=httpx.MockTransport(handler)),
+        task_store=IntelligenceTaskStore(tmp_path / "intelligence_tasks"),
+        executor=executor,
         reports_dir=tmp_path / "reports",
+        run_in_background=False,
     )
-    submitted = await runner.submit_default("m1")
 
-    task = await runner.fetch_result(submitted.task_id)
+    task = await runner.submit_default("m1")
 
-    assert task is not None
-    assert task.status == "running"
-    assert called_result is False
-
-
-def test_new_intelligence_task_id_format():
-    assert new_intelligence_task_id().startswith("intel_task_")
+    assert "humaneval" in task.datasets
+    assert "gsm8k" in task.datasets
+    assert executor.calls[0]["datasets"] == task.datasets

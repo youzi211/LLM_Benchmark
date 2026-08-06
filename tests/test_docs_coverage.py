@@ -15,26 +15,32 @@ def _read_doc(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
+def _iter_public_routes(routes, prefix: str = ""):
+    for route in routes:
+        if isinstance(route, APIRoute):
+            if route.include_in_schema:
+                for method in sorted(route.methods - {"HEAD"}):
+                    yield method, f"{prefix}{route.path}"
+            continue
+        original_router = getattr(route, "original_router", None)
+        include_context = getattr(route, "include_context", None)
+        if original_router is not None and include_context is not None:
+            yield from _iter_public_routes(original_router.routes, f"{prefix}{include_context.prefix}")
+
+
 def test_api_document_covers_all_public_routes():
     api_doc = _read_doc("docs/api.md")
-    documented_routes = []
-    for route in app.routes:
-        if not isinstance(route, APIRoute):
-            continue
-        if not route.include_in_schema:
-            continue
-        for method in sorted(route.methods - {"HEAD"}):
-            documented_routes.append((method, route.path))
+    documented_routes = list(_iter_public_routes(app.routes))
 
     missing = [f"{method} `{path}`" for method, path in documented_routes if f"{method} `{path}`" not in api_doc]
 
     assert missing == []
 
 
-def test_metric_method_document_covers_gateway_baseline_metrics():
+def test_metric_method_document_covers_gateway_acceptance_metrics():
     metric_doc = _read_doc("docs/metric-test-methods.md")
     metrics = {metric.id: metric for metric in list_metrics()}
-    plan = get_plan("gateway_baseline_v1")
+    plan = get_plan("gateway_acceptance_v1")
 
     assert plan is not None
     for metric_id in plan.metric_ids:

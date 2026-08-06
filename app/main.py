@@ -5,9 +5,13 @@ from fastapi.responses import JSONResponse
 
 from app.api.routes_intelligence import router as intelligence_router
 from app.api.routes_metrics import router as metrics_router
+from app.api.routes_overview import router as overview_router
 from app.api.routes_models import router as models_router
 from app.api.routes_reports import router as reports_router
+from app.api.routes_stress import router as stress_router
+from app.api.routes_suites import router as suites_router
 from app.api.routes_tasks import router as tasks_router
+from app.suites.scheduler import start_scheduler, stop_scheduler
 
 app = FastAPI(title="LLM Benchmark", version="0.1.0")
 
@@ -26,6 +30,19 @@ def health():
 
 app.include_router(models_router, prefix="/api")
 app.include_router(metrics_router, prefix="/api")
+app.include_router(overview_router, prefix="/api")
 app.include_router(intelligence_router, prefix="/api")
 app.include_router(tasks_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
+app.include_router(stress_router, prefix="/api")
+app.include_router(suites_router, prefix="/api")
+
+
+@app.on_event("startup")
+async def startup_scheduler():
+    start_scheduler()
+
+
+@app.on_event("shutdown")
+async def shutdown_scheduler():
+    stop_scheduler()
