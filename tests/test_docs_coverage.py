@@ -50,3 +50,17 @@ def test_readme_links_project_documents():
     assert "[API 接口文档](docs/api.md)" in readme
     assert "[指标测试方法文档](docs/metric-test-methods.md)" in readme
     assert "必须同步更新" in readme
+
+
+def test_intelligence_docs_are_linked_and_described():
+    api_doc = _read_doc("docs/api.md")
+    architecture_doc = _read_doc("docs/architecture.md")
+    metric_doc = _read_doc("docs/metric-test-methods.md")
+    readme = _read_doc("README.md")
+
+    assert "/api/intelligence/tasks/default" in api_doc
+    assert "/api/intelligence/tasks/{task_id}/result" in api_doc
+    assert "智力评测" in architecture_doc
+    assert "EvalScope" in architecture_doc
+    assert "EvalScope 智力评测" in metric_doc
+    assert "智力评测" in readme

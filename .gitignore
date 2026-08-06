@@ -21,3 +21,7 @@ __pycache__/
 
 # Local implementation worktrees
 /.worktrees/
+
+/data/evalscope.json
+/data/intelligence_tasks/
+/reports/intelligence/

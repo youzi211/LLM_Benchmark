@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from app.api.routes_intelligence import router as intelligence_router
 from app.api.routes_metrics import router as metrics_router
 from app.api.routes_models import router as models_router
 from app.api.routes_reports import router as reports_router
@@ -25,5 +26,6 @@ def health():
 
 app.include_router(models_router, prefix="/api")
 app.include_router(metrics_router, prefix="/api")
+app.include_router(intelligence_router, prefix="/api")
 app.include_router(tasks_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")

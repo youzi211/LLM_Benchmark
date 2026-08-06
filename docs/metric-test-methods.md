@@ -689,7 +689,28 @@ Prompt 模板：
 - 分析失败只体现在 `analysis.analysis_status = error`。
 - Markdown 报告会展示失败原因和脱敏摘要。
 
-## 15. 维护清单
+## 15. EvalScope 智力评测说明
+
+EvalScope 智力评测不是 `gateway_baseline_v1` 的基础工程指标，因此不会出现在 `/api/metrics` 或 `/api/tasks/run` 中。它通过独立的 `/api/intelligence/*` 接口提交到外部 EvalScope 服务，用于采集模型在代码、数学、知识、复杂推理等公开数据集上的表现。
+
+测试方法摘要：
+
+| 步骤 | 方法 | 输出 |
+|---|---|---|
+| 1 | 调用 `GET /api/intelligence/datasets/local` 查看本地可用数据集。 | 数据集 `pretty_name`、`needs_judge`、`categories`。 |
+| 2 | 调用 `POST /api/intelligence/tasks/default` 或 `POST /api/intelligence/tasks` 提交评测。 | 本系统 `task_id` 与 EvalScope `evalscope_task_id`。 |
+| 3 | 调用 `GET /api/intelligence/tasks/{task_id}` 刷新状态。 | `pending`、`running`、`completed`、`failed` 和 `progress`。 |
+| 4 | 调用 `GET /api/intelligence/tasks/{task_id}/result` 获取终态结果。 | 标准化数据集分数、能力维度汇总、报告路径。 |
+| 5 | 调用 `GET /api/intelligence/reports/{task_id}` 下载报告。 | 人可读 Markdown 报告。 |
+
+关注点：
+
+- 默认评测的数据集组合由 EvalScope 服务决定，本系统不手工展开默认数据集列表。
+- 需要 Judge 的数据集依赖 EvalScope 侧 Judge 配置；第一版只检查并提示，不自动配置。
+- `score` 只做展示和后续人工分析，不设置上线阈值，不输出自动准入结论。
+- EvalScope 原始 `report_table` 会原样保留在报告中，便于和 EvalScope 服务侧排查。
+
+## 16. 维护清单
 
 当修改指标实现时，请同步检查：
 

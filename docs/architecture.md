@@ -86,7 +86,7 @@ flowchart TB
 - 创建 FastAPI 应用。
 - 注册业务路由。
 - 统一转换 HTTPException 为标准错误结构。
-- 暴露模型配置、指标计划、任务执行、任务查询、报告下载接口。
+- 暴露模型配置、指标计划、任务执行、任务查询、报告下载接口，以及独立的 EvalScope 智力评测接口。
 
 关键文件：
 
@@ -98,6 +98,7 @@ flowchart TB
 | `app/api/routes_metrics.py` | 查询指标元数据与评测计划。 |
 | `app/api/routes_tasks.py` | 同步执行评测任务、查询任务历史。 |
 | `app/api/routes_reports.py` | 根据 `task_id` 下载 Markdown 报告。 |
+| `app/api/routes_intelligence.py` | 暴露 `/api/intelligence/*` 智力评测接口，代理 EvalScope 只读查询、提交评测、刷新结果和下载报告。 |
 
 ### 4.2 核心领域层：`app/core/`
 
@@ -148,7 +149,55 @@ flowchart TB
 
 详细测试方法见 `docs/metric-test-methods.md`。
 
-### 4.5 报告层：`app/reports/`
+### 4.5 智力评测层：`app/intelligence/`
+
+职责：对接外部 EvalScope 服务，提供独立于基础工程指标的“智力评测”能力。它不写入 `gateway_baseline_v1`，也不影响 `/api/tasks/run` 的同步基础评测链路。
+
+| 文件 | 职责 |
+|---|---|
+| `app/intelligence/schemas.py` | EvalScope 配置、智力评测请求、任务、标准化结果数据结构。 |
+| `app/intelligence/config_store.py` | 读写 `data/evalscope.json`，默认 EvalScope 地址为 `http://localhost:8010/api/v1`。 |
+| `app/intelligence/evalscope_client.py` | 调用 EvalScope `health`、`judge-config`、`datasets`、`eval`、`tasks`、`result` 接口。 |
+| `app/intelligence/runner.py` | 读取本系统模型配置，提交 EvalScope 评测，刷新状态，终态后拉取结果并标准化。 |
+| `app/intelligence/report.py` | 生成 `reports/intelligence/YYYY-MM-DD/*.md` 智力评测报告。 |
+| `app/storage/intelligence_task_store.py` | 读写 `data/intelligence_tasks/intel_task_*.json`。 |
+
+智力评测状态流：
+
+```mermaid
+sequenceDiagram
+    participant C as 调用方
+    participant API as /api/intelligence/*
+    participant R as IntelligenceRunner
+    participant MS as ModelStore
+    participant ES as EvalScope 服务
+    participant ITS as IntelligenceTaskStore
+    participant IR as Intelligence Report
+
+    C->>API: POST /tasks/default 或 /tasks
+    API->>R: submit_default / submit_custom
+    R->>MS: get(model_id)
+    R->>ES: POST /eval/default 或 /eval
+    ES->>R: evalscope_task_id + pending
+    R->>ITS: 保存 intel_task_* 映射
+    R->>API: IntelligenceTask
+    C->>API: GET /tasks/{task_id}/result
+    API->>R: fetch_result(task_id)
+    R->>ES: GET /tasks/{evalscope_task_id}
+    alt pending/running
+        R->>API: 返回当前状态，不拉取 result
+    else completed/failed
+        R->>ES: GET /tasks/{evalscope_task_id}/result
+        R->>ES: GET /datasets/local + /judge-config
+        R->>R: 标准化数据集分数和能力维度汇总
+        R->>IR: 写 Markdown 报告
+        R->>ITS: 保存结果和 report_path
+        R->>API: 返回完整 IntelligenceTask
+    end
+```
+
+安全边界：第一版只读取 EvalScope Judge 配置，不代理写 Judge；所有错误、报告、JSON 附录写入前都需要脱敏。
+### 4.6 报告层：`app/reports/`
 
 职责：把任务结果转换为面向人阅读的 Markdown 报告，并可选调用一个报告分析模型生成中文摘要。
 
@@ -166,7 +215,7 @@ flowchart TB
 - 分析输出必须是结构化 JSON，字段包括一句话总结、总体分析、关键发现、风险、建议下一步和分指标备注。
 - 写入报告前会调用脱敏逻辑，避免 API Key 等敏感内容进入报告。
 
-### 4.6 存储层：`app/storage/`
+### 4.7 存储层：`app/storage/`
 
 职责：用本地 JSON 文件保存模型配置和任务结果。
 
@@ -175,6 +224,7 @@ flowchart TB
 | `app/storage/file_utils.py` | JSON 读写与原子写入。 |
 | `app/storage/model_store.py` | 读写 `data/models.json`，包含模型列表和顶层 `analysis_model_id`。 |
 | `app/storage/task_store.py` | 读写 `data/tasks/task_*.json`。 |
+| `app/storage/intelligence_task_store.py` | 读写智力评测任务 `data/intelligence_tasks/intel_task_*.json`。 |
 
 存储路径：
 
@@ -183,8 +233,11 @@ flowchart TB
 | 模型配置 | `data/models.json` | `LLM_BENCHMARK_DATA_DIR` | 否，可能包含 API Key |
 | 任务历史 | `data/tasks/*.json` | `LLM_BENCHMARK_DATA_DIR` | 否，运行产物 |
 | Markdown 报告 | `reports/YYYY-MM-DD/*.md` | `LLM_BENCHMARK_REPORTS_DIR` | 否，运行产物 |
+| EvalScope 配置 | `data/evalscope.json` | `LLM_BENCHMARK_DATA_DIR` | 否，本地运行配置 |
+| 智力评测任务 | `data/intelligence_tasks/*.json` | `LLM_BENCHMARK_DATA_DIR` | 否，运行产物 |
+| 智力评测报告 | `reports/intelligence/YYYY-MM-DD/*.md` | `LLM_BENCHMARK_REPORTS_DIR` | 否，运行产物 |
 
-### 4.7 工具层：`app/utils/`
+### 4.8 工具层：`app/utils/`
 
 | 文件 | 职责 |
 |---|---|
@@ -337,7 +390,18 @@ GET    /api/tasks
 GET    /api/tasks/{task_id}
 
 GET    /api/reports/{task_id}
-```
+
+GET    /api/intelligence/evalscope/health
+GET    /api/intelligence/evalscope/judge-config
+GET    /api/intelligence/evalscope/tasks
+GET    /api/intelligence/datasets
+GET    /api/intelligence/datasets/local
+POST   /api/intelligence/tasks/default
+POST   /api/intelligence/tasks
+GET    /api/intelligence/tasks
+GET    /api/intelligence/tasks/{task_id}
+GET    /api/intelligence/tasks/{task_id}/result
+GET    /api/intelligence/reports/{task_id}```
 
 ## 8. 开发扩展指南
 
@@ -366,7 +430,15 @@ GET    /api/reports/{task_id}
 4. 修改 `app/reports/markdown.py` 的排版。
 5. 更新相关测试和本文档。
 
-### 8.4 增加异步任务队列（未来方向）
+### 8.4 扩展智力评测
+
+1. EvalScope 服务接口变化时，先更新 `evalScope/API_DOC.md` 的参考副本，再更新 `app/intelligence/evalscope_client.py`。
+2. 如果新增本系统智力评测接口，必须同步更新 `docs/api.md`、本文档和 API 覆盖测试。
+3. 如果报告字段变化，更新 `app/intelligence/report.py` 和 `tests/test_intelligence_report.py`。
+4. 不要把 EvalScope Judge 写配置能力默认开放；如确需开放，应先补安全设计。
+5. 不要把智力评测强行加入基础工程指标，除非明确调整产品边界和报告结构。
+
+### 8.5 增加异步任务队列（未来方向）
 
 当前是同步任务。若未来引入异步队列，需要重点调整：
 
@@ -405,6 +477,7 @@ git status --short
 | 协议请求体怎么拼 | `app/adapters/chat_completions.py`、`app/adapters/responses.py` |
 | 任务主流程 | `app/core/runner.py` |
 | 报告分析为什么失败 | `app/reports/analyzer.py`、任务 JSON 中的 `analysis` 字段 |
+| 智力评测为什么失败 | `app/intelligence/runner.py`、`app/intelligence/evalscope_client.py`、`data/intelligence_tasks/` |
 | Markdown 报告排版 | `app/reports/markdown.py` |
 | 本地数据在哪 | `data/models.json`、`data/tasks/`、`reports/` |
 

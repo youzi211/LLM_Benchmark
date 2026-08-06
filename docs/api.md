@@ -522,7 +522,149 @@ GET /api/tasks?limit=20
 - 分析模型调用异常、返回非成功响应、返回非 JSON、字段校验失败：评测正常完成，报告显示分析错误。
 - 报告分析只生成辅助摘要，不改变指标和任务原始事实。
 
-## 10. OpenAI 兼容协议说明
+## 10. 智力评测接口（EvalScope）
+
+智力评测用于接入另一个 EvalScope 评测服务，执行 GSM8K、HumanEval、MMLU Pro 等数据集评测。它是独立能力，不合并到基础工程指标 `/api/tasks/run` 中。
+
+### 10.1 外部 EvalScope 只读代理
+
+#### GET `/api/intelligence/evalscope/health`
+
+检查 EvalScope 服务状态、数据集数量和 Judge 配置状态。成功时直接返回 EvalScope 的 JSON，例如 `status`、`datasets_available`、`judge_configured`、`judge_model`。
+
+#### GET `/api/intelligence/evalscope/judge-config`
+
+查看 EvalScope Judge LLM 配置。第一版只读取，不代理 `POST /judge-config`，不会替用户写入 Judge Key。
+
+#### GET `/api/intelligence/evalscope/tasks`
+
+只读查看 EvalScope 侧任务列表，用于排查本系统任务与 EvalScope 原始任务的对应关系。
+
+#### GET `/api/intelligence/datasets`
+
+列出 EvalScope 支持的数据集。注意：该接口表示“支持”，不代表本地已下载。
+
+#### GET `/api/intelligence/datasets/local`
+
+列出 EvalScope 本地已下载、可直接评测的数据集。自定义评测前建议先调用该接口确认数据集可用。
+
+上述接口如果 EvalScope 返回非 2xx，本服务统一返回：
+
+| 状态码 | `error.code` | 场景 |
+|---|---|---|
+| `502` | `evalscope_error` | EvalScope 服务不可用、返回错误或返回非 JSON。 |
+
+### 10.2 IntelligenceDefaultRunRequest
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---:|---:|---|
+| `model_id` | string | 是 | 本系统 `data/models.json` 中的模型配置 ID。 |
+
+### 10.3 IntelligenceRunRequest
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---:|---:|---|
+| `model_id` | string | 是 | 本系统模型配置 ID。 |
+| `datasets` | string[] | 是 | EvalScope 数据集 ID，例如 `gsm8k`、`humaneval`。 |
+| `limit` | integer/null | 否 | 每个数据集采样数量；为空时由 EvalScope 执行默认/全量逻辑。 |
+| `eval_batch_size` | integer/null | 否 | EvalScope 并发评测批量大小。 |
+| `generation_config` | object/null | 否 | 传给 EvalScope 的生成参数，例如 `temperature`、`max_tokens`。 |
+
+### 10.4 IntelligenceTask
+
+| 字段 | 类型 | 说明 |
+|---|---:|---|
+| `task_id` | string | 本系统智力评测任务 ID，例如 `intel_task_yyyymmddhhmmss_xxxxxxxx`。 |
+| `evalscope_task_id` | string/null | EvalScope 返回的原始任务 ID，例如 `eval-1785979420259-1`。 |
+| `model_id` | string | 本系统模型配置 ID。 |
+| `model_config_name` | string/null | 模型配置名称。 |
+| `upstream_model_name` | string/null | 传给 EvalScope 的被测模型名，来自 `ModelConfig.model`。 |
+| `evalscope_base_url` | string | EvalScope API 根地址。默认 `http://localhost:8010/api/v1`，可通过 `data/evalscope.json` 持久化配置。 |
+| `datasets` | string[] | 本次评测数据集。默认评测提交后可能为空，刷新状态或获取结果后由 EvalScope 回填。 |
+| `status` | string | `pending`、`running`、`completed`、`failed`。 |
+| `progress` | string/null | EvalScope 进度文本，例如 `正在评测 (2/3): humaneval`。 |
+| `report_path` | string/null | 本地 Markdown 报告路径。 |
+| `normalized_result` | object/null | 标准化后的数据集分数、分类汇总、原始 `report_table` 等。 |
+| `error` | object/null | 脱敏后的任务错误。 |
+
+### 10.5 提交默认智力评测
+
+#### POST `/api/intelligence/tasks/default`
+
+提交 EvalScope 默认评测。请求只需要本系统 `model_id`，服务会读取模型配置并映射：
+
+| 本系统字段 | EvalScope 字段 |
+|---|---|
+| `ModelConfig.model` | `model` |
+| `ModelConfig.base_url` | `api_url` |
+| `ModelConfig.api_key` | `api_key` |
+
+请求示例：
+
+```json
+{
+  "model_id": "demo-chat"
+}
+```
+
+成功响应：`200 OK`，返回 `IntelligenceTask`。若 EvalScope 提交失败，返回 `502 evalscope_error`。
+
+### 10.6 提交自定义智力评测
+
+#### POST `/api/intelligence/tasks`
+
+提交指定数据集的 EvalScope 评测。
+
+请求示例：
+
+```json
+{
+  "model_id": "demo-chat",
+  "datasets": ["gsm8k", "humaneval"],
+  "limit": 100,
+  "eval_batch_size": 10,
+  "generation_config": {
+    "temperature": 0.0,
+    "max_tokens": 8192
+  }
+}
+```
+
+成功响应：`200 OK`，返回 `IntelligenceTask`。
+
+### 10.7 查询本地智力评测任务
+
+#### GET `/api/intelligence/tasks`
+
+列出本系统保存的智力评测任务，按创建时间和任务 ID 倒序排列。查询参数：
+
+| 参数 | 类型 | 默认值 | 说明 |
+|---|---:|---:|---|
+| `limit` | integer | `50` | 最大返回数量。 |
+
+#### GET `/api/intelligence/tasks/{task_id}`
+
+读取本地任务，并尝试刷新 EvalScope 状态。任务不存在返回 `404 intelligence_task_not_found`。
+
+#### GET `/api/intelligence/tasks/{task_id}/result`
+
+获取智力评测结果。服务会先刷新 EvalScope 状态：
+
+1. 若 EvalScope 仍为 `pending` 或 `running`，返回当前 `IntelligenceTask`，不会调用 EvalScope result 接口。
+2. 若 EvalScope 为 `completed` 或 `failed`，调用 EvalScope result 接口，标准化结果，生成 Markdown 报告，并返回更新后的 `IntelligenceTask`。
+
+### 10.8 下载智力评测报告
+
+#### GET `/api/intelligence/reports/{task_id}`
+
+下载智力评测 Markdown 报告。报告包含“一眼看懂”、任务概览、Judge 状态提示、数据集分数表、能力维度汇总、EvalScope 原始 `report_table` 和脱敏 JSON 附录。
+
+错误：
+
+| 状态码 | `error.code` | 场景 |
+|---|---|---|
+| `404` | `intelligence_report_not_found` | 任务不存在、任务还未生成报告或报告文件不存在。 |
+## 11. OpenAI 兼容协议说明
 
 模型配置中的 `protocol` 决定上游调用风格：
 
@@ -531,7 +673,7 @@ GET /api/tasks?limit=20
 | `chat_completions` | `{base_url}/chat/completions` | `model`、`messages`、`temperature`、`stream`、可选 `max_tokens`。 | 读取 `choices[0].message.content` 或 `reasoning_content`、`finish_reason`、`usage`。 |
 | `responses` | `{base_url}/responses` | `model`、`input`、`temperature`、`stream`、可选 `max_output_tokens`。 | 读取 `output_text`，或从 `output[].content[]` 拼接文本，读取 `usage`。 |
 
-## 11. PowerShell 调用示例
+## 12. PowerShell 调用示例
 
 ### 创建模型
 
