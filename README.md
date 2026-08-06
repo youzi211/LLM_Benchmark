@@ -13,86 +13,113 @@
 - 报告：Markdown
 - V1 不使用 SQL、不做平台鉴权、不使用 OpenAI Python SDK
 
-## 快速启动
+## 部署与启动
 
-只启动主服务：
+面向 Linux 服务器部署时，推荐把服务作为一个长期运行的 FastAPI 进程启动，对外通过 HTTP API 调用。Suite 定时计划由主服务内的轻量调度器负责；只要没有设置 `LLM_BENCHMARK_SCHEDULER_DISABLED=1`，服务启动后会自动轮询 `data/suite_schedules/` 并按 `next_run_at` 触发评测。
 
-```powershell
-uv sync
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
+安装依赖：
 
-打开：`http://127.0.0.1:8000/docs`
-
-健康检查：
-
-```powershell
-Invoke-RestMethod -Uri 'http://127.0.0.1:8000/health'
-```
-
-## 单服务部署 EvalScope
-
-当前推荐部署方式是**一个 FastAPI 主服务进程**：能力评测和压测都在主服务进程内直接 `import evalscope` 执行，不再启动额外的 EvalScope HTTP 包装服务。
-
-```text
-LLM_Benchmark 主服务       :8000
-EvalScope 执行模式         in-process（Python package）
-```
-
-安装包含 EvalScope 的依赖组：
-
-```powershell
+```bash
+cd /opt/LLM_Benchmark
 uv sync --group evalscope
 ```
 
-`data/evalscope.json` 是可选覆盖文件。默认目录即可运行；只有需要自定义 EvalScope 数据集目录或输出目录时才复制示例：
-
-```powershell
-Copy-Item data/evalscope.json.example data/evalscope.json
-```
-
-启动主服务：
-
-```powershell
-.\scripts\start_all.ps1
-```
-
-Linux 服务器上对应命令：
+如果不需要 EvalScope 能力评测和压测，只运行网关 smoke，也可以使用：
 
 ```bash
-bash scripts/start_all.sh
+uv sync
 ```
 
-已启动后执行部署健康检查：
+启动服务：
 
-```powershell
-uv run python scripts/test_deployment.py
+```bash
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-本地开发也可以临时拉起测试端口并自动检查：
+也可以使用仓库脚本启动，端口通过 `MAIN_PORT` 覆盖：
 
-```powershell
-uv run python scripts/smoke_deploy.py
+```bash
+MAIN_PORT=8000 bash scripts/start_all.sh
 ```
 
-详细说明见 [单服务部署指南](docs/deployment.md)。
+健康检查：
+
+```bash
+curl -fsS http://127.0.0.1:8000/health
+curl -fsS http://127.0.0.1:8000/api/intelligence/evalscope/health
+curl -fsS http://127.0.0.1:8000/api/stress/evalscope/health
+```
+
+部署后也可以运行内置检查脚本：
+
+```bash
+uv run python scripts/test_deployment.py --main-url http://127.0.0.1:8000
+```
+
+### systemd 示例
+
+生产环境可用 systemd 托管进程，示例：
+
+```ini
+[Unit]
+Description=LLM Benchmark API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/LLM_Benchmark
+Environment=HOST_ADDRESS=0.0.0.0
+Environment=PORT=8000
+# 不设置 LLM_BENCHMARK_SCHEDULER_DISABLED 时，定时 suite 会随主服务启用。
+ExecStart=/usr/local/bin/uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+常用管理命令：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now llm-benchmark
+sudo systemctl status llm-benchmark
+journalctl -u llm-benchmark -f
+```
+
+### 配置文件
+
+- `data/models.json`：模型配置文件，可能包含明文 API Key，不要提交。`analysis_model_id` 可指向一个模型配置作为报告分析模型，同时也是 EvalScope 能力评测需要 LLM Judge 时的默认 Judge。
+- `data/evalscope.json`：可选覆盖文件。默认目录通常可直接运行；只有需要覆盖 EvalScope 数据集目录、输出目录或 Judge 选择时才创建。不要在这里保存 Judge 地址或密钥。
+
+最小示例：
+
+```json
+{
+  "datasets_dir": "data/evalscope_datasets",
+  "outputs_dir": "outputs/evalscope"
+}
+```
+
+详细部署说明见 [部署指南](docs/deployment.md)。
 
 ## 项目文档
 
 - [系统架构说明](docs/architecture.md)：记录当前模块分层、数据流、存储结构、扩展点和 Codex 快速排查入口。
 - [API 接口文档](docs/api.md)：记录所有服务接口、请求/响应结构、错误格式、协议兼容说明和调用示例。
 - [指标测试方法文档](docs/metric-test-methods.md)：记录默认评测计划中每个指标的测试目标、调用方式、观测字段、状态规则和人工关注点。
-- [单服务部署指南](docs/deployment.md)：记录主服务内直接调用 EvalScope Python package 的安装、启动和验证方法。
+- [部署指南](docs/deployment.md)：记录 Linux 服务器安装、启动、健康检查和运行目录说明。
 - EvalScope 智力评测接口已纳入 [API 接口文档](docs/api.md) 和 [系统架构说明](docs/architecture.md)，用于模型代码、数学、知识、推理等数据集表现评测。
-- EvalScope 压测接口已纳入文档，默认在主服务进程内调用 EvalScope `perf`，获取并发、限流、延迟、TTFT/TPOT 等正式性能数据。
+- EvalScope 压测接口已纳入文档，用于获取并发、限流、延迟、TTFT/TPOT 等正式性能数据。
 
 后续接口或指标发生新增、删除或行为变更时，必须同步更新上述文档，并检查 `README.md` 中的入口和摘要是否仍然准确。
 
 ## 可选：启动假上游服务验证完整流程
 
-另开一个 PowerShell：
+本地联调时可以启动假上游服务：
 
-```powershell
+```bash
 uv run uvicorn examples.fake_openai_server:app --host 127.0.0.1 --port 9001
 ```
 
@@ -149,29 +176,37 @@ DELETE /api/suites/schedules/{schedule_id}
 POST   /api/suites/schedules/{schedule_id}/trigger
 ```
 
+以下 API 示例默认先设置服务地址：
+
+```bash
+export API_BASE=http://127.0.0.1:8000
+```
+
 ## 模型配置示例
 
-```powershell
-$body = @{
-  id = 'demo-chat'
-  name = 'Demo Chat'
-  protocol = 'chat_completions'
-  base_url = 'http://127.0.0.1:9001/v1'
-  api_key = '<your-api-key>'
-  model = 'demo-model'
-  timeout_seconds = 60
-  enabled = $true
-  declared_context_tokens = 8192
-  declared_max_output_tokens = 1024
-  concurrency_levels = @(1, 2)
-} | ConvertTo-Json
+通过 API 创建模型配置：
 
-Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/models' -Method Post -ContentType 'application/json' -Body $body | ConvertTo-Json -Depth 10
+```bash
+curl -fsS -X POST "$API_BASE/api/models" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "id": "demo-chat",
+    "name": "Demo Chat",
+    "protocol": "chat_completions",
+    "base_url": "http://127.0.0.1:9001/v1",
+    "api_key": "<your-api-key>",
+    "model": "demo-model",
+    "timeout_seconds": 60,
+    "enabled": true,
+    "declared_context_tokens": 8192,
+    "declared_max_output_tokens": 1024,
+    "concurrency_levels": [1, 2]
+  }'
 ```
 
 接口响应会脱敏 `api_key`，但 `data/models.json` 会按内网测试服务假设保存本地明文密钥，请不要提交该文件。
 
-### 报告分析模型配置
+### 报告分析模型和默认 Judge
 
 报告生成阶段可以额外调用一个固定的“报告分析模型”，基于结构化评测事实包生成中文摘要、关键发现、风险点和建议下一步。该步骤只做辅助分析，不改变基础评测任务状态，也不输出“上线通过 / 失败”结论。
 
@@ -198,72 +233,110 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/models' -Method Post -ContentT
 
 说明：
 
-- `analysis_model_id` 未配置时，评测仍正常完成，Markdown 报告会显示“未配置报告分析模型”。
+- `analysis_model_id` 未配置时，网关 smoke 评测仍正常完成，Markdown 报告会显示“未配置报告分析模型”。
+- 能力评测包含需要 LLM Judge 的数据集时，默认也使用 `analysis_model_id` 指向的模型作为 Judge；没有可用 Judge 时，提交阶段会返回 `400 judge_required`。
 - 报告分析模型调用失败、返回非 JSON 或字段校验失败时，基础评测任务仍保持完成；报告中会记录分析失败原因和脱敏后的原始摘要。
 - 分析模型可复用普通模型配置，`protocol` 需要显式指定为 `chat_completions` 或 `responses`。
 - `data/models.json` 可能包含明文密钥，必须保留在本地运行目录，不要提交到 Git。
 
 ## 一键评测与定时计划
 
-如果希望“给一个模型 ID，自动完成网关接入验收、EvalScope 能力评测、EvalScope 压测，并生成统一总览报告”，使用 Suite 接口：
+如果希望“给一个模型 ID，自动完成网关接入验收、EvalScope 能力评测、EvalScope 压测，并生成统一总览报告”，使用 Suite 接口。
 
-```powershell
-$suiteBody = @{
-  model_id = 'demo-chat'
-  wait_for_completion = $true
-  poll_interval_seconds = 10
-  timeout_seconds = 86400
-  stress_options = @{
-    parallel = @(1, 5)
-    number = @(10, 50)
-  }
-} | ConvertTo-Json -Depth 10
-$suite = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/suites/default' -Method Post -ContentType 'application/json' -Body $suiteBody
-Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/suites/$($suite.suite_id)/report" -OutFile suite-overview.md
+后台启动一键评测，接口立即返回 `suite_id`：
+
+```bash
+curl -fsS -X POST "$API_BASE/api/suites/default" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model_id": "demo-chat",
+    "title": "demo-chat full benchmark",
+    "run_gateway": true,
+    "run_intelligence": true,
+    "run_stress": true,
+    "wait_for_completion": false,
+    "stress_options": {
+      "parallel": [1, 5],
+      "number": [10, 50]
+    }
+  }'
 ```
 
-默认 `wait_for_completion = $false`，接口会立即返回 `suite_id` 并在后台执行，可用以下接口查看进度：
+查询 suite 进度：
 
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/suites/$($suite.suite_id)" | ConvertTo-Json -Depth 20
+```bash
+curl -fsS "$API_BASE/api/suites/<suite_id>"
 ```
 
-半夜低峰期定时评测可以创建本地计划：
+下载最终总览报告：
 
-```powershell
-$scheduleBody = @{
-  name = 'nightly-demo-chat'
-  model_id = 'demo-chat'
-  time_of_day = '02:00'
-  timezone = 'Asia/Shanghai'
-  interval_days = 1
-  stress_parallel = @(1, 5)
-  stress_number = @(10, 50)
-} | ConvertTo-Json -Depth 10
-Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/suites/schedules' -Method Post -ContentType 'application/json' -Body $scheduleBody | ConvertTo-Json -Depth 20
+```bash
+curl -fsS "$API_BASE/api/suites/<suite_id>/report" -o suite-overview.md
 ```
 
-定时计划保存在 `data/suite_schedules/`。主服务启动后会运行轻量轮询器，到 `next_run_at` 后自动创建 suite；最近一次 suite ID 会写回计划的 `last_suite_id`。
-## 执行评测
+如果希望调用方一直等待完成，可以设置 `wait_for_completion=true` 和超时时间：
 
-```powershell
-$runBody = @{ model_id = 'demo-chat'; plan_id = 'gateway_acceptance_v1' } | ConvertTo-Json
-$result = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/tasks/run' -Method Post -ContentType 'application/json' -Body $runBody
-$result | ConvertTo-Json -Depth 20
-$taskId = $result.task_id
+```bash
+curl -fsS -X POST "$API_BASE/api/suites/default" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model_id": "demo-chat",
+    "wait_for_completion": true,
+    "poll_interval_seconds": 10,
+    "timeout_seconds": 86400,
+    "stress_options": {
+      "parallel": [1, 5],
+      "number": [10, 50]
+    }
+  }'
+```
+
+半夜低峰期定时评测通过 API 创建本地计划：
+
+```bash
+curl -fsS -X POST "$API_BASE/api/suites/schedules" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "nightly-demo-chat",
+    "model_id": "demo-chat",
+    "enabled": true,
+    "time_of_day": "02:00",
+    "timezone": "Asia/Shanghai",
+    "interval_days": 1,
+    "run_gateway": true,
+    "run_intelligence": true,
+    "run_stress": true,
+    "stress_parallel": [1, 5],
+    "stress_number": [10, 50],
+    "timeout_seconds": 86400
+  }'
+```
+
+定时计划保存在 `data/suite_schedules/`。主服务启动后会运行轻量轮询器，到 `next_run_at` 后自动创建 suite；最近一次 suite ID 会写回计划的 `last_suite_id`。如果需要临时关闭定时器，再设置环境变量 `LLM_BENCHMARK_SCHEDULER_DISABLED=1` 后重启服务。
+
+## 执行网关 smoke 评测
+
+`/api/tasks/run` 用于基础协议和工程观测，不承担正式能力评测或正式压测：
+
+```bash
+curl -fsS -X POST "$API_BASE/api/tasks/run" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model_id": "demo-chat",
+    "plan_id": "gateway_acceptance_v1"
+  }'
 ```
 
 读取报告：
 
-```powershell
-Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/reports/$taskId" -OutFile report.md
-Get-Content .\report.md -Encoding UTF8 | Select-Object -First 80
+```bash
+curl -fsS "$API_BASE/api/reports/<task_id>" -o report.md
+head -80 report.md
 ```
-
 
 ## EvalScope 压测
 
-压测由主服务进程内直接调用 EvalScope `perf` 执行，本项目负责编排、归档和报告。通常不需要创建 `data/evalscope.json`；只有要覆盖本地目录时才使用这个最小示例：
+压测通过 EvalScope `perf` 执行，本项目负责编排、归档和报告。通常不需要创建 `data/evalscope.json`；只有要覆盖本地目录时才使用这个最小示例：
 
 ```json
 {
@@ -276,29 +349,36 @@ Get-Content .\report.md -Encoding UTF8 | Select-Object -First 80
 
 提交默认压测：
 
-```powershell
-$stressBody = @{ model_id = 'demo-chat'; parallel = @(1, 5); number = @(10, 50) } | ConvertTo-Json
-$stress = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/stress/tasks/default' -Method Post -ContentType 'application/json' -Body $stressBody
-$stressTaskId = $stress.task_id
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/stress/tasks/$stressTaskId/result" | ConvertTo-Json -Depth 20
-Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/stress/reports/$stressTaskId" -OutFile stress-report.md
+```bash
+curl -fsS -X POST "$API_BASE/api/stress/tasks/default" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model_id": "demo-chat",
+    "parallel": [1, 5],
+    "number": [10, 50]
+  }'
+
+curl -fsS "$API_BASE/api/stress/tasks/<stress_task_id>/result"
+curl -fsS "$API_BASE/api/stress/reports/<stress_task_id>" -o stress-report.md
 ```
 
 ## 统一总览报告
 
 当网关接入验收、EvalScope 能力评测和 EvalScope 压测分别完成后，可以生成一份统一中文总览报告。它只做摘要、导航和归档，不重做 EvalScope 原生可视化：
 
-```powershell
-$overviewBody = @{
-  gateway_task_id = $taskId
-  intelligence_task_id = '<intel-task-id>'
-  stress_task_id = $stressTaskId
-} | ConvertTo-Json
-$overview = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/overview/reports' -Method Post -ContentType 'application/json' -Body $overviewBody
-Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/overview/reports/$($overview.overview_id)/markdown" -OutFile overview-report.md
+```bash
+curl -fsS -X POST "$API_BASE/api/overview/reports" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "gateway_task_id": "<task_id>",
+    "intelligence_task_id": "<intel_task_id>",
+    "stress_task_id": "<stress_task_id>"
+  }'
+
+curl -fsS "$API_BASE/api/overview/reports/<overview_id>/markdown" -o overview-report.md
 ```
 
-总览报告包含：网关接入验收摘要、能力评测摘要、压测摘要和三类详情报告入口。
+总览报告包含：网关接入验收摘要、能力评测摘要、压测摘要和三类详情报告入口。生产使用时更推荐直接调用 suite 接口，由 suite 自动串联三类任务并生成 overview。
 
 ## 默认评测计划
 
