@@ -2,6 +2,37 @@
 
 > 本文档面向后续接手项目的 Codex / 开发人员，用于快速理解当前系统结构。后续如果接口、评测计划、指标执行链路、存储结构或报告生成流程发生变化，必须同步更新本文档。
 
+
+## 0. Codex 快速导读
+
+如果只想快速接手，先记住这几个边界：
+
+| 问题 | 当前答案 |
+|---|---|
+| 项目做什么 | 给内部模型网关接入前采集工程 smoke、能力评测、压测和统一报告。 |
+| 主入口 | `app/main.py` 注册所有 `/api/*` 路由；启动后访问 `GET /health`。 |
+| 一键评测 | `POST /api/suites/default`，由 `app/suites/runner.py` 串起网关 smoke、EvalScope 能力、EvalScope perf 压测和 overview 报告。 |
+| 定时低峰评测 | `POST /api/suites/schedules` 创建计划，`app/suites/scheduler.py` 单机轮询触发；可用 `LLM_BENCHMARK_SCHEDULER_DISABLED=1` 关闭。 |
+| 正式能力评测 | `app/intelligence/*` 直接 import EvalScope，逐数据集调用 `run_task(TaskConfig)`。 |
+| 正式压测 | `app/stress/*` 直接 import EvalScope perf，输出吞吐、延迟分位数、TTFT/TPOT。 |
+| 旧基础指标定位 | `/api/tasks/run` 是网关接入 smoke；其中 `concurrency` / `rate_limit` 只是兼容 smoke，不是正式压测。 |
+| Judge 默认来源 | `data/models.json` 顶层 `analysis_model_id` 指向的模型；可用 `data/evalscope.json` 的 `judge_model_config_id` 覆盖。 |
+| 不该提交 | `data/models.json`、`data/evalscope.json`、`data/*_tasks/`、`data/suite_*`、`reports/`、`outputs/`、`.env`、`.venv/`。 |
+
+推荐阅读顺序：
+
+1. 本文第 1、3、4、5、9 节理解主流程。
+2. `docs/api.md` 查接口契约。
+3. `docs/metric-test-methods.md` 查每类评测的口径和字段。
+4. 需要改代码时，从本文件第 8 节的扩展指南开始定位改动面。
+
+常见误区：
+
+- 不要把 EvalScope 再包装成独立子服务；当前架构已经收缩为主服务进程内直接调用。
+- 不要把 EvalScope 原始大表硬塞进统一总览；overview 只做摘要和导航。
+- 不要把 Judge 密钥放进 `data/evalscope.json`；Judge 的地址和密钥仍来自 `data/models.json` 中的模型配置。
+- 不要在报告中输出自动“上线通过/失败”结论；报告只给事实、风险和建议。
+
 ## 1. 项目定位
 
 本项目是一个**内网使用的大模型 API 基础工程评测服务**，用于模型接入模型网关前采集上线前验证数据。
@@ -11,7 +42,7 @@
 - 面向内部开发/测试人员，不做公开 SaaS。
 - 不做平台鉴权；上游模型 API Key 保存在本地运行目录。
 - 不使用 SQL；模型配置、任务历史和报告均落本地文件。
-- 评测任务当前为同步执行：接口调用会等待指标执行、报告分析、报告写入完成后再返回。
+- 网关 smoke 任务当前为同步执行：接口调用会等待指标执行、报告分析、报告写入完成后再返回；suite 可选择后台执行或等待完成，定时计划由单机轮询器触发。
 - 服务只输出结构化观测数据和 Markdown 报告，不自动给出“上线通过 / 失败”的结论。
 - 支持 OpenAI 兼容的 `chat_completions` 与 `responses` 两类协议。
 - 通过主服务进程内直接调用 EvalScope Python package 接入能力评测和 EvalScope `perf` 压测；本系统负责统一编排、脱敏、落库和摘要导航。`/api/tasks/run` 只保留网关接入验收 smoke，不再承担正式能力评测或压测。`/api/suites/*` 提供一键评测和定时低峰触发。
@@ -343,7 +374,7 @@ Suite 层解决“一个模型 ID 自动完成整套评测并出最终总览报�
 | `app/suites/store.py` | 本地 JSON 存储 suite 和 schedule。 |
 | `app/suites/scheduler.py` | 服务内轻量定时轮询器，支持 `LLM_BENCHMARK_SCHEDULER_DISABLED` 关闭。 |
 | `app/api/routes_suites.py` | suite 启动、查询、报告下载、定时计划 CRUD 和手动触发接口。 |
-## 4.12 单服务部署层：`scripts/`
+### 4.12 单服务部署层：`scripts/`
 
 推荐部署方式：一个仓库、一台服务器、一个 FastAPI 主服务进程。主服务监听 `8000`，能力评测和压测在进程内直接调用 EvalScope Python package。
 
@@ -637,6 +668,7 @@ git status --short
 | 总览报告为什么缺模块 | `app/overview/report.py`、`data/overview_reports/`，以及被引用的三类任务 JSON |
 | 一键评测为什么卡住 | `app/suites/runner.py`、suite JSON 的 `current_step`/`steps`，以及 EvalScope 子任务状态 |
 | 定时计划为什么没触发 | `app/suites/scheduler.py`、`data/suite_schedules/`、`next_run_at`、`LLM_BENCHMARK_SCHEDULER_DISABLED` |
+| 启动后 scheduler 行为 | `app/main.py` startup/shutdown hooks、`app/suites/scheduler.py` |
 | Markdown 报告排版 | 网关验收看 `app/reports/markdown.py`，能力评测看 `app/intelligence/report.py`，压测看 `app/stress/report.py`，总览看 `app/overview/report.py` |
 | 本地数据在哪 | `data/models.json`、`data/tasks/`、`reports/` |
 

@@ -2,6 +2,25 @@
 
 > 本文档是项目的一部分。后续新增、删除或修改指标时，必须同步更新本文档、`docs/api.md` 中的指标/计划说明，以及 `README.md` 中的文档入口。
 
+
+## 0. Codex 快速导读
+
+本文件记录“指标口径”，不是上线准入规则。当前系统有三类评测结果，最终可由 suite 汇总到一份 overview 报告：
+
+| 评测类型 | API 入口 | 代码入口 | 结果/报告 | 适合回答的问题 |
+|---|---|---|---|---|
+| 网关 smoke / 基础工程指标 | `POST /api/tasks/run` | `app/core/runner.py`、`app/metrics/probes.py` | `data/tasks/`、`reports/YYYY-MM-DD/` | 上游 OpenAI 兼容协议是否能通、usage/stream/context/error 等基础行为是否可观测。 |
+| EvalScope 能力评测 | `POST /api/intelligence/tasks/default` 或 `POST /api/intelligence/tasks` | `app/intelligence/runner.py`、`app/intelligence/evalscope_direct.py` | `data/intelligence_tasks/`、`reports/intelligence/`、`outputs/evalscope/intelligence/` | 模型在代码、数学、知识、中文、推理等数据集上的能力表现。 |
+| EvalScope perf 压测 | `POST /api/stress/tasks/default` 或 `POST /api/stress/tasks` | `app/stress/runner.py`、`app/stress/evalscope_direct.py` | `data/stress_tasks/`、`reports/stress/`、`outputs/evalscope/stress/` | 并发、吞吐、延迟分位数、TTFT、TPOT、成功率等容量表现。 |
+| 一键/定时总览 | `POST /api/suites/default`、`POST /api/suites/schedules` | `app/suites/runner.py`、`app/suites/scheduler.py`、`app/overview/report.py` | `data/suite_runs/`、`data/suite_schedules/`、`reports/overview/` | 同一个模型的一次完整评测导航和摘要。 |
+
+最重要的边界：
+
+- `/api/tasks/run` 中的 `concurrency` 和 `rate_limit` 只保留为兼容 smoke 指标；正式压测以 EvalScope perf 为准。
+- 能力评测和压测的 EvalScope 原始格式不同：本系统分别在 `app/intelligence/runner.py` 和 `app/stress/runner.py` 标准化，再由 overview 引用摘要，不强行把两者压成同一种明细表。
+- 需要 LLM Judge 的能力数据集默认使用 `data/models.json` 顶层 `analysis_model_id` 指向的模型；没有可用 Judge 时，包含 Judge 数据集的任务会在提交阶段返回 `400 judge_required`。
+- 报告不输出自动准入结论，只输出事实、异常、风险提示和人工判断所需证据。
+
 ## 1. 总体原则
 
 - 本服务用于模型接入模型网关前的基础工程评测。
