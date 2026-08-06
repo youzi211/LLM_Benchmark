@@ -46,6 +46,7 @@ def test_metric_method_document_covers_gateway_baseline_metrics():
 def test_readme_links_project_documents():
     readme = _read_doc("README.md")
 
+    assert "[系统架构说明](docs/architecture.md)" in readme
     assert "[API 接口文档](docs/api.md)" in readme
     assert "[指标测试方法文档](docs/metric-test-methods.md)" in readme
     assert "必须同步更新" in readme
