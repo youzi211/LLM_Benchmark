@@ -5,6 +5,9 @@ from app.main import app
 
 
 class FakeRunner:
+    def judge_status(self):
+        return {"configured": True, "mode": "in_process", "model_config_id": "judge-model", "model_id": "judge-upstream", "source": "analysis_model", "required_datasets": []}
+
     async def submit_default(self, model_id: str):
         return IntelligenceTask(task_id="intel_task_20260806120000_aaaaaaaa", evalscope_task_id="intel_task_20260806120000_aaaaaaaa", model_id=model_id, evalscope_base_url="in-process", status="pending")
 
@@ -41,6 +44,9 @@ def test_intelligence_routes_happy_path(monkeypatch):
     client = TestClient(app)
 
     assert client.get("/api/intelligence/evalscope/health").json()["status"] == "ok"
+    judge = client.get("/api/intelligence/evalscope/judge-config").json()
+    assert judge["configured"] is True
+    assert judge["source"] == "analysis_model"
     assert client.get("/api/intelligence/datasets/local").json()["total"] == 1
     submitted = client.post("/api/intelligence/tasks/default", json={"model_id": "m1"}).json()
     assert submitted["evalscope_base_url"] == "in-process"

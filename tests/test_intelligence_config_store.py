@@ -10,6 +10,7 @@ def test_evalscope_config_store_loads_defaults(tmp_path):
 
     assert config.datasets_dir is None
     assert config.outputs_dir is None
+    assert config.judge_model_config_id is None
     assert config.ignore_dataset_errors is True
 
 
@@ -23,8 +24,9 @@ def test_evalscope_config_store_ignores_legacy_base_url_and_round_trips_compact_
     assert not hasattr(loaded, "base_url")
     assert loaded.outputs_dir == "outputs/evalscope"
 
-    store.save(EvalScopeConfig(outputs_dir="outputs/custom", ignore_dataset_errors=False))
+    store.save(EvalScopeConfig(outputs_dir="outputs/custom", judge_model_config_id="judge-model", ignore_dataset_errors=False))
     assert json.loads(path.read_text(encoding="utf-8")) == {
         "outputs_dir": "outputs/custom",
+        "judge_model_config_id": "judge-model",
         "ignore_dataset_errors": False,
     }

@@ -29,7 +29,7 @@ LLM_Benchmark/
 }
 ```
 
-需要运行依赖 LLM Judge 的数据集时，可在同一个文件额外加入 Judge 覆盖字段：`judge_model_id`、`judge_api_url`、`judge_api_key`、`judge_generation_config`、`judge_worker_num`。`judge_api_key` 仍是运行时敏感配置，不能提交。旧运行文件中的 `base_url`、超时和轮询字段会被忽略；它们不再参与当前 in-process EvalScope 执行。
+需要运行依赖 LLM Judge 的数据集时，系统默认使用 `data/models.json` 顶层 `analysis_model_id` 指向的模型作为内置 Judge。若要覆盖 Judge，可在同一个可选文件额外加入 `judge_model_config_id`、`judge_generation_config`、`judge_worker_num`；Judge 地址和密钥仍只存放在 `data/models.json` 的模型配置里，不能提交。旧运行文件中的 `base_url`、超时、轮询以及旧 Judge 直连字段会被忽略。
 
 ## 2. 安装依赖
 

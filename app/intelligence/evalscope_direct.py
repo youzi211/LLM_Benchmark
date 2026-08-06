@@ -103,16 +103,33 @@ def local_dataset_metadata(config: EvalScopeConfig) -> dict[str, Any]:
     return {"total": len(datasets), "datasets_dir": str(root), "datasets": datasets}
 
 
-def judge_config_status(config: EvalScopeConfig) -> dict[str, Any]:
-    configured = bool(config.judge_model_id and config.judge_api_url and config.judge_api_key)
-    return {
+def datasets_requiring_judge(datasets: list[str]) -> list[str]:
+    return [dataset for dataset in datasets if dataset in LLM_JUDGE_DATASETS]
+
+
+def judge_config_status(
+    config: EvalScopeConfig,
+    *,
+    configured: bool = False,
+    model_config_id: str | None = None,
+    model_name: str | None = None,
+    source: str | None = None,
+    required_datasets: list[str] | None = None,
+    missing_reason: str | None = None,
+) -> dict[str, Any]:
+    status: dict[str, Any] = {
         "configured": configured,
         "mode": "in_process",
-        "model_id": config.judge_model_id or None,
-        "api_url": config.judge_api_url or None,
+        "model_config_id": model_config_id or config.judge_model_config_id or None,
+        "model_id": model_name or None,
+        "source": source,
+        "required_datasets": required_datasets or [],
         "generation_config": config.judge_generation_config,
         "judge_worker_num": config.judge_worker_num,
     }
+    if missing_reason:
+        status["missing_reason"] = missing_reason
+    return status
 
 
 def _to_plain(value: Any) -> Any:
@@ -140,6 +157,7 @@ class EvalScopeIntelligenceExecutor:
         limit: int | None = None,
         eval_batch_size: int | None = None,
         generation_config: dict[str, Any] | None = None,
+        judge_model_args: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         try:
             from evalscope import TaskConfig, run_task  # type: ignore
@@ -165,6 +183,7 @@ class EvalScopeIntelligenceExecutor:
                 eval_batch_size=eval_batch_size,
                 generation_config=generation_config,
                 work_dir=str(output_base / dataset),
+                judge_model_args=judge_model_args,
             )
             try:
                 result = run_task(task_cfg=TaskConfig(**cfg_data))
@@ -213,6 +232,7 @@ class EvalScopeIntelligenceExecutor:
         eval_batch_size: int | None,
         generation_config: dict[str, Any] | None,
         work_dir: str,
+        judge_model_args: dict[str, Any] | None,
     ) -> dict[str, Any]:
         dataset_args: dict[str, dict[str, Any]] = {}
         if dataset in local_paths:
@@ -235,14 +255,9 @@ class EvalScopeIntelligenceExecutor:
         }
         if self.config.datasets_dir:
             data["dataset_dir"] = str(datasets_root(self.config))
-        if dataset in LLM_JUDGE_DATASETS and self.config.judge_model_id and self.config.judge_api_url and self.config.judge_api_key:
+        if dataset in LLM_JUDGE_DATASETS and judge_model_args:
             data["judge_strategy"] = "llm"
-            data["judge_model_args"] = {
-                "model_id": self.config.judge_model_id,
-                "api_url": self.config.judge_api_url,
-                "api_key": self.config.judge_api_key,
-                "generation_config": self.config.judge_generation_config,
-            }
+            data["judge_model_args"] = judge_model_args
             data["judge_worker_num"] = self.config.judge_worker_num
         return data
 

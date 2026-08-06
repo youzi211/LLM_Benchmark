@@ -14,6 +14,7 @@ from app.intelligence.evalscope_direct import (
     DEFAULT_DATASETS,
     EvalScopeIntelligenceExecutor,
     dataset_metadata,
+    datasets_requiring_judge,
     judge_config_status,
     local_dataset_metadata,
 )
@@ -32,6 +33,7 @@ from app.storage.model_store import ModelStore
 TERMINAL_STATUSES = {"completed", "failed"}
 ALLOWED_STATUSES = {"pending", "running", "completed", "failed"}
 IN_PROCESS_EVALSCOPE = "in-process"
+JUDGE_MODEL_CONFIG_ID_ENV = "LLM_BENCHMARK_EVALSCOPE_JUDGE_MODEL_CONFIG_ID"
 
 
 class IntelligenceExecutor(Protocol):
@@ -46,6 +48,7 @@ class IntelligenceExecutor(Protocol):
         limit: int | None = None,
         eval_batch_size: int | None = None,
         generation_config: dict[str, Any] | None = None,
+        judge_model_args: dict[str, Any] | None = None,
     ) -> dict[str, Any]: ...
 
 
@@ -110,6 +113,44 @@ class IntelligenceRunner:
             raise ValueError(f"model_disabled:{model_id}")
         return model
 
+    def _judge_candidates(self) -> list[tuple[str, str]]:
+        candidates: list[tuple[str, str]] = []
+        if self.config.judge_model_config_id:
+            candidates.append(("evalscope_config", self.config.judge_model_config_id))
+        env_model_id = os.getenv(JUDGE_MODEL_CONFIG_ID_ENV)
+        if env_model_id:
+            candidates.append(("environment", env_model_id.strip()))
+        analysis_model_id = self.model_store.get_analysis_model_id()
+        if analysis_model_id:
+            candidates.append(("analysis_model", analysis_model_id))
+
+        seen: set[str] = set()
+        unique: list[tuple[str, str]] = []
+        for source, model_id in candidates:
+            if not model_id or model_id in seen:
+                continue
+            seen.add(model_id)
+            unique.append((source, model_id))
+        return unique
+
+    def _resolve_judge_model(self) -> tuple[ModelConfig | None, str | None, str | None]:
+        missing: list[str] = []
+        disabled: list[str] = []
+        for source, model_id in self._judge_candidates():
+            model = self.model_store.get(model_id)
+            if model is None:
+                missing.append(model_id)
+                continue
+            if not model.enabled:
+                disabled.append(model_id)
+                continue
+            return model, source, None
+        if disabled:
+            return None, None, f"configured Judge model is disabled: {', '.join(disabled)}"
+        if missing:
+            return None, None, f"configured Judge model not found: {', '.join(missing)}"
+        return None, None, "no Judge model configured; set analysis_model_id or judge_model_config_id"
+
     async def submit_default(self, model_id: str) -> IntelligenceTask:
         return await self.submit_custom(model_id=model_id, datasets=list(DEFAULT_DATASETS))
 
@@ -123,6 +164,18 @@ class IntelligenceRunner:
         generation_config: dict[str, Any] | None = None,
     ) -> IntelligenceTask:
         model = self._model(model_id)
+        required_judge_datasets = datasets_requiring_judge(datasets)
+        judge_model, judge_source, judge_missing_reason = self._resolve_judge_model()
+        if required_judge_datasets and judge_model is None:
+            raise ValueError(f"judge_required:{', '.join(required_judge_datasets)}; {judge_missing_reason}")
+        judge_model_args = None
+        if judge_model is not None:
+            judge_model_args = {
+                "model_id": judge_model.model,
+                "api_url": _endpoint_url(judge_model),
+                "api_key": judge_model.api_key or "EMPTY",
+                "generation_config": self.config.judge_generation_config,
+            }
         task = IntelligenceTask(
             task_id=new_intelligence_task_id(),
             evalscope_task_id=None,
@@ -133,7 +186,18 @@ class IntelligenceRunner:
             datasets=datasets,
             status="pending",
             progress="任务已创建，等待本地 EvalScope 执行",
-            raw_submit_response={"mode": IN_PROCESS_EVALSCOPE, "task_id": None, "status": "pending", "datasets": datasets},
+            raw_submit_response={
+                "mode": IN_PROCESS_EVALSCOPE,
+                "task_id": None,
+                "status": "pending",
+                "datasets": datasets,
+                "judge": {
+                    "configured": judge_model is not None,
+                    "source": judge_source,
+                    "model_config_id": judge_model.id if judge_model is not None else None,
+                    "required_datasets": required_judge_datasets,
+                },
+            },
         )
         self.task_store.save(task)
         self._start(
@@ -145,6 +209,7 @@ class IntelligenceRunner:
             limit=limit,
             eval_batch_size=eval_batch_size,
             generation_config=generation_config,
+            judge_model_args=judge_model_args,
         )
         return self.task_store.get(task.task_id) or task
 
@@ -166,6 +231,7 @@ class IntelligenceRunner:
         limit: int | None,
         eval_batch_size: int | None,
         generation_config: dict[str, Any] | None,
+        judge_model_args: dict[str, Any] | None,
     ) -> None:
         task = self.task_store.get(task_id)
         if task is None:
@@ -184,6 +250,7 @@ class IntelligenceRunner:
                 limit=limit,
                 eval_batch_size=eval_batch_size,
                 generation_config=generation_config,
+                judge_model_args=judge_model_args,
             )
             task.raw_result = raw_result
             metadata = self._local_dataset_metadata()
@@ -194,14 +261,14 @@ class IntelligenceRunner:
             task.completed_at = _parse_dt(raw_result.get("completed_at")) or utc_now()
             task.evalscope_task_id = raw_result.get("task_id") or task.evalscope_task_id or task.task_id
             task.progress = "能力评测完成" if task.status == "completed" else "能力评测失败"
-            report_path = write_intelligence_report(task, self.reports_dir, judge_status=self._judge_status())
+            report_path = write_intelligence_report(task, self.reports_dir, judge_status=self._judge_status(task.datasets))
             task.report_path = str(report_path)
         except Exception as exc:
             task.status = "failed"
             task.error = _safe_error(exc)
             task.progress = f"能力评测失败：{task.error['message']}"
             task.completed_at = utc_now()
-            report_path = write_intelligence_report(task, self.reports_dir, judge_status=self._judge_status())
+            report_path = write_intelligence_report(task, self.reports_dir, judge_status=self._judge_status(task.datasets))
             task.report_path = str(report_path)
         finally:
             task.updated_at = utc_now()
@@ -215,7 +282,7 @@ class IntelligenceRunner:
         if task is None:
             return None
         if task.status in TERMINAL_STATUSES and not task.report_path:
-            report_path = write_intelligence_report(task, self.reports_dir, judge_status=self._judge_status())
+            report_path = write_intelligence_report(task, self.reports_dir, judge_status=self._judge_status(task.datasets))
             task.report_path = str(report_path)
             task.updated_at = utc_now()
             self.task_store.save(task)
@@ -226,8 +293,20 @@ class IntelligenceRunner:
         datasets = data.get("datasets", {}) if isinstance(data, dict) else {}
         return datasets if isinstance(datasets, dict) else {}
 
-    def _judge_status(self) -> dict[str, Any]:
-        return judge_config_status(self.config)
+    def _judge_status(self, datasets: list[str] | None = None) -> dict[str, Any]:
+        judge_model, source, missing_reason = self._resolve_judge_model()
+        return judge_config_status(
+            self.config,
+            configured=judge_model is not None,
+            model_config_id=judge_model.id if judge_model is not None else self.config.judge_model_config_id,
+            model_name=judge_model.model if judge_model is not None else None,
+            source=source,
+            required_datasets=datasets_requiring_judge(datasets or []),
+            missing_reason=None if judge_model is not None else missing_reason,
+        )
+
+    def judge_status(self) -> dict[str, Any]:
+        return self._judge_status()
 
     def local_datasets(self) -> dict[str, Any]:
         return local_dataset_metadata(self.config)

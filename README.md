@@ -272,7 +272,7 @@ Get-Content .\report.md -Encoding UTF8 | Select-Object -First 80
 }
 ```
 
-能力评测如果要启用需要 LLM Judge 的数据集，可在同一个可选文件中额外加入 `judge_model_id`、`judge_api_url`、`judge_api_key`、`judge_generation_config` 和 `judge_worker_num`。
+能力评测默认把 `data/models.json` 顶层 `analysis_model_id` 指向的模型作为内置 Judge 使用；只有要覆盖 Judge 选择时，才在可选文件中额外加入 `judge_model_config_id`、`judge_generation_config` 和 `judge_worker_num`。Judge 的地址和密钥仍只存放在 `data/models.json` 的模型配置里，不放在 `data/evalscope.json`。
 
 提交默认压测：
 

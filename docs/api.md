@@ -562,7 +562,7 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 
 #### GET `/api/intelligence/evalscope/judge-config`
 
-检查本地 Judge 配置是否完整。响应不会返回 `judge_api_key` 明文。
+检查本地 Judge 配置是否完整。默认 Judge 来自 `data/models.json` 顶层 `analysis_model_id`；可选 `data/evalscope.json` 只允许用 `judge_model_config_id` 覆盖模型配置 ID。响应不会返回 API Key 明文。
 
 #### GET `/api/intelligence/evalscope/tasks`
 
@@ -620,6 +620,7 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 | `ModelConfig.model` | `model` |
 | `ModelConfig.base_url` + `protocol` | `api_url`，自动拼接 `/chat/completions` 或 `/responses` |
 | `ModelConfig.api_key` | `api_key`，仅运行时使用，不写入本地任务配置或报告 |
+| `analysis_model_id` 指向的模型配置 | 默认 Judge；仅在本次数据集需要 LLM Judge 时传给 EvalScope `judge_model_args` |
 
 请求示例：
 
@@ -629,7 +630,7 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 }
 ```
 
-成功响应：`200 OK`，返回 `IntelligenceTask`。模型不存在返回 `404 model_not_found`；模型禁用返回 `400 model_disabled`；参数错误返回 `400 invalid_intelligence_task_request`。
+成功响应：`200 OK`，返回 `IntelligenceTask`。模型不存在返回 `404 model_not_found`；模型禁用返回 `400 model_disabled`；包含 Judge 数据集但没有可用 Judge 时返回 `400 judge_required`；参数错误返回 `400 invalid_intelligence_task_request`。
 
 ### 10.6 提交自定义智力评测
 
@@ -652,7 +653,7 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 }
 ```
 
-成功响应：`200 OK`，返回 `IntelligenceTask`。
+成功响应：`200 OK`，返回 `IntelligenceTask`。若 `datasets` 包含 `simple_qa`、`alpaca_eval`、`arena_hard` 等需要 LLM Judge 的数据集，服务会先解析默认 Judge；没有可用 Judge 时返回 `400 judge_required`，不会启动 EvalScope。
 
 ### 10.7 查询本地智力评测任务
 
@@ -688,7 +689,7 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 
 压测能力用于把本系统的模型配置交给 EvalScope `perf` 执行，当前执行模式同样为 `in_process`：主服务直接构造 `evalscope.perf.arguments.Arguments` 并调用 `evalscope.perf.main.run_perf_benchmark`。本系统负责任务编排、本地 JSON 落库、结果标准化和 Markdown 报告生成；正式并发、吞吐、延迟分位数和限流/容量边界以该接口为准。基础 `/api/tasks/run` 中的 `latency_breakdown` 只是单次链路 smoke，`concurrency` 与 `rate_limit` 仅作为显式兼容 smoke 指标保留。
 
-> 配置位置：通常不需要 `data/evalscope.json`；只有要覆盖 `outputs_dir`、`datasets_dir` 或配置 Judge 时才创建。该文件可能包含 Judge 地址或密钥，不提交。
+> 配置位置：通常不需要 `data/evalscope.json`；目录默认值足够时直接运行。Judge 默认使用 `data/models.json` 顶层 `analysis_model_id` 指向的模型；如需覆盖，只在 `data/evalscope.json` 写 `judge_model_config_id`，不要在该文件保存 Judge 地址或密钥。
 
 ### 11.1 StressDefaultRunRequest / StressRunRequest
 

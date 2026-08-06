@@ -16,10 +16,19 @@ def test_evalscope_config_is_in_process_and_ignores_legacy_base_url():
 
 
 def test_judge_config_status_does_not_expose_api_key():
-    status = judge_config_status(EvalScopeConfig(judge_model_id="judge", judge_api_url="http://judge/v1", judge_api_key="dummy-secret-key"))
+    status = judge_config_status(
+        EvalScopeConfig(judge_model_config_id="judge-model"),
+        configured=True,
+        model_config_id="judge-model",
+        model_name="judge-upstream",
+        source="analysis_model",
+        required_datasets=["simple_qa"],
+    )
 
     assert status["configured"] is True
-    assert status["model_id"] == "judge"
+    assert status["model_config_id"] == "judge-model"
+    assert status["model_id"] == "judge-upstream"
+    assert status["source"] == "analysis_model"
     assert "api_key" not in status
     assert "dummy-secret-key" not in str(status)
 

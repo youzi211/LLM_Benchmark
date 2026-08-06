@@ -177,7 +177,7 @@ flowchart TB
 | 文件 | 职责 |
 |---|---|
 | `app/intelligence/schemas.py` | EvalScope 本地配置、智力评测请求、任务、标准化结果数据结构。 |
-| `app/intelligence/config_store.py` | 读取可选 `data/evalscope.json`，只覆盖数据集目录、输出目录和 Judge；旧字段会被忽略。 |
+| `app/intelligence/config_store.py` | 读取可选 `data/evalscope.json`，只覆盖数据集目录、输出目录、Judge 模型配置 ID 和 Judge 运行参数；旧字段会被忽略。 |
 | `app/intelligence/evalscope_direct.py` | 本地 import EvalScope，提供健康检查、数据集元数据、Judge 状态和 `run_task(TaskConfig)` 执行器。 |
 | `app/intelligence/runner.py` | 读取本系统模型配置，提交 in-process EvalScope 评测，终态后标准化结果并生成报告。 |
 | `app/intelligence/report.py` | 生成 `reports/intelligence/YYYY-MM-DD/*.md` 智力评测报告。 |
@@ -207,7 +207,7 @@ sequenceDiagram
     R->>API: 返回 IntelligenceTask
 ```
 
-安全边界：第一版只读取本地 EvalScope Judge 配置，不代理写 Judge；`api_key` 仅运行时传给 EvalScope，所有错误、报告、JSON 附录写入前都需要脱敏。
+安全边界：Judge 默认复用 `data/models.json` 顶层 `analysis_model_id` 指向的模型配置，也可用 `judge_model_config_id` 覆盖；`api_key` 仅从模型配置读取并在运行时传给 EvalScope，所有错误、报告、JSON 附录写入前都需要脱敏。
 ### 4.6 报告层：`app/reports/`
 
 职责：把任务结果转换为面向人阅读的 Markdown 报告，并可选调用一个报告分析模型生成中文摘要。
@@ -247,7 +247,7 @@ sequenceDiagram
 | 模型配置 | `data/models.json` | `LLM_BENCHMARK_DATA_DIR` | 否，可能包含 API Key |
 | 任务历史 | `data/tasks/*.json` | `LLM_BENCHMARK_DATA_DIR` | 否，运行产物 |
 | Markdown 报告 | `reports/YYYY-MM-DD/*.md` | `LLM_BENCHMARK_REPORTS_DIR` | 否，运行产物 |
-| EvalScope 可选覆盖配置 | `data/evalscope.json` | `LLM_BENCHMARK_DATA_DIR` | 否，仅覆盖本地目录或 Judge |
+| EvalScope 可选覆盖配置 | `data/evalscope.json` | `LLM_BENCHMARK_DATA_DIR` | 否，仅覆盖本地目录、Judge 模型配置 ID 或 Judge 运行参数 |
 | 能力评测任务 | `data/intelligence_tasks/*.json` | `LLM_BENCHMARK_DATA_DIR` | 否，运行产物 |
 | 能力评测报告 | `reports/intelligence/YYYY-MM-DD/*.md` | `LLM_BENCHMARK_REPORTS_DIR` | 否，运行产物 |
 | 压测任务 | `data/stress_tasks/*.json` | `LLM_BENCHMARK_DATA_DIR` | 否，运行产物 |
@@ -569,7 +569,7 @@ GET    /api/suites/{suite_id}/report
 1. EvalScope Python package 接口变化时，先用本地安装包或官方文档确认签名，再更新 `app/intelligence/evalscope_direct.py`。
 2. 如果新增本系统智力评测接口，必须同步更新 `docs/api.md`、本文档和 API 覆盖测试。
 3. 如果报告字段变化，更新 `app/intelligence/report.py` 和 `tests/test_intelligence_report.py`。
-4. 不要把 EvalScope Judge 写配置能力默认开放；如确需开放，应先补安全设计。
+4. 不要把 EvalScope Judge 的地址和密钥写入 `data/evalscope.json`；Judge 模型应复用 `data/models.json` 中的模型配置。
 5. 不要把智力评测强行加入基础工程指标，除非明确调整产品边界和报告结构。
 
 ### 8.5 扩展压测能力

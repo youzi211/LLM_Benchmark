@@ -26,7 +26,7 @@ class FakeIntelligenceExecutor:
         }
 
 
-def _model_store(path, protocol="chat_completions"):
+def _model_store(path, protocol="chat_completions", *, with_analysis_judge=False):
     store = ModelStore(path)
     store.create(ModelConfigCreate(
         id="m1",
@@ -36,6 +36,16 @@ def _model_store(path, protocol="chat_completions"):
         api_key="dummy-api-key-should-not-leak",
         model="upstream-model",
     ))
+    if with_analysis_judge:
+        store.create(ModelConfigCreate(
+            id="judge-model",
+            name="内置 Judge",
+            protocol="chat_completions",
+            base_url="http://judge.local/v1",
+            api_key="dummy-judge-key-should-not-leak",
+            model="judge-upstream-model",
+        ))
+        store.set_analysis_model_id("judge-model")
     return store
 
 
@@ -99,3 +109,43 @@ async def test_intelligence_runner_default_uses_curated_dataset_suite(tmp_path):
     assert "humaneval" in task.datasets
     assert "gsm8k" in task.datasets
     assert executor.calls[0]["datasets"] == task.datasets
+
+
+@pytest.mark.asyncio
+async def test_intelligence_runner_uses_analysis_model_as_builtin_judge(tmp_path):
+    executor = FakeIntelligenceExecutor()
+    runner = IntelligenceRunner(
+        model_store=_model_store(tmp_path / "models.json", with_analysis_judge=True),
+        task_store=IntelligenceTaskStore(tmp_path / "intelligence_tasks"),
+        executor=executor,
+        reports_dir=tmp_path / "reports",
+        run_in_background=False,
+    )
+
+    task = await runner.submit_custom(model_id="m1", datasets=["simple_qa"])
+
+    judge_args = executor.calls[0]["judge_model_args"]
+    assert judge_args["model_id"] == "judge-upstream-model"
+    assert judge_args["api_url"] == "http://judge.local/v1/chat/completions"
+    assert judge_args["api_key"] == "dummy-judge-key-should-not-leak"
+    assert task.raw_submit_response["judge"]["source"] == "analysis_model"
+    report_text = open(task.report_path, encoding="utf-8").read()
+    assert "dummy-judge-key-should-not-leak" not in report_text
+    assert "simple_qa" in report_text
+
+
+@pytest.mark.asyncio
+async def test_intelligence_runner_rejects_judge_dataset_without_builtin_judge(tmp_path):
+    executor = FakeIntelligenceExecutor()
+    runner = IntelligenceRunner(
+        model_store=_model_store(tmp_path / "models.json"),
+        task_store=IntelligenceTaskStore(tmp_path / "intelligence_tasks"),
+        executor=executor,
+        reports_dir=tmp_path / "reports",
+        run_in_background=False,
+    )
+
+    with pytest.raises(ValueError, match="judge_required:simple_qa"):
+        await runner.submit_custom(model_id="m1", datasets=["simple_qa"])
+
+    assert executor.calls == []

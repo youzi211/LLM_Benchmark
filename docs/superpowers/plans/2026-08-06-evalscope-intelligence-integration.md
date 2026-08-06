@@ -9,7 +9,7 @@
 ## Current file map
 
 - `app/intelligence/schemas.py`: EvalScope config, request, task, and normalized result models.
-- `app/intelligence/config_store.py`: load/save optional compact `data/evalscope.json` overrides for local directories and Judge; removed legacy fields such as `base_url` are ignored.
+- `app/intelligence/config_store.py`: load/save optional compact `data/evalscope.json` overrides for local directories, Judge model config id, and Judge runtime knobs; removed legacy fields such as `base_url` are ignored.
 - `app/intelligence/evalscope_direct.py`: health check, dataset metadata, Judge status, and direct `run_task(TaskConfig)` execution.
 - `app/storage/intelligence_task_store.py`: load/save/list `data/intelligence_tasks/*.json`.
 - `app/intelligence/report.py`: Chinese Markdown report renderer under `reports/intelligence/`.

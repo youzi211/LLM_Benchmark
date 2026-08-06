@@ -855,7 +855,7 @@ EvalScope 智力评测不是 `gateway_acceptance_v1` 的接入验收指标，因
 关注点：
 
 - 默认评测的数据集组合由本系统在 `app/intelligence/evalscope_direct.py` 中维护，并逐个传给 EvalScope 执行。
-- 需要 Judge 的数据集可在可选 `data/evalscope.json` 中加入本地 Judge 配置；第一版只检查并提示，不自动配置。
+- 需要 Judge 的数据集默认使用 `data/models.json` 顶层 `analysis_model_id` 指向的内置 Judge；可用 `data/evalscope.json` 的 `judge_model_config_id` 覆盖。没有可用 Judge 时，包含 Judge 数据集的任务会在提交阶段被拒绝，避免跑到 EvalScope 内部才失败。
 - `score` 只做展示和后续人工分析，不设置上线阈值，不输出自动准入结论。
 - EvalScope 原始 `report_table` 会原样保留在报告中，EvalScope 原始输出会落到 `outputs/evalscope/` 便于排查。
 

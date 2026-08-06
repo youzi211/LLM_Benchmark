@@ -22,14 +22,14 @@ class EvalScopeConfig(BaseModel):
 
     datasets_dir: str | None = None
     outputs_dir: str | None = None
-    judge_model_id: str | None = None
-    judge_api_url: str | None = None
-    judge_api_key: str | None = None
+    # Optional override. When omitted, the runner uses the built-in default Judge
+    # selector: the report analysis model configured in data/models.json.
+    judge_model_config_id: str | None = None
     judge_generation_config: dict[str, Any] = Field(default_factory=lambda: {"temperature": 0.0, "max_tokens": 4096})
     judge_worker_num: int = Field(default=5, ge=1, le=128)
     ignore_dataset_errors: bool = True
 
-    @field_validator("datasets_dir", "outputs_dir", "judge_model_id", "judge_api_url", "judge_api_key")
+    @field_validator("datasets_dir", "outputs_dir", "judge_model_config_id")
     @classmethod
     def strip_optional_text(cls, value: str | None) -> str | None:
         if value is None:

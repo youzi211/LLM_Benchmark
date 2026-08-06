@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 
 from app.api.errors import api_error
 from app.intelligence.config_store import EvalScopeConfigStore
-from app.intelligence.evalscope_direct import dataset_metadata, evalscope_health, judge_config_status, local_dataset_metadata
+from app.intelligence.evalscope_direct import dataset_metadata, evalscope_health, local_dataset_metadata
 from app.intelligence.runner import IntelligenceRunner
 from app.intelligence.schemas import IntelligenceDefaultRunRequest, IntelligenceRunRequest
 from app.storage.intelligence_task_store import IntelligenceTaskStore
@@ -33,7 +33,7 @@ def evalscope_health_route():
 
 @router.get("/evalscope/judge-config")
 def evalscope_judge_config():
-    return judge_config_status(_config())
+    return _runner().judge_status()
 
 
 @router.get("/evalscope/tasks")
@@ -61,6 +61,8 @@ async def submit_default_task(request: IntelligenceDefaultRunRequest):
             raise api_error(404, "model_not_found", f"Model config not found: {request.model_id}")
         if text.startswith("model_disabled:"):
             raise api_error(400, "model_disabled", f"Model config is disabled: {request.model_id}")
+        if text.startswith("judge_required:"):
+            raise api_error(400, "judge_required", text)
         raise api_error(400, "invalid_intelligence_task_request", text)
     return task
 
@@ -81,6 +83,8 @@ async def submit_custom_task(request: IntelligenceRunRequest):
             raise api_error(404, "model_not_found", f"Model config not found: {request.model_id}")
         if text.startswith("model_disabled:"):
             raise api_error(400, "model_disabled", f"Model config is disabled: {request.model_id}")
+        if text.startswith("judge_required:"):
+            raise api_error(400, "judge_required", text)
         raise api_error(400, "invalid_intelligence_task_request", text)
     return task
 

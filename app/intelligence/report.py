@@ -69,14 +69,24 @@ def write_intelligence_report(task: IntelligenceTask, reports_dir: Path | None =
     lines.append("## 2. Judge 状态提示")
     lines.append("")
     if judge_status:
-        configured = judge_status.get("configured") or judge_status.get("judge_configured")
+        configured = bool(judge_status.get("configured") or judge_status.get("judge_configured"))
+        required_datasets = judge_status.get("required_datasets") if isinstance(judge_status.get("required_datasets"), list) else []
+        lines.append(f"- 本次是否需要 Judge：`{bool(required_datasets)}`")
+        if required_datasets:
+            lines.append(f"- 需要 Judge 的数据集：`{_cell(', '.join(str(item) for item in required_datasets))}`")
         lines.append(f"- Judge 是否配置：`{configured}`")
         if judge_status.get("model_id") or judge_status.get("judge_model"):
             lines.append(f"- Judge 模型：`{_cell(judge_status.get('model_id') or judge_status.get('judge_model'))}`")
-        if not configured:
-            lines.append("- 注意：需要 LLM Judge 的数据集可能无法正常评测或无法产出完整分数。第一版只检查 Judge 状态，不自动配置 Judge。")
+        if judge_status.get("model_config_id"):
+            lines.append(f"- Judge 模型配置 ID：`{_cell(judge_status.get('model_config_id'))}`")
+        if judge_status.get("source"):
+            lines.append(f"- Judge 来源：`{_cell(judge_status.get('source'))}`")
+        if required_datasets and not configured:
+            lines.append("- 注意：本次包含需要 LLM Judge 的数据集，但未解析到可用 Judge；新任务提交阶段会阻止这种配置错误。")
+        elif not required_datasets:
+            lines.append("- 提示：本次数据集不依赖 LLM Judge。")
     else:
-        lines.append("- 未获取到 Judge 状态；如评测包含需要 Judge 的数据集，请人工确认 EvalScope 服务已配置 Judge。")
+        lines.append("- 未获取到 Judge 状态；如评测包含需要 Judge 的数据集，请人工确认本系统已配置 Judge 模型。")
     lines.append("")
 
     lines.append("## 3. 数据集分数表")
