@@ -108,7 +108,7 @@ journalctl -u llm-benchmark -f
 
 - [系统架构说明](docs/architecture.md)：记录当前模块分层、数据流、存储结构、扩展点和 Codex 快速排查入口。
 - [API 接口文档](docs/api.md)：记录所有服务接口、请求/响应结构、错误格式、协议兼容说明和调用示例。
-- [指标测试方法文档](docs/metric-test-methods.md)：记录默认评测计划中每个指标的测试目标、调用方式、观测字段、状态规则和人工关注点。
+- [指标测试方法文档](docs/metric-test-methods.md)：记录网关 smoke 指标、EvalScope 能力评测、EvalScope 压测和统一报告的测试目标、调用方式、观测字段、状态规则和人工关注点。
 - [部署指南](docs/deployment.md)：记录 Linux 服务器安装、启动、健康检查和运行目录说明。
 - EvalScope 智力评测接口已纳入 [API 接口文档](docs/api.md) 和 [系统架构说明](docs/architecture.md)，用于模型代码、数学、知识、推理等数据集表现评测。
 - EvalScope 压测接口已纳入文档，用于获取并发、限流、延迟、TTFT/TPOT 等正式性能数据。
@@ -145,6 +145,8 @@ GET    /api/tasks/{task_id}
 GET    /api/reports/{task_id}
 
 GET    /api/intelligence/evalscope/health
+GET    /api/intelligence/datasets
+GET    /api/intelligence/datasets/local
 POST   /api/intelligence/tasks/default
 POST   /api/intelligence/tasks
 GET    /api/intelligence/tasks
@@ -242,6 +244,32 @@ curl -fsS -X POST "$API_BASE/api/models" \
 ## 一键评测与定时计划
 
 如果希望“给一个模型 ID，自动完成网关接入验收、EvalScope 能力评测、EvalScope 压测，并生成统一总览报告”，使用 Suite 接口。
+
+默认 Suite 是当前推荐的一键测试计划，包含以下阶段：
+
+| 阶段 | 默认接口 | 测什么 | 主要输出 |
+|---|---|---|---|
+| 网关 smoke | `POST /api/tasks/run`，计划 `gateway_acceptance_v1` | OpenAI 兼容协议、连通性、流式、usage、上下文、输出长度、错误结构、缓存观测等工程接入项。 | `data/tasks/` 结构化结果和 `reports/YYYY-MM-DD/` Markdown。 |
+| 模型能力测试 | `POST /api/intelligence/tasks/default` | 通过 EvalScope 跑默认公开数据集，覆盖代码、数学、知识、中文和复杂推理。 | `data/intelligence_tasks/` 标准化结果、能力维度汇总、EvalScope 原始输出和 Markdown 报告。 |
+| 性能压测 | `POST /api/stress/tasks/default` | 通过 EvalScope `perf` 采集并发、吞吐、延迟、TTFT/TPOT、失败率等性能数据。 | `data/stress_tasks/` 结果、`outputs/evalscope/` 原始输出和 Markdown 报告。 |
+| 统一总览 | `POST /api/overview/reports` | 汇总三类任务，给出统一中文摘要和详情入口。 | `data/overview_reports/` 与 `reports/overview/` 总览报告。 |
+
+默认模型能力数据集如下；完整元数据可通过 `GET /api/intelligence/datasets` 查询，本机已准备的数据集可通过 `GET /api/intelligence/datasets/local` 查询。
+
+| dataset | 展示名 | 能力维度 | 说明 | 默认需要 Judge |
+|---|---|---|---|---|
+| `humaneval` | HumanEval | Code | 代码生成评测。 | 否 |
+| `mbpp` | MBPP | Code | 基础编程题评测。 | 否 |
+| `humaneval_plus` | HumanEval+ | Code | HumanEval 增强版。 | 否 |
+| `mbpp_plus` | MBPP+ | Code | MBPP 增强版。 | 否 |
+| `live_code_bench` | LiveCodeBench | Code | 实时代码评测。 | 否 |
+| `gsm8k` | GSM8K | Math / Reasoning | 小学数学多步推理。 | 否 |
+| `math_500` | MATH-500 | Math / Reasoning | 数学竞赛题。 | 否 |
+| `mmlu_pro` | MMLU-Pro | Knowledge | 综合知识增强评测。 | 否 |
+| `ceval` | C-Eval | Knowledge / Chinese | 中文综合能力评测。 | 否 |
+| `bbh` | BBH | Reasoning | Big-Bench Hard 复杂推理。 | 否 |
+
+默认能力测试数据集当前不需要 LLM Judge；如果调用 `POST /api/intelligence/tasks` 自定义加入 `simple_qa`、`chinese_simpleqa`、`truthful_qa`、`alpaca_eval`、`arena_hard`、`longbench_v2` 等 Judge 数据集，则会使用内置 Judge 配置，缺少 Judge 时提交阶段返回 `400 judge_required`。
 
 后台启动一键评测，接口立即返回 `suite_id`：
 
@@ -380,9 +408,9 @@ curl -fsS "$API_BASE/api/overview/reports/<overview_id>/markdown" -o overview-re
 
 总览报告包含：网关接入验收摘要、能力评测摘要、压测摘要和三类详情报告入口。生产使用时更推荐直接调用 suite 接口，由 suite 自动串联三类任务并生成 overview。
 
-## 默认评测计划
+## 默认网关 smoke 计划
 
-默认计划为 `gateway_acceptance_v1`，定位为“模型网关接入验收 / 协议 smoke”。历史计划名 `gateway_baseline_v1` 仍可使用，但只是兼容别名，语义等同于 `gateway_acceptance_v1`。
+默认网关 smoke 计划为 `gateway_acceptance_v1`，定位为“模型网关接入验收 / 协议 smoke”。历史计划名 `gateway_baseline_v1` 仍可使用，但只是兼容别名，语义等同于 `gateway_acceptance_v1`。
 
 `metric_id` 保持英文，便于 API、脚本和历史数据稳定；报告和指标元数据使用中文名 + 英文 ID 的双语展示。
 
