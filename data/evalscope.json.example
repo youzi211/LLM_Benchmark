@@ -1,16 +1,4 @@
 {
   "datasets_dir": "data/evalscope_datasets",
-  "outputs_dir": "outputs/evalscope",
-  "poll_interval_seconds": 5,
-  "default_timeout_seconds": 14400,
-  "stress_timeout_seconds": 86400,
-  "judge_model_id": "",
-  "judge_api_url": "",
-  "judge_api_key": "",
-  "judge_generation_config": {
-    "temperature": 0.0,
-    "max_tokens": 4096
-  },
-  "judge_worker_num": 5,
-  "ignore_dataset_errors": true
+  "outputs_dir": "outputs/evalscope"
 }

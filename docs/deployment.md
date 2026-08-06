@@ -14,28 +14,22 @@ LLM_Benchmark/
 └── pyproject.toml        # uv 统一依赖管理
 ```
 
-`data/evalscope.json` 只保存本地 EvalScope 执行配置，例如数据集目录、输出目录、超时和可选 Judge 配置：
+`data/evalscope.json` 是**可选**运行时覆盖文件。默认不创建也可以启动：
+
+- 数据集目录默认：`data/evalscope_datasets`
+- EvalScope 原始输出默认：`outputs/evalscope`
+- 也可用环境变量 `LLM_BENCHMARK_EVALSCOPE_DATASETS_DIR` / `LLM_BENCHMARK_EVALSCOPE_OUTPUTS_DIR` 覆盖
+
+只有需要固定本机目录时，才复制最小示例：
 
 ```json
 {
   "datasets_dir": "data/evalscope_datasets",
-  "outputs_dir": "outputs/evalscope",
-  "poll_interval_seconds": 5,
-  "default_timeout_seconds": 14400,
-  "stress_timeout_seconds": 86400,
-  "judge_model_id": "",
-  "judge_api_url": "",
-  "judge_api_key": "",
-  "judge_generation_config": {
-    "temperature": 0.0,
-    "max_tokens": 4096
-  },
-  "judge_worker_num": 5,
-  "ignore_dataset_errors": true
+  "outputs_dir": "outputs/evalscope"
 }
 ```
 
-历史版本中的 `base_url` 字段仍会被兼容读取，但当前不会再用于访问 EvalScope HTTP 包装服务。
+需要运行依赖 LLM Judge 的数据集时，可在同一个文件额外加入 Judge 覆盖字段：`judge_model_id`、`judge_api_url`、`judge_api_key`、`judge_generation_config`、`judge_worker_num`。`judge_api_key` 仍是运行时敏感配置，不能提交。旧运行文件中的 `base_url`、超时和轮询字段会被忽略；它们不再参与当前 in-process EvalScope 执行。
 
 ## 2. 安装依赖
 

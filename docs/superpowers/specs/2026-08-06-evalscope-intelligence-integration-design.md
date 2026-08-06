@@ -21,7 +21,7 @@ LLM Benchmark 服务主要负责模型网关上线前的基础工程评测。Eva
 
 - 第一版不把能力评测合并进 `/api/tasks/run`。
 - 第一版不把能力评测作为 `gateway_acceptance_v1` 的普通 metric。
-- 第一版不代理配置 Judge，只检查并提示 `data/evalscope.json` 中的 Judge 状态。
+- 第一版不代理配置 Judge，只检查并提示可选 `data/evalscope.json` 中的 Judge 状态。
 - 第一版不输出“上线通过 / 失败”的自动结论。
 
 ## 3. 当前方案
@@ -57,18 +57,13 @@ app/
 
 ## 5. 配置与存储
 
-`data/evalscope.json` 保存本地 EvalScope 执行配置：
+`data/evalscope.json` 是可选本地覆盖文件，不创建时使用默认数据集目录和输出目录：
 
 ```json
 {
   "datasets_dir": "data/evalscope_datasets",
-  "outputs_dir": "outputs/evalscope",
-  "poll_interval_seconds": 5,
-  "default_timeout_seconds": 14400,
-  "judge_model_id": "",
-  "judge_api_url": "",
-  "judge_api_key": ""
+  "outputs_dir": "outputs/evalscope"
 }
 ```
 
-历史 `base_url` 字段只做兼容读取，不再驱动远程调用。
+需要 LLM Judge 时可额外加入 `judge_model_id`、`judge_api_url`、`judge_api_key`、`judge_generation_config` 和 `judge_worker_num`。旧运行文件中的 `base_url`、超时和轮询字段会被 schema 忽略，不再驱动远程调用或任务等待。

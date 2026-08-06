@@ -802,15 +802,12 @@ EvalScope 压测不是 `gateway_acceptance_v1` 的同步接入验收指标，而
 ### 压测执行方法
 
 1. 在 `data/models.json` 配置被测模型，协议必须显式为 `chat_completions` 或 `responses`。
-2. 在 `data/evalscope.json` 配置 EvalScope 本地执行目录和超时：
+2. `data/evalscope.json` 通常可以不创建；只有要覆盖 EvalScope 本地目录时才使用最小配置：
 
 ```json
 {
   "datasets_dir": "data/evalscope_datasets",
-  "outputs_dir": "outputs/evalscope",
-  "poll_interval_seconds": 5,
-  "default_timeout_seconds": 14400,
-  "stress_timeout_seconds": 86400
+  "outputs_dir": "outputs/evalscope"
 }
 ```
 
@@ -858,7 +855,7 @@ EvalScope 智力评测不是 `gateway_acceptance_v1` 的接入验收指标，因
 关注点：
 
 - 默认评测的数据集组合由本系统在 `app/intelligence/evalscope_direct.py` 中维护，并逐个传给 EvalScope 执行。
-- 需要 Judge 的数据集依赖 `data/evalscope.json` 中的本地 Judge 配置；第一版只检查并提示，不自动配置。
+- 需要 Judge 的数据集可在可选 `data/evalscope.json` 中加入本地 Judge 配置；第一版只检查并提示，不自动配置。
 - `score` 只做展示和后续人工分析，不设置上线阈值，不输出自动准入结论。
 - EvalScope 原始 `report_table` 会原样保留在报告中，EvalScope 原始输出会落到 `outputs/evalscope/` 便于排查。
 

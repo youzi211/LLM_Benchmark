@@ -11,14 +11,17 @@ IntelligenceTaskStatus = Literal["pending", "running", "completed", "failed"]
 
 
 class EvalScopeConfig(BaseModel):
-    # Deprecated compatibility field: older configs pointed at the removed EvalScope HTTP sub-service.
-    # New execution is always in-process through the evalscope Python package.
-    base_url: str | None = None
+    """Optional local overrides for in-process EvalScope execution.
+
+    Missing config means the built-in defaults are used. Extra keys are ignored so
+    old runtime files with removed fields such as ``base_url`` do not break
+    startup, but the model no longer exposes or persists those legacy fields.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
     datasets_dir: str | None = None
     outputs_dir: str | None = None
-    poll_interval_seconds: int = Field(default=5, ge=1, le=3600)
-    default_timeout_seconds: int = Field(default=14400, ge=1, le=86400)
-    stress_timeout_seconds: int = Field(default=86400, ge=1, le=172800)
     judge_model_id: str | None = None
     judge_api_url: str | None = None
     judge_api_key: str | None = None
@@ -26,7 +29,7 @@ class EvalScopeConfig(BaseModel):
     judge_worker_num: int = Field(default=5, ge=1, le=128)
     ignore_dataset_errors: bool = True
 
-    @field_validator("base_url", "datasets_dir", "outputs_dir", "judge_model_id", "judge_api_url", "judge_api_key")
+    @field_validator("datasets_dir", "outputs_dir", "judge_model_id", "judge_api_url", "judge_api_key")
     @classmethod
     def strip_optional_text(cls, value: str | None) -> str | None:
         if value is None:

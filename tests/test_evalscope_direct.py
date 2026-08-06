@@ -7,10 +7,10 @@ from app.stress.evalscope_direct import EvalScopeStressExecutor
 from app.stress.schemas import StressRemoteSubmitPayload
 
 
-def test_evalscope_config_is_in_process_and_keeps_legacy_base_url_compatible():
-    config = EvalScopeConfig(base_url="http://legacy-evalscope/api/v1/", outputs_dir="outputs/evalscope/")
+def test_evalscope_config_is_in_process_and_ignores_legacy_base_url():
+    config = EvalScopeConfig.model_validate({"base_url": "http://legacy-evalscope/api/v1/", "outputs_dir": "outputs/evalscope/"})
 
-    assert config.base_url == "http://legacy-evalscope/api/v1"
+    assert not hasattr(config, "base_url")
     assert config.outputs_dir == "outputs/evalscope"
     assert dataset_metadata(config)["default_datasets"]
 

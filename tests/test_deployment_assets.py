@@ -10,10 +10,10 @@ from app.intelligence.schemas import EvalScopeConfig
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_evalscope_default_config_is_in_process() -> None:
+def test_evalscope_default_config_is_in_process_and_minimal() -> None:
     config = EvalScopeConfig()
-    assert config.base_url is None
-    assert config.stress_timeout_seconds == 86400
+    dumped = config.model_dump(mode="json", exclude_none=True, exclude_defaults=True)
+    assert dumped == {}
 
 
 def test_root_pyproject_has_evalscope_dependency_group() -> None:
@@ -25,14 +25,13 @@ def test_root_pyproject_has_evalscope_dependency_group() -> None:
     assert "sse-starlette" not in deps
 
 
-def test_local_evalscope_example_config_exists() -> None:
+def test_local_evalscope_example_config_is_optional_minimal_override() -> None:
     example_path = ROOT / "data" / "evalscope.json.example"
     data = json.loads(example_path.read_text(encoding="utf-8"))
-    assert data["datasets_dir"] == "data/evalscope_datasets"
-    assert data["outputs_dir"] == "outputs/evalscope"
-    assert data["poll_interval_seconds"] == 5
-    assert "stress_timeout_seconds" in data
-    assert "base_url" not in data
+    assert data == {
+        "datasets_dir": "data/evalscope_datasets",
+        "outputs_dir": "outputs/evalscope",
+    }
 
 
 def test_deployment_scripts_cover_single_process_and_smoke_check() -> None:

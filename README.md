@@ -45,7 +45,7 @@ EvalScope 执行模式         in-process（Python package）
 uv sync --group evalscope
 ```
 
-初始化本机 EvalScope 配置：
+`data/evalscope.json` 是可选覆盖文件。默认目录即可运行；只有需要自定义 EvalScope 数据集目录或输出目录时才复制示例：
 
 ```powershell
 Copy-Item data/evalscope.json.example data/evalscope.json
@@ -263,26 +263,16 @@ Get-Content .\report.md -Encoding UTF8 | Select-Object -First 80
 
 ## EvalScope 压测
 
-压测由主服务进程内直接调用 EvalScope `perf` 执行，本项目负责编排、归档和报告。先配置 `data/evalscope.json`，默认可直接复制 `data/evalscope.json.example`：
+压测由主服务进程内直接调用 EvalScope `perf` 执行，本项目负责编排、归档和报告。通常不需要创建 `data/evalscope.json`；只有要覆盖本地目录时才使用这个最小示例：
 
 ```json
 {
   "datasets_dir": "data/evalscope_datasets",
-  "outputs_dir": "outputs/evalscope",
-  "poll_interval_seconds": 5,
-  "default_timeout_seconds": 14400,
-  "stress_timeout_seconds": 86400,
-  "judge_model_id": "",
-  "judge_api_url": "",
-  "judge_api_key": "",
-  "judge_generation_config": {
-    "temperature": 0.0,
-    "max_tokens": 4096
-  },
-  "judge_worker_num": 5,
-  "ignore_dataset_errors": true
+  "outputs_dir": "outputs/evalscope"
 }
 ```
+
+能力评测如果要启用需要 LLM Judge 的数据集，可在同一个可选文件中额外加入 `judge_model_id`、`judge_api_url`、`judge_api_key`、`judge_generation_config` 和 `judge_worker_num`。
 
 提交默认压测：
 
@@ -340,7 +330,7 @@ Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/overview/reports/$($overview.o
 ```text
 data/
   models.json          # 本地模型配置，可能包含明文 API Key，不要提交
-  evalscope.json      # EvalScope 本地目录、超时和 Judge 配置，不要提交
+  evalscope.json      # 可选 EvalScope 本地覆盖配置，不要提交
   tasks/
     task_xxx.json      # 基础工程评测任务结构化结果
   intelligence_tasks/

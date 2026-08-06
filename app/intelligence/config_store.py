@@ -18,5 +18,5 @@ class EvalScopeConfigStore:
         return EvalScopeConfig.model_validate(data)
 
     def save(self, config: EvalScopeConfig) -> EvalScopeConfig:
-        write_json_file_atomic(self.path, config.model_dump(mode="json"))
+        write_json_file_atomic(self.path, config.model_dump(mode="json", exclude_none=True, exclude_defaults=True))
         return config

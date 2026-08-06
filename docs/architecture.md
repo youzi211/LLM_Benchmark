@@ -177,7 +177,7 @@ flowchart TB
 | 文件 | 职责 |
 |---|---|
 | `app/intelligence/schemas.py` | EvalScope 本地配置、智力评测请求、任务、标准化结果数据结构。 |
-| `app/intelligence/config_store.py` | 读写 `data/evalscope.json`，包含数据集目录、输出目录、超时和 Judge 配置；历史 `base_url` 仅兼容读取。 |
+| `app/intelligence/config_store.py` | 读取可选 `data/evalscope.json`，只覆盖数据集目录、输出目录和 Judge；旧字段会被忽略。 |
 | `app/intelligence/evalscope_direct.py` | 本地 import EvalScope，提供健康检查、数据集元数据、Judge 状态和 `run_task(TaskConfig)` 执行器。 |
 | `app/intelligence/runner.py` | 读取本系统模型配置，提交 in-process EvalScope 评测，终态后标准化结果并生成报告。 |
 | `app/intelligence/report.py` | 生成 `reports/intelligence/YYYY-MM-DD/*.md` 智力评测报告。 |
@@ -247,7 +247,7 @@ sequenceDiagram
 | 模型配置 | `data/models.json` | `LLM_BENCHMARK_DATA_DIR` | 否，可能包含 API Key |
 | 任务历史 | `data/tasks/*.json` | `LLM_BENCHMARK_DATA_DIR` | 否，运行产物 |
 | Markdown 报告 | `reports/YYYY-MM-DD/*.md` | `LLM_BENCHMARK_REPORTS_DIR` | 否，运行产物 |
-| EvalScope 配置 | `data/evalscope.json` | `LLM_BENCHMARK_DATA_DIR` | 否，本地运行配置 |
+| EvalScope 可选覆盖配置 | `data/evalscope.json` | `LLM_BENCHMARK_DATA_DIR` | 否，仅覆盖本地目录或 Judge |
 | 能力评测任务 | `data/intelligence_tasks/*.json` | `LLM_BENCHMARK_DATA_DIR` | 否，运行产物 |
 | 能力评测报告 | `reports/intelligence/YYYY-MM-DD/*.md` | `LLM_BENCHMARK_REPORTS_DIR` | 否，运行产物 |
 | 压测任务 | `data/stress_tasks/*.json` | `LLM_BENCHMARK_DATA_DIR` | 否，运行产物 |
@@ -354,7 +354,7 @@ Suite 层解决“一个模型 ID 自动完成整套评测并出最终总览报�
 | `scripts/test_deployment.py` | 检查主服务健康检查，以及主服务内 EvalScope intelligence/stress 健康入口。 |
 | `scripts/smoke_deploy.py` | 使用临时 `data/`、`reports/`、`outputs/` 目录拉起测试端口并自动执行部署健康检查。 |
 
-标准配置示例见 `data/evalscope.json.example`，详细部署步骤见 `docs/deployment.md`。
+可选目录覆盖示例见 `data/evalscope.json.example`，详细部署步骤见 `docs/deployment.md`。
 
 ## 5. 同步评测执行流程
 
@@ -642,7 +642,7 @@ git status --short
 
 注意事项：
 
-- 不要提交 `data/models.json`、`data/evalscope.json`、`data/tasks/`、`data/intelligence_tasks/`、`data/stress_tasks/`、`data/overview_reports/`、`data/suite_runs/`、`data/suite_schedules/`、`reports/`，它们可能包含密钥、内网地址或运行产物。
+- 不要提交 `data/models.json`、`data/evalscope.json`、`data/tasks/`、`data/intelligence_tasks/`、`data/stress_tasks/`、`data/overview_reports/`、`data/suite_runs/`、`data/suite_schedules/`、`reports/`，它们可能包含密钥、本机覆盖配置、内网地址或运行产物。
 - 不要在日志、报告或提交信息中暴露 API Key。
 - 评测指标是观测工具，不是自动准入判定器。
 - 面向中文人员展示，新增文案应优先使用中文；指标 ID 可保留英文以保证脚本和历史数据稳定。

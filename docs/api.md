@@ -542,7 +542,7 @@ GET /api/tasks?limit=20
 
 ## 10. 智力评测接口（EvalScope）
 
-智力评测用于调用 EvalScope Python package 执行公开数据集能力测试。当前执行模式为 `in_process`：主服务直接 `import evalscope` 并调用 `evalscope.run_task(TaskConfig)`，不再代理到外部 HTTP 包装服务。`data/evalscope.json` 只保存本地数据集目录、输出目录、超时和可选 Judge 配置；历史 `base_url` 字段仅兼容旧配置读取。
+智力评测用于调用 EvalScope Python package 执行公开数据集能力测试。当前执行模式为 `in_process`：主服务直接 `import evalscope` 并调用 `evalscope.run_task(TaskConfig)`，不再代理到外部 HTTP 包装服务。`data/evalscope.json` 是可选覆盖文件；默认不创建也会使用 `data/evalscope_datasets` 和 `outputs/evalscope`。
 
 ### 10.1 辅助查询接口
 
@@ -574,7 +574,7 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 
 #### GET `/api/intelligence/datasets/local`
 
-扫描 `data/evalscope.json.datasets_dir` 或默认 `data/evalscope_datasets`，列出本地已下载、可直接评测的数据集。自定义评测前建议先调用该接口确认数据集可用。
+扫描可选 `data/evalscope.json` 中的 `datasets_dir`，未配置时扫描默认 `data/evalscope_datasets`，列出本地已下载、可直接评测的数据集。自定义评测前建议先调用该接口确认数据集可用。
 
 ### 10.2 IntelligenceDefaultRunRequest
 
@@ -688,7 +688,7 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 
 压测能力用于把本系统的模型配置交给 EvalScope `perf` 执行，当前执行模式同样为 `in_process`：主服务直接构造 `evalscope.perf.arguments.Arguments` 并调用 `evalscope.perf.main.run_perf_benchmark`。本系统负责任务编排、本地 JSON 落库、结果标准化和 Markdown 报告生成；正式并发、吞吐、延迟分位数和限流/容量边界以该接口为准。基础 `/api/tasks/run` 中的 `latency_breakdown` 只是单次链路 smoke，`concurrency` 与 `rate_limit` 仅作为显式兼容 smoke 指标保留。
 
-> 配置位置：`data/evalscope.json`。常用字段为 `outputs_dir`、`datasets_dir`、`stress_timeout_seconds`。该文件可能包含 Judge 地址或密钥，不提交。
+> 配置位置：通常不需要 `data/evalscope.json`；只有要覆盖 `outputs_dir`、`datasets_dir` 或配置 Judge 时才创建。该文件可能包含 Judge 地址或密钥，不提交。
 
 ### 11.1 StressDefaultRunRequest / StressRunRequest
 
