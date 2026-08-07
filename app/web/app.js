@@ -25,6 +25,11 @@ const elements = {
   refreshInsights: $("refresh-insights"),
   insightsEmpty: $("insights-empty"),
   insightsGrid: $("insights-grid"),
+  scheduleModelSelect: $("schedule-model-select"),
+  scheduleList: $("schedule-list"),
+  refreshSchedules: $("refresh-schedules"),
+  createQuickSchedule: $("create-quick-schedule"),
+  createModelSchedule: $("create-model-schedule"),
 };
 
 function setNotice(message, type = "info") {
@@ -177,6 +182,131 @@ async function startDefaultSuite() {
     await loadSuites();
   } catch (error) {
     setNotice(`启动失败：${error.message}`, "error");
+  }
+}
+
+function sanitizeModelId(value) {
+  const cleaned = String(value || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9_.-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 96);
+  return cleaned || `scheduled-${Date.now()}`;
+}
+
+function scheduleNameFallback(modelId) {
+  return `${modelId} 每日定时评测`;
+}
+
+function buildPersistedModelPayload() {
+  const modelId = sanitizeModelId($("schedule-model-id").value || $("model").value || "scheduled-model");
+  $("schedule-model-id").value = modelId;
+  const payload = {
+    id: modelId,
+    name: $("schedule-model-name").value.trim() || `${$("model").value.trim() || modelId} 定时评测模型`,
+    protocol: $("protocol").value,
+    base_url: $("url").value.trim(),
+    api_key: $("key").value,
+    model: $("model").value.trim(),
+    timeout_seconds: toNumberOrNull($("request-timeout").value) || 60,
+    enabled: true,
+  };
+  const contextWindow = toNumberOrNull($("context-window").value);
+  const maxOutput = toNumberOrNull($("max-output").value);
+  const concurrency = parseIntegerList($("stress-parallel").value);
+  if (contextWindow !== null) payload.declared_context_tokens = contextWindow;
+  if (maxOutput !== null) payload.declared_max_output_tokens = maxOutput;
+  if (concurrency) payload.concurrency_levels = concurrency;
+  if (!payload.base_url || !payload.model) {
+    throw new Error("请先填写左侧服务地址 URL 和模型名 model。");
+  }
+  return payload;
+}
+
+async function saveModelConfig(payload) {
+  try {
+    return await apiFetch("/models", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    if (!/already exists|already_exists|已存在/i.test(error.message)) throw error;
+    const updatePayload = { ...payload };
+    delete updatePayload.id;
+    return apiFetch(`/models/${encodeURIComponent(payload.id)}`, {
+      method: "PUT",
+      body: JSON.stringify(updatePayload),
+    });
+  }
+}
+
+function buildSchedulePayload(modelId, fallbackTitle = "一键定时评测") {
+  if (!modelId) throw new Error("请选择或填写 model_id。");
+  const suiteOptions = getSuiteOptions();
+  const timeOfDay = $("schedule-time").value || "00:00";
+  const interval = toNumberOrNull($("schedule-interval").value) || 1;
+  const payload = {
+    name: $("schedule-name").value.trim() || scheduleNameFallback(modelId),
+    model_id: modelId,
+    enabled: true,
+    title: $("schedule-run-title").value.trim() || fallbackTitle,
+    time_of_day: timeOfDay,
+    timezone: $("schedule-timezone").value.trim() || "Asia/Shanghai",
+    interval_days: interval,
+    run_gateway: suiteOptions.run_gateway,
+    run_intelligence: suiteOptions.run_intelligence,
+    run_stress: suiteOptions.run_stress,
+    gateway_plan_id: "gateway_acceptance_v1",
+  };
+  if (suiteOptions.gateway_metric_ids) payload.gateway_metric_ids = suiteOptions.gateway_metric_ids;
+  if (suiteOptions.stress_options) payload.stress_options = suiteOptions.stress_options;
+  if (suiteOptions.poll_interval_seconds !== undefined) payload.poll_interval_seconds = suiteOptions.poll_interval_seconds;
+  if (suiteOptions.timeout_seconds_total !== undefined) payload.timeout_seconds = suiteOptions.timeout_seconds_total;
+  return payload;
+}
+
+async function createSchedule(payload) {
+  return apiFetch("/suites/schedules", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+async function createScheduleFromQuick() {
+  const button = elements.createQuickSchedule;
+  try {
+    button.disabled = true;
+    const modelPayload = buildPersistedModelPayload();
+    setNotice("正在保存模型配置并创建定时计划……");
+    const model = await saveModelConfig(modelPayload);
+    const schedulePayload = buildSchedulePayload(model.id, `${modelPayload.model} 定时综合评测`);
+    const schedule = await createSchedule(schedulePayload);
+    $("key").value = "";
+    setNotice(`已创建定时计划 ${schedule.schedule_id}，下一次触发：${formatDate(schedule.next_run_at)}。Key 输入框已清空。`);
+    await Promise.all([loadModels(), loadSchedules()]);
+  } catch (error) {
+    setNotice(`创建定时计划失败：${error.message}`, "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function createScheduleFromSaved() {
+  const modelId = elements.scheduleModelSelect.value || elements.modelSelect.value;
+  if (!modelId) {
+    setNotice("请先读取并选择一个已有模型。", "error");
+    return;
+  }
+  const button = elements.createModelSchedule;
+  try {
+    button.disabled = true;
+    const schedule = await createSchedule(buildSchedulePayload(modelId, `${modelId} 定时综合评测`));
+    setNotice(`已为 ${modelId} 创建定时计划 ${schedule.schedule_id}，下一次触发：${formatDate(schedule.next_run_at)}。`);
+    await loadSchedules();
+  } catch (error) {
+    setNotice(`创建定时计划失败：${error.message}`, "error");
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -697,23 +827,31 @@ function renderSuiteList(suites) {
   }
 }
 
+function populateModelSelect(select, models) {
+  select.replaceChildren();
+  if (!Array.isArray(models) || models.length === 0) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "暂无已保存模型";
+    select.append(option);
+    return;
+  }
+  for (const model of models) {
+    const option = document.createElement("option");
+    option.value = model.id;
+    option.textContent = `${model.name || model.id} · ${model.model} · ${model.protocol}`;
+    select.append(option);
+  }
+}
+
 async function loadModels() {
   try {
     const models = await apiFetch("/models", { headers: {} });
-    elements.modelSelect.replaceChildren();
+    populateModelSelect(elements.modelSelect, models);
+    populateModelSelect(elements.scheduleModelSelect, models);
     if (!Array.isArray(models) || models.length === 0) {
-      const option = document.createElement("option");
-      option.value = "";
-      option.textContent = "暂无已保存模型";
-      elements.modelSelect.append(option);
-      setNotice("没有读取到已保存模型；可使用 Quick suite 直接评测。");
+      setNotice("没有读取到已保存模型；可使用 Quick suite 直接评测，或在定时区域保存左侧模型配置。");
       return;
-    }
-    for (const model of models) {
-      const option = document.createElement("option");
-      option.value = model.id;
-      option.textContent = `${model.name || model.id} · ${model.model} · ${model.protocol}`;
-      elements.modelSelect.append(option);
     }
     setNotice(`已读取 ${models.length} 个模型配置。`);
   } catch (error) {
@@ -721,9 +859,92 @@ async function loadModels() {
   }
 }
 
+async function loadSchedules() {
+  try {
+    const schedules = await apiFetch("/suites/schedules?limit=20", { headers: {} });
+    renderScheduleList(schedules);
+  } catch (error) {
+    setNotice(`读取定时计划失败：${error.message}`, "error");
+  }
+}
+
+function renderScheduleList(schedules) {
+  elements.scheduleList.replaceChildren();
+  if (!Array.isArray(schedules) || schedules.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "暂无定时计划。";
+    elements.scheduleList.append(empty);
+    return;
+  }
+  for (const schedule of schedules) {
+    const row = document.createElement("article");
+    row.className = "schedule-row";
+
+    const main = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = schedule.name || schedule.schedule_id;
+    const detail = document.createElement("small");
+    detail.textContent = [
+      schedule.schedule_id,
+      `model: ${schedule.model_id}`,
+      `${schedule.time_of_day || "--:--"} ${schedule.timezone || ""}`,
+      `next: ${formatDate(schedule.next_run_at)}`,
+      schedule.last_suite_id ? `last: ${schedule.last_suite_id}` : "",
+      `runs: ${schedule.run_count || 0}`,
+    ].filter(Boolean).join(" · ");
+    main.append(title, detail);
+
+    const actions = document.createElement("div");
+    actions.className = "schedule-actions";
+    const badge = document.createElement("span");
+    badge.className = `status-badge ${schedule.enabled ? "completed" : "failed"}`;
+    badge.textContent = schedule.enabled ? "enabled" : "disabled";
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "mini";
+    trigger.textContent = "立即触发";
+    trigger.addEventListener("click", () => triggerSchedule(schedule.schedule_id));
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "mini danger";
+    remove.textContent = "删除";
+    remove.addEventListener("click", () => deleteSchedule(schedule.schedule_id));
+    actions.append(badge, trigger, remove);
+    row.append(main, actions);
+    elements.scheduleList.append(row);
+  }
+}
+
+async function triggerSchedule(scheduleId) {
+  try {
+    setNotice(`正在手动触发定时计划 ${scheduleId}……`);
+    const suite = await apiFetch(`/suites/schedules/${encodeURIComponent(scheduleId)}/trigger`, { method: "POST" });
+    setNotice(`已触发 ${suite.suite_id}，开始轮询进度。`);
+    selectSuite(suite.suite_id, suite);
+    await Promise.all([loadSchedules(), loadSuites()]);
+  } catch (error) {
+    setNotice(`触发失败：${error.message}`, "error");
+  }
+}
+
+async function deleteSchedule(scheduleId) {
+  if (!window.confirm(`确认删除定时计划 ${scheduleId}？`)) return;
+  try {
+    await apiFetch(`/suites/schedules/${encodeURIComponent(scheduleId)}`, { method: "DELETE" });
+    setNotice(`已删除定时计划 ${scheduleId}。`);
+    await loadSchedules();
+  } catch (error) {
+    setNotice(`删除失败：${error.message}`, "error");
+  }
+}
+
 elements.quickForm.addEventListener("submit", startQuickSuite);
 elements.loadModels.addEventListener("click", loadModels);
 elements.startDefault.addEventListener("click", startDefaultSuite);
+elements.createQuickSchedule.addEventListener("click", createScheduleFromQuick);
+elements.createModelSchedule.addEventListener("click", createScheduleFromSaved);
+elements.refreshSchedules.addEventListener("click", loadSchedules);
 elements.refreshSuites.addEventListener("click", loadSuites);
 elements.trackSuite.addEventListener("click", () => {
   const suiteId = elements.suiteId.value.trim();
@@ -744,3 +965,5 @@ elements.refreshInsights.addEventListener("click", () => {
 });
 
 loadSuites();
+loadModels();
+loadSchedules();

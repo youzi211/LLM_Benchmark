@@ -162,6 +162,70 @@
           </div>
         </section>
 
+        <section class="panel schedule-panel" aria-labelledby="schedule-section-title">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">Scheduled suites</p>
+              <h2 id="schedule-section-title">定时一键评测</h2>
+            </div>
+            <button id="refresh-schedules" class="mini" type="button">刷新计划</button>
+          </div>
+          <p class="hint">创建半夜 00:00 等定时任务。定时任务需要持久化模型配置；如果从左侧 URL/Key 创建计划，Key 会写入本机 <code>data/models.json</code>。</p>
+
+          <div class="schedule-shared">
+            <div class="field-grid two compact">
+              <label>
+                <span>计划名称 name</span>
+                <input id="schedule-name" placeholder="demo-model 每日零点评测" autocomplete="off" />
+              </label>
+              <label>
+                <span>评测标题 title</span>
+                <input id="schedule-run-title" placeholder="demo-model 半夜综合评测" autocomplete="off" />
+              </label>
+              <label>
+                <span>开始时间 time_of_day</span>
+                <input id="schedule-time" type="time" value="00:00" />
+              </label>
+              <label>
+                <span>时区 timezone</span>
+                <input id="schedule-timezone" value="Asia/Shanghai" autocomplete="off" />
+              </label>
+              <label>
+                <span>间隔天数 interval_days</span>
+                <input id="schedule-interval" type="number" min="1" max="365" value="1" />
+              </label>
+            </div>
+          </div>
+
+          <details class="advanced schedule-details" open>
+            <summary>从左侧临时模型参数保存并定时</summary>
+            <div class="field-grid two compact">
+              <label>
+                <span>持久化 model_id</span>
+                <input id="schedule-model-id" placeholder="demo-model-nightly" autocomplete="off" />
+              </label>
+              <label>
+                <span>保存名称 name</span>
+                <input id="schedule-model-name" placeholder="demo-model 定时评测模型" autocomplete="off" />
+              </label>
+            </div>
+            <p class="warning-text">注意：这个按钮会先保存左侧 URL、Key、model、窗口大小等模型配置，再创建定时计划。</p>
+            <button id="create-quick-schedule" class="primary" type="button">保存模型并创建定时计划</button>
+          </details>
+
+          <details class="advanced schedule-details">
+            <summary>用已有模型创建定时计划</summary>
+            <div class="saved-run schedule-run">
+              <select id="schedule-model-select" aria-label="选择定时评测模型">
+                <option value="">暂无模型，请先读取</option>
+              </select>
+              <button id="create-model-schedule" class="ghost" type="button">为已有模型定时</button>
+            </div>
+          </details>
+
+          <div id="schedule-list" class="schedule-list" aria-live="polite"></div>
+        </section>
+
         <section class="panel history-panel" aria-labelledby="history-title">
           <div class="panel-heading">
             <div>

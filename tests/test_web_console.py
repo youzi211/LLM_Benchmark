@@ -18,11 +18,16 @@ def test_web_console_static_assets_are_served(monkeypatch):
     assert "LLM Benchmark 控制台" in page.text
     assert "大模型测试平台" in page.text
     assert "指标曲线" in page.text
+    assert "定时一键评测" in page.text
+    assert "保存模型并创建定时计划" in page.text
     assert "/api/suites/quick" not in page.text  # API path lives in JS, not duplicated in markup.
 
     script = client.get("/ui/app.js")
     assert script.status_code == 200
     assert "apiFetch(\"/suites/quick\"" in script.text
+    assert "apiFetch(\"/suites/schedules\"" in script.text
+    assert "createScheduleFromQuick" in script.text
+    assert "triggerSchedule" in script.text
     assert "buildStressCards" in script.text
     assert "createLineChart" in script.text
     assert "/stress/tasks/" in script.text
@@ -31,3 +36,4 @@ def test_web_console_static_assets_are_served(monkeypatch):
     assert style.status_code == 200
     assert "评测" not in style.text
     assert ".insights-grid" in style.text
+    assert ".schedule-list" in style.text

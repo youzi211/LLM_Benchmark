@@ -165,8 +165,9 @@ Windows PowerShell 使用脚本启动（默认只启动主服务）：
 - 访问 `http://<主服务地址>:8000/` 会跳转到 `http://<主服务地址>:8000/ui/`。
 - 控制台支持直接填写 `url`、`key`、`model`、`context_window_tokens`、`max_output_tokens` 后调用 `POST /api/suites/quick`。
 - 控制台也能读取已有模型配置并调用 `POST /api/suites/default`，以及跟踪最近 suite、打开最终总览报告。
+- 控制台支持创建定时一键评测计划：可为已有模型调用 `POST /api/suites/schedules`，也可将左侧临时模型参数先保存为模型配置再创建定时计划。
 - 选择 suite 后会自动读取关联的 gateway、intelligence、stress 任务结果，展示压测吞吐/延迟/成功率曲线、智力评测分数柱状图和网关 smoke 指标状态。
-- 前端不会使用 localStorage 保存 Key；quick suite 的 Key 仍只随本次请求发送，服务端也不会写入 `data/models.json`。
+- 前端不会使用 localStorage 保存 Key；quick suite 的 Key 仍只随本次请求发送，服务端也不会写入 `data/models.json`。但如果在“定时一键评测”中选择保存左侧模型参数，Key 会随模型配置写入本机 `data/models.json`，用于后续定时执行。
 
 ### 5. 健康检查和部署检查
 

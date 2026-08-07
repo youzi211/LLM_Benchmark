@@ -19,8 +19,9 @@
 - `GET /`：浏览器访问时跳转到 `/ui/`。
 - `GET /ui/`：打开评测控制台页面。
 - 控制台主要调用现有 JSON API：`POST /api/suites/quick`、`POST /api/suites/default`、`GET /api/suites`、`GET /api/suites/{suite_id}` 和 `GET /api/suites/{suite_id}/report`。
+- 定时一键评测区域会调用 `GET /api/models`、`POST /api/models`、`PUT /api/models/{model_id}`、`POST /api/suites/schedules`、`GET /api/suites/schedules`、`POST /api/suites/schedules/{schedule_id}/trigger` 和 `DELETE /api/suites/schedules/{schedule_id}`。
 - 指标曲线区域会按 suite 中的 `gateway_task_id`、`intelligence_task_id`、`stress_task_id` 继续读取 `GET /api/tasks/{task_id}`、`GET /api/intelligence/tasks/{task_id}/result` 和 `GET /api/stress/tasks/{task_id}/result`，用于展示 smoke 状态、数据集分数、吞吐、延迟、TTFT/TPOT 和成功率。
-- 控制台不在浏览器 localStorage 中保存 API Key；临时模型一键评测仍遵循 `/api/suites/quick` 的安全边界，即不把传入 Key 写入 `data/models.json`、suite JSON 或报告。
+- 控制台不在浏览器 localStorage 中保存 API Key；临时模型一键评测仍遵循 `/api/suites/quick` 的安全边界，即不把传入 Key 写入 `data/models.json`、suite JSON 或报告。定时计划需要持久化模型配置；如果从左侧临时参数创建定时计划，Key 会写入本机 `data/models.json`。
 
 ## 2. 通用错误格式
 
