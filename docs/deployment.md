@@ -1,6 +1,8 @@
 # 单服务部署指南
 
-本项目当前推荐部署为**一个 FastAPI 主服务进程**。主服务负责模型配置、网关 smoke、EvalScope 能力评测、EvalScope perf 压测、任务归档和 Markdown 报告；能力评测与压测都在主服务进程内直接调用 EvalScope Python package，不再启动额外 HTTP 包装服务。
+本项目当前推荐部署为**一个 FastAPI 主服务进程**。主服务负责模型配置、网关 smoke、EvalScope 能力评测、EvalScope perf 压测、任务归档和 Markdown 报告；能力评测与压测都在主服务进程内直接调用 EvalScope Python package，不再启动额外 EvalScope HTTP 包装服务。
+
+> 注意：主服务启动时只会启动内置 suite 定时调度器，不会自动启动 EvalScope sandbox / `ms-enclave server`。MBPP/MBPP+/HumanEval 等代码执行评分需要 sandbox 时，请先把 sandbox 作为独立服务启动，再在 `data/evalscope.json` 中配置 `sandbox_manager_config.base_url`。
 
 ## 1. 部署形态
 
@@ -31,7 +33,7 @@ LLM_Benchmark/
 
 需要运行依赖 LLM Judge 的数据集时，系统默认使用 `data/models.json` 顶层 `analysis_model_id` 指向的模型作为内置 Judge。若要覆盖 Judge，可在同一个可选文件额外加入 `judge_model_config_id`、`judge_generation_config`、`judge_worker_num`；Judge 地址和密钥仍只存放在 `data/models.json` 的模型配置里，不能提交。旧运行文件中的 `base_url`、超时、轮询以及旧 Judge 直连字段会被忽略。
 
-代码执行类能力评测（当前包括 `humaneval`、`humaneval_plus`、`mbpp`、`mbpp_plus`、`live_code_bench`）需要 EvalScope sandbox 才能执行评分。生产环境推荐使用远程 sandbox server：主服务仍保持单 FastAPI 进程，sandbox 只承担隔离代码执行，不是 EvalScope HTTP 包装服务。可复制 `data/evalscope.remote-sandbox.json.example` 为 `data/evalscope.json` 并修改内网地址：
+代码执行类能力评测（当前包括 `humaneval`、`humaneval_plus`、`mbpp`、`mbpp_plus`、`live_code_bench`）需要 EvalScope sandbox 才能执行评分。生产环境推荐使用远程 sandbox server：主服务仍保持单 FastAPI 进程，sandbox 只承担隔离代码执行，不是 EvalScope HTTP 包装服务，也**不会被主服务启动脚本自动拉起**。可复制 `data/evalscope.remote-sandbox.json.example` 为 `data/evalscope.json` 并修改内网地址：
 
 ```json
 {
@@ -61,14 +63,14 @@ uv sync
 uv sync --group evalscope
 ```
 
-如果采用远程 sandbox，sandbox 节点也需要安装 sandbox extra 并具备 Docker：
+如果采用远程 sandbox，sandbox 节点也需要安装 sandbox extra 并具备 Docker。下面命令需要在 sandbox 节点单独执行；启动 `scripts/start_all.*` 或 `uvicorn app.main:app` 不会自动执行它：
 
 ```bash
 pip install "evalscope[sandbox]"
 ms-enclave server --host 0.0.0.0 --port 1234
 ```
 
-建议通过内网、防火墙或安全组限制 `1234` 端口只允许主服务访问。
+建议通过内网、防火墙或安全组限制 `1234` 端口只允许主服务访问。主服务启动前可先访问 `http://<sandbox-host>:1234/health` 确认 sandbox 已经独立运行。
 
 ### Windows 依赖安装提示
 
@@ -98,6 +100,7 @@ Windows PowerShell：
 默认端口：
 
 - 主服务：`http://127.0.0.1:8000`
+- sandbox：不随主服务启动；如果要跑代码评分，请使用独立的 `ms-enclave server`，例如 `http://sandbox-host:1234`
 - EvalScope 执行模式：`in-process`，由主服务内直接 `import evalscope`
 
 ## 4. 验证部署

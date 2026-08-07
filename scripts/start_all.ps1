@@ -20,6 +20,7 @@ $mainProc = Start-Process -FilePath $ps -ArgumentList $mainArgs -PassThru -Windo
 
 Write-Host "LLM_Benchmark 主服务 PID: $($mainProc.Id), 地址: http://127.0.0.1:$MainPort"
 Write-Host "EvalScope 执行模式: in-process（主服务内直接 import evalscope）"
+Write-Host "Sandbox 提醒: 本脚本不会启动 ms-enclave；代码评分请提前独立启动 sandbox server。"
 Write-Host "日志目录: $LogDir"
 Write-Host "停止时请结束以上 PID，或关闭本脚本后手动 Stop-Process。"
 

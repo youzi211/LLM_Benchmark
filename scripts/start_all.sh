@@ -17,5 +17,6 @@ trap cleanup INT TERM EXIT
 
 echo "LLM_Benchmark 主服务 PID: $main_pid, 地址: http://127.0.0.1:$MAIN_PORT"
 echo "EvalScope 执行模式: in-process（主服务内直接 import evalscope）"
+echo "Sandbox 提醒: 本脚本不会启动 ms-enclave；代码评分请提前独立启动 sandbox server。"
 echo "日志目录: $LOG_DIR"
 wait "$main_pid"
