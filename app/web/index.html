@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LLM Benchmark 控制台</title>
+    <link rel="stylesheet" href="/ui/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="hero" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">LLM Benchmark · 评测配线台</p>
+          <h1 id="page-title">大模型测试平台</h1>
+          <p class="lead">
+            直接填写 OpenAI 兼容地址、Key、模型名和窗口大小，启动网关 smoke、EvalScope 智力评测和压测，随后在同一页面跟踪 suite 进度与总览报告。
+          </p>
+        </div>
+        <div class="hero-card" aria-label="评测通道概览">
+          <div class="scope-line"><span></span><strong>Gateway</strong><small>接入验收</small></div>
+          <div class="scope-line"><span></span><strong>EvalScope</strong><small>能力评分</small></div>
+          <div class="scope-line"><span></span><strong>Perf</strong><small>压力曲线</small></div>
+        </div>
+      </header>
+
+      <main class="grid">
+        <section class="panel control-panel" aria-labelledby="quick-title">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">Quick suite</p>
+              <h2 id="quick-title">临时模型一键评测</h2>
+            </div>
+            <span class="pill">不落盘 Key</span>
+          </div>
+
+          <form id="quick-form" class="form-stack">
+            <div class="field-grid two">
+              <label>
+                <span>服务地址 URL</span>
+                <input id="url" name="url" type="url" required placeholder="http://127.0.0.1:9001/v1" autocomplete="off" />
+              </label>
+              <label>
+                <span>模型名 model</span>
+                <input id="model" name="model" required placeholder="demo-model" autocomplete="off" />
+              </label>
+            </div>
+
+            <div class="field-grid two">
+              <label>
+                <span>API Key</span>
+                <input id="key" name="key" type="password" placeholder="可为空；不会写入服务端模型配置" autocomplete="off" />
+              </label>
+              <label>
+                <span>协议</span>
+                <select id="protocol" name="protocol">
+                  <option value="chat_completions">chat_completions</option>
+                  <option value="responses">responses</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="field-grid three">
+              <label>
+                <span>窗口大小 context_window_tokens</span>
+                <input id="context-window" name="context_window_tokens" type="number" min="1" placeholder="8192" />
+              </label>
+              <label>
+                <span>最大输出 max_output_tokens</span>
+                <input id="max-output" name="max_output_tokens" type="number" min="1" placeholder="1024" />
+              </label>
+              <label>
+                <span>请求超时 timeout_seconds</span>
+                <input id="request-timeout" name="timeout_seconds" type="number" min="1" max="600" value="60" />
+              </label>
+            </div>
+
+            <label>
+              <span>评测标题</span>
+              <input id="title" name="title" placeholder="demo-model quick benchmark" autocomplete="off" />
+            </label>
+
+            <fieldset class="lane-box">
+              <legend>评测通道</legend>
+              <label class="check"><input id="run-gateway" type="checkbox" checked /> <span>网关 smoke / 工程检查</span></label>
+              <label class="check"><input id="run-intelligence" type="checkbox" checked /> <span>EvalScope 智力评测</span></label>
+              <label class="check"><input id="run-stress" type="checkbox" checked /> <span>EvalScope 压测</span></label>
+              <label class="check"><input id="connectivity-only" type="checkbox" /> <span>小批量 smoke：仅跑 connectivity</span></label>
+            </fieldset>
+
+            <details class="advanced">
+              <summary>压测与等待参数</summary>
+              <div class="field-grid two compact">
+                <label>
+                  <span>并发 parallel</span>
+                  <input id="stress-parallel" placeholder="1,5" />
+                </label>
+                <label>
+                  <span>请求数 number</span>
+                  <input id="stress-number" placeholder="10,50" />
+                </label>
+                <label>
+                  <span>轮询间隔（秒）</span>
+                  <input id="poll-interval" type="number" min="0" max="3600" placeholder="10" />
+                </label>
+                <label>
+                  <span>总超时（秒）</span>
+                  <input id="total-timeout" type="number" min="1" max="172800" placeholder="86400" />
+                </label>
+              </div>
+            </details>
+
+            <div class="actions">
+              <button id="start-quick" class="primary" type="submit">启动一键评测</button>
+              <button id="clear-key" class="ghost" type="button">清空 Key</button>
+            </div>
+          </form>
+        </section>
+
+        <aside class="panel side-panel" aria-labelledby="status-title">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">Live suite</p>
+              <h2 id="status-title">进度雷达</h2>
+            </div>
+            <button id="refresh-suites" class="mini" type="button">刷新列表</button>
+          </div>
+
+          <div id="notice" class="notice" role="status">准备就绪：填写参数后启动评测。</div>
+
+          <div class="suite-search">
+            <label>
+              <span>suite_id</span>
+              <input id="suite-id" placeholder="suite_..." autocomplete="off" />
+            </label>
+            <button id="track-suite" class="ghost" type="button">跟踪</button>
+          </div>
+
+          <article id="suite-card" class="suite-card empty">
+            <p class="muted">尚未选择 suite。</p>
+          </article>
+
+          <div class="report-actions">
+            <a id="report-link" class="report-link disabled" href="#" target="_blank" rel="noopener">打开总览报告</a>
+            <button id="stop-poll" class="mini danger" type="button">停止轮询</button>
+          </div>
+        </aside>
+
+        <section class="panel saved-panel" aria-labelledby="saved-title">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">Saved models</p>
+              <h2 id="saved-title">已有模型配置</h2>
+            </div>
+            <button id="load-models" class="mini" type="button">读取模型</button>
+          </div>
+          <p class="hint">如果已经在 <code>data/models.json</code> 中配置过模型，可从这里发起 <code>/api/suites/default</code>。临时评测仍推荐使用左侧 Quick suite。</p>
+          <div class="saved-run">
+            <select id="model-select" aria-label="选择已有模型">
+              <option value="">暂无模型，请先读取</option>
+            </select>
+            <button id="start-default" class="ghost" type="button">用已有模型启动</button>
+          </div>
+        </section>
+
+        <section class="panel history-panel" aria-labelledby="history-title">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">History</p>
+              <h2 id="history-title">最近 suite</h2>
+            </div>
+          </div>
+          <div id="suite-list" class="suite-list" aria-live="polite"></div>
+        </section>
+
+        <section class="panel insights-panel" aria-labelledby="insights-title">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">Metrics curves</p>
+              <h2 id="insights-title">指标曲线</h2>
+            </div>
+            <button id="refresh-insights" class="mini" type="button">刷新指标</button>
+          </div>
+          <p class="hint">选择或完成一个 suite 后，页面会自动读取网关 smoke、智力评测和压测结果，生成吞吐、延迟、成功率和数据集分数图。</p>
+          <div id="insights-empty" class="insights-empty">尚未选择 suite，或该 suite 还没有可展示的指标结果。</div>
+          <div id="insights-grid" class="insights-grid" aria-live="polite"></div>
+        </section>
+      </main>
+    </div>
+
+    <template id="step-template">
+      <li class="step-item">
+        <span class="step-dot"></span>
+        <div>
+          <strong></strong>
+          <small></small>
+        </div>
+      </li>
+    </template>
+
+    <script src="/ui/app.js" defer></script>
+  </body>
+</html>

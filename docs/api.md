@@ -12,6 +12,16 @@
 - 时间字段使用 ISO 8601 字符串，通常带 UTC 时区。
 - 本服务只采集评测数据和生成报告，不输出“上线通过 / 失败”的自动判定。
 
+### 1.1 可视化控制台
+
+主服务内置一个轻量 Web 控制台，随 FastAPI 进程一起提供静态资源，不需要单独启动前端服务：
+
+- `GET /`：浏览器访问时跳转到 `/ui/`。
+- `GET /ui/`：打开评测控制台页面。
+- 控制台主要调用现有 JSON API：`POST /api/suites/quick`、`POST /api/suites/default`、`GET /api/suites`、`GET /api/suites/{suite_id}` 和 `GET /api/suites/{suite_id}/report`。
+- 指标曲线区域会按 suite 中的 `gateway_task_id`、`intelligence_task_id`、`stress_task_id` 继续读取 `GET /api/tasks/{task_id}`、`GET /api/intelligence/tasks/{task_id}/result` 和 `GET /api/stress/tasks/{task_id}/result`，用于展示 smoke 状态、数据集分数、吞吐、延迟、TTFT/TPOT 和成功率。
+- 控制台不在浏览器 localStorage 中保存 API Key；临时模型一键评测仍遵循 `/api/suites/quick` 的安全边界，即不把传入 Key 写入 `data/models.json`、suite JSON 或报告。
+
 ## 2. 通用错误格式
 
 当接口返回错误时，响应体统一为：

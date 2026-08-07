@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes_intelligence import router as intelligence_router
 from app.api.routes_metrics import router as metrics_router
@@ -13,6 +16,8 @@ from app.api.routes_suites import router as suites_router
 from app.api.routes_tasks import router as tasks_router
 from app.suites.scheduler import start_scheduler, stop_scheduler
 
+WEB_DIR = Path(__file__).resolve().parent / "web"
+
 app = FastAPI(title="LLM Benchmark", version="0.1.0")
 
 
@@ -21,6 +26,11 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     if isinstance(exc.detail, dict) and "error" in exc.detail:
         return JSONResponse(status_code=exc.status_code, content=exc.detail)
     return JSONResponse(status_code=exc.status_code, content={"error": {"code": "http_error", "message": str(exc.detail), "details": {}}})
+
+
+@app.get("/", include_in_schema=False)
+def ui_home():
+    return RedirectResponse(url="/ui/")
 
 
 @app.get("/health")
@@ -36,6 +46,7 @@ app.include_router(tasks_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(stress_router, prefix="/api")
 app.include_router(suites_router, prefix="/api")
+app.mount("/ui", StaticFiles(directory=WEB_DIR, html=True), name="ui")
 
 
 @app.on_event("startup")

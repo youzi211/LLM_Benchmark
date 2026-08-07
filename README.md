@@ -160,6 +160,14 @@ Windows PowerShell 使用脚本启动（默认只启动主服务）：
 
 启动脚本默认只启动主服务并打印 sandbox 提醒；只有设置 `START_SANDBOX=1` 或传入 `-StartSandbox` 时才会执行 `ms-enclave server`。主服务日志写入 `.tmp/logs/main.*.log`，sandbox 日志写入 `.tmp/logs/sandbox.*.log`。
 
+主服务启动后会同时提供一个轻量 Web 控制台，不需要额外前端构建或 Node 服务：
+
+- 访问 `http://<主服务地址>:8000/` 会跳转到 `http://<主服务地址>:8000/ui/`。
+- 控制台支持直接填写 `url`、`key`、`model`、`context_window_tokens`、`max_output_tokens` 后调用 `POST /api/suites/quick`。
+- 控制台也能读取已有模型配置并调用 `POST /api/suites/default`，以及跟踪最近 suite、打开最终总览报告。
+- 选择 suite 后会自动读取关联的 gateway、intelligence、stress 任务结果，展示压测吞吐/延迟/成功率曲线、智力评测分数柱状图和网关 smoke 指标状态。
+- 前端不会使用 localStorage 保存 Key；quick suite 的 Key 仍只随本次请求发送，服务端也不会写入 `data/models.json`。
+
 ### 5. 健康检查和部署检查
 
 主服务健康检查：
