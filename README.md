@@ -317,6 +317,7 @@ outputs/
 
 - [系统架构说明](docs/architecture.md)：记录当前模块分层、数据流、存储结构、扩展点和 Codex 快速排查入口。
 - [API 接口文档](docs/api.md)：记录所有服务接口、请求/响应结构、错误格式、协议兼容说明和调用示例。
+- [模型评测与定时评测接口对接说明](docs/model-evaluation-integration.md)：面向调用方，说明如何在 `8020` 端口服务上提交一次模型评测、查询报告、创建一次性或周期性定时评测。
 - [指标测试方法文档](docs/metric-test-methods.md)：记录网关 smoke 指标、EvalScope 能力评测、EvalScope 压测和统一报告的测试目标、调用方式、观测字段、状态规则和人工关注点。
 - [部署指南](docs/deployment.md)：记录 Linux 服务器安装、启动、健康检查和运行目录说明。
 - EvalScope 智力评测接口已纳入 [API 接口文档](docs/api.md) 和 [系统架构说明](docs/architecture.md)，用于模型代码、数学、知识、推理等数据集表现评测。
