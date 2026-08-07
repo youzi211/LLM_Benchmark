@@ -36,6 +36,14 @@ LLM_JUDGE_DATASETS = {
     "longbench_v2",
 }
 
+CODE_EXECUTION_DATASETS = {
+    "humaneval",
+    "humaneval_plus",
+    "mbpp",
+    "mbpp_plus",
+    "live_code_bench",
+}
+
 _DATASET_META: dict[str, dict[str, Any]] = {
     "humaneval": {"pretty_name": "HumanEval", "description": "代码生成评测", "categories": ["Code"], "needs_judge": False},
     "humaneval_plus": {"pretty_name": "HumanEval+", "description": "HumanEval 增强版", "categories": ["Code"], "needs_judge": False},
@@ -255,6 +263,17 @@ class EvalScopeIntelligenceExecutor:
         }
         if self.config.datasets_dir:
             data["dataset_dir"] = str(datasets_root(self.config))
+        if dataset in CODE_EXECUTION_DATASETS:
+            if not self.config.sandbox_enabled:
+                raise EvalScopeDirectError(
+                    f"sandbox_required:{dataset}; "
+                    "EvalScope code-execution benchmarks require sandbox scoring. "
+                    "Set sandbox_enabled=true and configure a local or remote sandbox manager."
+                )
+            data["use_sandbox"] = True
+            data["sandbox_type"] = self.config.sandbox_type or "docker"
+            if self.config.sandbox_manager_config:
+                data["sandbox_manager_config"] = dict(self.config.sandbox_manager_config)
         if dataset in LLM_JUDGE_DATASETS and judge_model_args:
             data["judge_strategy"] = "llm"
             data["judge_model_args"] = judge_model_args

@@ -1,7 +1,12 @@
 import sys
 import types
 
-from app.intelligence.evalscope_direct import dataset_metadata, judge_config_status
+from app.intelligence.evalscope_direct import (
+    EvalScopeDirectError,
+    EvalScopeIntelligenceExecutor,
+    dataset_metadata,
+    judge_config_status,
+)
 from app.intelligence.schemas import EvalScopeConfig
 from app.stress.evalscope_direct import EvalScopeStressExecutor
 from app.stress.schemas import StressRemoteSubmitPayload
@@ -31,6 +36,82 @@ def test_judge_config_status_does_not_expose_api_key():
     assert status["source"] == "analysis_model"
     assert "api_key" not in status
     assert "dummy-secret-key" not in str(status)
+
+
+def test_intelligence_executor_enables_remote_sandbox_for_mbpp(tmp_path):
+    executor = EvalScopeIntelligenceExecutor(
+        EvalScopeConfig(
+            outputs_dir=str(tmp_path / "outputs"),
+            sandbox_enabled=True,
+            sandbox_type="docker",
+            sandbox_manager_config={"base_url": "http://sandbox.local:1234"},
+        )
+    )
+
+    data = executor._task_config_data(
+        model="demo",
+        api_url="http://model/v1/chat/completions",
+        api_key="dummy",
+        dataset="mbpp",
+        local_paths={},
+        limit=2,
+        eval_batch_size=1,
+        generation_config=None,
+        work_dir=str(tmp_path / "work"),
+        judge_model_args=None,
+    )
+
+    assert data["use_sandbox"] is True
+    assert data["sandbox_type"] == "docker"
+    assert data["sandbox_manager_config"] == {"base_url": "http://sandbox.local:1234"}
+
+
+def test_intelligence_executor_requires_sandbox_for_code_execution_datasets(tmp_path):
+    executor = EvalScopeIntelligenceExecutor(EvalScopeConfig(outputs_dir=str(tmp_path / "outputs")))
+
+    try:
+        executor._task_config_data(
+            model="demo",
+            api_url="http://model/v1/chat/completions",
+            api_key="dummy",
+            dataset="mbpp_plus",
+            local_paths={},
+            limit=1,
+            eval_batch_size=1,
+            generation_config=None,
+            work_dir=str(tmp_path / "work"),
+            judge_model_args=None,
+        )
+    except EvalScopeDirectError as exc:
+        assert "sandbox_required:mbpp_plus" in str(exc)
+    else:
+        raise AssertionError("expected sandbox_required error for mbpp_plus")
+
+
+def test_intelligence_executor_does_not_enable_sandbox_for_non_code_dataset(tmp_path):
+    executor = EvalScopeIntelligenceExecutor(
+        EvalScopeConfig(
+            outputs_dir=str(tmp_path / "outputs"),
+            sandbox_enabled=True,
+            sandbox_manager_config={"base_url": "http://sandbox.local:1234"},
+        )
+    )
+
+    data = executor._task_config_data(
+        model="demo",
+        api_url="http://model/v1/chat/completions",
+        api_key="dummy",
+        dataset="gsm8k",
+        local_paths={},
+        limit=1,
+        eval_batch_size=1,
+        generation_config=None,
+        work_dir=str(tmp_path / "work"),
+        judge_model_args=None,
+    )
+
+    assert "use_sandbox" not in data
+    assert "sandbox_manager_config" not in data
 
 
 def test_stress_direct_executor_builds_evalscope_arguments(monkeypatch, tmp_path):

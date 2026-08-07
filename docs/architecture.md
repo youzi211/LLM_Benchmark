@@ -17,6 +17,7 @@
 | 正式压测 | `app/stress/*` 直接 import EvalScope perf，输出吞吐、延迟分位数、TTFT/TPOT。 |
 | 旧基础指标定位 | `/api/tasks/run` 是网关接入 smoke；其中 `concurrency` / `rate_limit` 只是兼容 smoke，不是正式压测。 |
 | Judge 默认来源 | `data/models.json` 顶层 `analysis_model_id` 指向的模型；可用 `data/evalscope.json` 的 `judge_model_config_id` 覆盖。 |
+| 代码评分 sandbox | MBPP/MBPP+/HumanEval 等代码执行类评测需要 EvalScope sandbox；生产推荐远程 `ms-enclave server`，地址通过 `data/evalscope.json` 的 `sandbox_manager_config.base_url` 覆盖。 |
 | 不该提交 | `data/models.json`、`data/evalscope.json`、`data/*_tasks/`、`data/suite_*`、`reports/`、`outputs/`、`.env`、`.venv/`。 |
 
 推荐阅读顺序：

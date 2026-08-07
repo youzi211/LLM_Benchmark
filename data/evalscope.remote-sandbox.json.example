@@ -1,0 +1,9 @@
+{
+  "datasets_dir": "data/evalscope_datasets",
+  "outputs_dir": "outputs/evalscope",
+  "sandbox_enabled": true,
+  "sandbox_type": "docker",
+  "sandbox_manager_config": {
+    "base_url": "http://sandbox-host:1234"
+  }
+}

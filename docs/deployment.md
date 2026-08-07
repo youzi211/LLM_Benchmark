@@ -31,6 +31,22 @@ LLM_Benchmark/
 
 需要运行依赖 LLM Judge 的数据集时，系统默认使用 `data/models.json` 顶层 `analysis_model_id` 指向的模型作为内置 Judge。若要覆盖 Judge，可在同一个可选文件额外加入 `judge_model_config_id`、`judge_generation_config`、`judge_worker_num`；Judge 地址和密钥仍只存放在 `data/models.json` 的模型配置里，不能提交。旧运行文件中的 `base_url`、超时、轮询以及旧 Judge 直连字段会被忽略。
 
+代码执行类能力评测（当前包括 `humaneval`、`humaneval_plus`、`mbpp`、`mbpp_plus`、`live_code_bench`）需要 EvalScope sandbox 才能执行评分。生产环境推荐使用远程 sandbox server：主服务仍保持单 FastAPI 进程，sandbox 只承担隔离代码执行，不是 EvalScope HTTP 包装服务。可复制 `data/evalscope.remote-sandbox.json.example` 为 `data/evalscope.json` 并修改内网地址：
+
+```json
+{
+  "datasets_dir": "data/evalscope_datasets",
+  "outputs_dir": "outputs/evalscope",
+  "sandbox_enabled": true,
+  "sandbox_type": "docker",
+  "sandbox_manager_config": {
+    "base_url": "http://sandbox-host:1234"
+  }
+}
+```
+
+`sandbox_manager_config.base_url` 只写 sandbox manager 地址，不写模型 API Key。
+
 ## 2. 安装依赖
 
 基础服务：
@@ -39,11 +55,20 @@ LLM_Benchmark/
 uv sync
 ```
 
-包含 EvalScope 能力评测与 perf 压测依赖：
+包含 EvalScope 能力评测、sandbox 评分与 perf 压测依赖：
 
 ```bash
 uv sync --group evalscope
 ```
+
+如果采用远程 sandbox，sandbox 节点也需要安装 sandbox extra 并具备 Docker：
+
+```bash
+pip install "evalscope[sandbox]"
+ms-enclave server --host 0.0.0.0 --port 1234
+```
+
+建议通过内网、防火墙或安全组限制 `1234` 端口只允许主服务访问。
 
 ### Windows 依赖安装提示
 

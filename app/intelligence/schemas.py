@@ -28,8 +28,14 @@ class EvalScopeConfig(BaseModel):
     judge_generation_config: dict[str, Any] = Field(default_factory=lambda: {"temperature": 0.0, "max_tokens": 4096})
     judge_worker_num: int = Field(default=5, ge=1, le=128)
     ignore_dataset_errors: bool = True
+    # EvalScope code-execution benchmarks such as MBPP/MBPP+ require a
+    # sandbox during scoring. Keep it disabled by default so non-code
+    # evaluations retain the previous minimal zero-config behavior.
+    sandbox_enabled: bool = False
+    sandbox_type: str = "docker"
+    sandbox_manager_config: dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("datasets_dir", "outputs_dir", "judge_model_config_id")
+    @field_validator("datasets_dir", "outputs_dir", "judge_model_config_id", "sandbox_type")
     @classmethod
     def strip_optional_text(cls, value: str | None) -> str | None:
         if value is None:

@@ -542,7 +542,25 @@ GET /api/tasks?limit=20
 
 ## 10. 智力评测接口（EvalScope）
 
-智力评测用于调用 EvalScope Python package 执行公开数据集能力测试。当前执行模式为 `in_process`：主服务直接 `import evalscope` 并调用 `evalscope.run_task(TaskConfig)`，不再代理到外部 HTTP 包装服务。`data/evalscope.json` 是可选覆盖文件；默认不创建也会使用 `data/evalscope_datasets` 和 `outputs/evalscope`。
+智力评测用于调用 EvalScope Python package 执行公开数据集能力测试。当前执行模式为 `in_process`：主服务直接 `import evalscope` 并调用 `evalscope.run_task(TaskConfig)`，不再代理到外部 HTTP 包装服务。`data/evalscope.json` 是可选覆盖文件；默认不创建也会使用 `data/evalscope_datasets` 和 `outputs/evalscope`。代码执行类数据集（`humaneval`、`humaneval_plus`、`mbpp`、`mbpp_plus`、`live_code_bench`）需要配置 EvalScope sandbox 才能评分；未配置时会在任务执行阶段返回 `sandbox_required:<dataset>`，避免只生成预测却没有分数。
+
+### 10.0 可选 sandbox 配置
+
+远程 sandbox 推荐配置示例：
+
+```json
+{
+  "datasets_dir": "data/evalscope_datasets",
+  "outputs_dir": "outputs/evalscope",
+  "sandbox_enabled": true,
+  "sandbox_type": "docker",
+  "sandbox_manager_config": {
+    "base_url": "http://sandbox-host:1234"
+  }
+}
+```
+
+`base_url` 指向 `ms-enclave server --host 0.0.0.0 --port 1234` 暴露的内网地址。该配置不保存模型密钥；模型和 Judge 密钥仍只来自 `data/models.json` 的模型配置。
 
 ### 10.1 辅助查询接口
 

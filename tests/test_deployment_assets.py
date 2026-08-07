@@ -21,7 +21,7 @@ def test_root_pyproject_has_evalscope_dependency_group() -> None:
     groups = pyproject.get("dependency-groups", {})
     assert "evalscope" in groups
     deps = "\n".join(groups["evalscope"]).lower()
-    assert "evalscope[perf]" in deps
+    assert "evalscope[perf,sandbox]" in deps
     assert "sse-starlette" not in deps
 
 
@@ -32,6 +32,15 @@ def test_local_evalscope_example_config_is_optional_minimal_override() -> None:
         "datasets_dir": "data/evalscope_datasets",
         "outputs_dir": "outputs/evalscope",
     }
+
+
+def test_remote_sandbox_evalscope_example_config_documents_option_a() -> None:
+    example_path = ROOT / "data" / "evalscope.remote-sandbox.json.example"
+    data = json.loads(example_path.read_text(encoding="utf-8"))
+    assert data["sandbox_enabled"] is True
+    assert data["sandbox_type"] == "docker"
+    assert data["sandbox_manager_config"] == {"base_url": "http://sandbox-host:1234"}
+    assert "api_key" not in json.dumps(data).lower()
 
 
 def test_deployment_scripts_cover_single_process_and_smoke_check() -> None:

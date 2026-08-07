@@ -14,7 +14,7 @@ dependencies = [
 
 [dependency-groups]
 dev = ["pytest>=8.2.0", "pytest-asyncio>=0.23.0"]
-evalscope = ["evalscope[perf]>=1.1.0"]
+evalscope = ["evalscope[perf,sandbox]>=1.1.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
