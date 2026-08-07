@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -221,6 +221,8 @@ class SuiteScheduleCreate(BaseModel):
     time_of_day: str = Field(default="02:00", pattern=r"^\d{2}:\d{2}$")
     timezone: str = "Asia/Shanghai"
     interval_days: int = Field(default=1, ge=1, le=365)
+    run_once: bool = False
+    run_date: date | None = None
     next_run_at: datetime | None = None
     run_gateway: bool = True
     run_intelligence: bool = True
@@ -243,6 +245,12 @@ class SuiteScheduleCreate(BaseModel):
         if any(item < 1 for item in value):
             raise ValueError("values must be positive")
         return value
+
+    @model_validator(mode="after")
+    def validate_run_once_target(self):
+        if self.run_once and self.run_date is None and self.next_run_at is None:
+            raise ValueError("run_date or next_run_at is required when run_once is true")
+        return self
 
     def to_run_request(self) -> SuiteDefaultRunRequest:
         stress_options = self.stress_options.model_copy(deep=True)
@@ -274,6 +282,8 @@ class SuiteSchedule(BaseModel):
     time_of_day: str = "02:00"
     timezone: str = "Asia/Shanghai"
     interval_days: int = 1
+    run_once: bool = False
+    run_date: date | None = None
     request: SuiteDefaultRunRequest
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)

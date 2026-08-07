@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -48,7 +48,12 @@ class SuiteScheduleStore:
         return self.directory / f"{schedule_id}.json"
 
     def create(self, request: SuiteScheduleCreate) -> SuiteSchedule:
-        next_run_at = request.next_run_at or compute_next_run_at(request.time_of_day, request.timezone, now=utc_now(), interval_days=request.interval_days)
+        if request.next_run_at is not None:
+            next_run_at = ensure_aware_utc(request.next_run_at)
+        elif request.run_once and request.run_date is not None:
+            next_run_at = compute_one_shot_run_at(request.run_date, request.time_of_day, request.timezone)
+        else:
+            next_run_at = compute_next_run_at(request.time_of_day, request.timezone, now=utc_now(), interval_days=request.interval_days)
         schedule = SuiteSchedule(
             name=request.name,
             model_id=request.model_id,
@@ -57,6 +62,8 @@ class SuiteScheduleStore:
             time_of_day=request.time_of_day,
             timezone=request.timezone,
             interval_days=request.interval_days,
+            run_once=request.run_once,
+            run_date=request.run_date,
             request=request.to_run_request(),
             next_run_at=next_run_at,
         )
@@ -109,6 +116,26 @@ def compute_next_run_at(time_of_day: str, timezone_name: str, *, now: datetime |
     if candidate <= local_now:
         candidate = candidate + timedelta(days=interval_days)
     return candidate.astimezone(timezone.utc)
+
+
+def ensure_aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _timezone_or_utc(timezone_name: str) -> timezone | ZoneInfo:
+    try:
+        return ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        return timezone.utc
+
+
+def compute_one_shot_run_at(run_date: date, time_of_day: str, timezone_name: str) -> datetime:
+    tz = _timezone_or_utc(timezone_name)
+    hour_text, minute_text = time_of_day.split(":", 1)
+    local_run_at = datetime.combine(run_date, time(hour=int(hour_text), minute=int(minute_text)), tzinfo=tz)
+    return local_run_at.astimezone(timezone.utc)
 
 
 def compute_following_run_at(schedule: SuiteSchedule, *, now: datetime | None = None) -> datetime:

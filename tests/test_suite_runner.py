@@ -190,3 +190,30 @@ async def test_suite_scheduler_triggers_due_schedule_and_updates_next_run(tmp_pa
     assert updated.last_run_at is not None
     assert updated.next_run_at > utc_now()
     assert updated.run_count == 1
+
+
+@pytest.mark.asyncio
+async def test_suite_scheduler_disables_one_shot_schedule_after_trigger(tmp_path: Path):
+    schedule_store = SuiteScheduleStore(tmp_path / "suite_schedules")
+    suite_runner = RecordingSuiteRunner()
+    scheduler = SuiteScheduler(schedule_store=schedule_store, suite_runner_factory=lambda: suite_runner)
+    due = SuiteScheduleCreate(
+        name="one shot demo",
+        model_id="demo-chat",
+        time_of_day="00:00",
+        run_once=True,
+        next_run_at=utc_now() - timedelta(seconds=1),
+        stress_parallel=[1],
+        stress_number=[1],
+    )
+    schedule = schedule_store.create(due)
+
+    triggered = await scheduler.tick_once(now=utc_now())
+
+    updated = schedule_store.get(schedule.schedule_id)
+    assert triggered == 1
+    assert len(suite_runner.requests) == 1
+    assert updated is not None
+    assert updated.run_once is True
+    assert updated.enabled is False
+    assert updated.run_count == 1

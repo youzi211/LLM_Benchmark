@@ -170,17 +170,20 @@
             </div>
             <button id="refresh-schedules" class="mini" type="button">刷新计划</button>
           </div>
-          <p class="hint">创建半夜 00:00 等定时任务。定时任务需要持久化模型配置；如果从左侧 URL/Key 创建计划，Key 会写入本机 <code>data/models.json</code>。</p>
+          <p class="hint">创建半夜 00:00 等定时任务。默认是“只执行一次”，适合今晚跑一次；需要每天/每 N 天重复时再切换为周期执行。定时任务需要持久化模型配置；如果从左侧 URL/Key 创建计划，Key 会写入本机 <code>data/models.json</code>。</p>
 
           <div class="schedule-shared">
             <div class="field-grid two compact">
               <label>
-                <span>计划名称 name</span>
-                <input id="schedule-name" placeholder="demo-model 每日零点评测" autocomplete="off" />
+                <span>执行模式</span>
+                <select id="schedule-mode">
+                  <option value="once">只执行一次</option>
+                  <option value="recurring">周期执行</option>
+                </select>
               </label>
-              <label>
-                <span>评测标题 title</span>
-                <input id="schedule-run-title" placeholder="demo-model 半夜综合评测" autocomplete="off" />
+              <label id="schedule-date-field">
+                <span>执行日期 run_date</span>
+                <input id="schedule-date" type="date" />
               </label>
               <label>
                 <span>开始时间 time_of_day</span>
@@ -191,10 +194,20 @@
                 <input id="schedule-timezone" value="Asia/Shanghai" autocomplete="off" />
               </label>
               <label>
-                <span>间隔天数 interval_days</span>
+                <span>计划名称 name</span>
+                <input id="schedule-name" placeholder="demo-model 今晚零点评测" autocomplete="off" />
+              </label>
+              <label>
+                <span>评测标题 title</span>
+                <input id="schedule-run-title" placeholder="demo-model 半夜综合评测" autocomplete="off" />
+              </label>
+              <label id="schedule-interval-field" class="hidden-field">
+                <span>重复间隔 interval_days</span>
                 <input id="schedule-interval" type="number" min="1" max="365" value="1" />
+                <small>周期执行专用：1=每天，7=每 7 天。</small>
               </label>
             </div>
+            <p id="schedule-mode-help" class="schedule-mode-help">只执行一次：到达指定日期和时间后自动触发一次，执行后计划会自动停用。</p>
           </div>
 
           <details class="advanced schedule-details" open>

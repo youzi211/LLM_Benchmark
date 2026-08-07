@@ -27,6 +27,7 @@ def test_suite_schedule_routes_are_not_swallowed_by_suite_id(temp_data_dirs, mon
     assert response.status_code == 200, response.text
     schedule = response.json()
     assert schedule["schedule_id"].startswith("suite_schedule_")
+    assert schedule["run_once"] is False
     assert schedule["request"]["wait_for_completion"] is True
     assert schedule["request"]["stress_options"]["parallel"] == [1, 5]
 
@@ -41,6 +42,32 @@ def test_suite_schedule_routes_are_not_swallowed_by_suite_id(temp_data_dirs, mon
     deleted = client.delete(f"/api/suites/schedules/{schedule['schedule_id']}")
     assert deleted.status_code == 200
     assert deleted.json() == {"deleted": True, "schedule_id": schedule["schedule_id"]}
+
+
+def test_suite_schedule_accepts_one_shot_run_date(temp_data_dirs, monkeypatch):
+    monkeypatch.setenv("LLM_BENCHMARK_SCHEDULER_DISABLED", "1")
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/suites/schedules",
+        json={
+            "name": "tonight-demo",
+            "model_id": "demo-chat",
+            "time_of_day": "00:00",
+            "timezone": "Asia/Shanghai",
+            "run_once": True,
+            "run_date": "2099-01-02",
+            "stress_parallel": [1],
+            "stress_number": [1],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    schedule = response.json()
+    assert schedule["run_once"] is True
+    assert schedule["run_date"] == "2099-01-02"
+    assert schedule["enabled"] is True
+    assert schedule["next_run_at"].startswith("2099-01-01T16:00:00")
 
 
 def test_suite_default_and_report_routes(temp_data_dirs, monkeypatch):

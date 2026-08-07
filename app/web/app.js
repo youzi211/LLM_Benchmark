@@ -27,6 +27,11 @@ const elements = {
   insightsGrid: $("insights-grid"),
   scheduleModelSelect: $("schedule-model-select"),
   scheduleList: $("schedule-list"),
+  scheduleMode: $("schedule-mode"),
+  scheduleDate: $("schedule-date"),
+  scheduleDateField: $("schedule-date-field"),
+  scheduleIntervalField: $("schedule-interval-field"),
+  scheduleModeHelp: $("schedule-mode-help"),
   refreshSchedules: $("refresh-schedules"),
   createQuickSchedule: $("create-quick-schedule"),
   createModelSchedule: $("create-model-schedule"),
@@ -59,6 +64,31 @@ function formatDate(value) {
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("zh-CN", { hour12: false });
 }
+
+function localDateString(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function defaultOneShotDate() {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  return localDateString(date);
+}
+
+function updateScheduleMode() {
+  const isOnce = elements.scheduleMode.value === "once";
+  elements.scheduleDateField.classList.toggle("hidden-field", !isOnce);
+  elements.scheduleIntervalField.classList.toggle("hidden-field", isOnce);
+  $("schedule-interval").disabled = isOnce;
+  elements.scheduleDate.disabled = !isOnce;
+  elements.scheduleModeHelp.textContent = isOnce
+    ? "只执行一次：到达指定日期和时间后自动触发一次，执行后计划会自动停用。"
+    : "周期执行：从下一次 time_of_day 开始，之后每 interval_days 天重复触发。";
+}
+
 
 function stopPolling() {
   if (pollTimer) {
@@ -244,7 +274,8 @@ function buildSchedulePayload(modelId, fallbackTitle = "一键定时评测") {
   if (!modelId) throw new Error("请选择或填写 model_id。");
   const suiteOptions = getSuiteOptions();
   const timeOfDay = $("schedule-time").value || "00:00";
-  const interval = toNumberOrNull($("schedule-interval").value) || 1;
+  const mode = elements.scheduleMode.value || "once";
+  const interval = mode === "once" ? 1 : toNumberOrNull($("schedule-interval").value) || 1;
   const payload = {
     name: $("schedule-name").value.trim() || scheduleNameFallback(modelId),
     model_id: modelId,
@@ -253,11 +284,17 @@ function buildSchedulePayload(modelId, fallbackTitle = "一键定时评测") {
     time_of_day: timeOfDay,
     timezone: $("schedule-timezone").value.trim() || "Asia/Shanghai",
     interval_days: interval,
+    run_once: mode === "once",
     run_gateway: suiteOptions.run_gateway,
     run_intelligence: suiteOptions.run_intelligence,
     run_stress: suiteOptions.run_stress,
     gateway_plan_id: "gateway_acceptance_v1",
   };
+  if (mode === "once") {
+    const runDate = elements.scheduleDate.value;
+    if (!runDate) throw new Error("请选择一次性任务的执行日期。");
+    payload.run_date = runDate;
+  }
   if (suiteOptions.gateway_metric_ids) payload.gateway_metric_ids = suiteOptions.gateway_metric_ids;
   if (suiteOptions.stress_options) payload.stress_options = suiteOptions.stress_options;
   if (suiteOptions.poll_interval_seconds !== undefined) payload.poll_interval_seconds = suiteOptions.poll_interval_seconds;
@@ -885,9 +922,13 @@ function renderScheduleList(schedules) {
     const title = document.createElement("strong");
     title.textContent = schedule.name || schedule.schedule_id;
     const detail = document.createElement("small");
+    const modeText = schedule.run_once
+      ? `只执行一次${schedule.run_date ? `: ${schedule.run_date}` : ""}`
+      : `周期执行: 每 ${schedule.interval_days || 1} 天`;
     detail.textContent = [
       schedule.schedule_id,
       `model: ${schedule.model_id}`,
+      modeText,
       `${schedule.time_of_day || "--:--"} ${schedule.timezone || ""}`,
       `next: ${formatDate(schedule.next_run_at)}`,
       schedule.last_suite_id ? `last: ${schedule.last_suite_id}` : "",
@@ -899,7 +940,7 @@ function renderScheduleList(schedules) {
     actions.className = "schedule-actions";
     const badge = document.createElement("span");
     badge.className = `status-badge ${schedule.enabled ? "completed" : "failed"}`;
-    badge.textContent = schedule.enabled ? "enabled" : "disabled";
+    badge.textContent = schedule.enabled ? "enabled" : (schedule.run_once ? "done" : "disabled");
     const trigger = document.createElement("button");
     trigger.type = "button";
     trigger.className = "mini";
@@ -945,6 +986,7 @@ elements.startDefault.addEventListener("click", startDefaultSuite);
 elements.createQuickSchedule.addEventListener("click", createScheduleFromQuick);
 elements.createModelSchedule.addEventListener("click", createScheduleFromSaved);
 elements.refreshSchedules.addEventListener("click", loadSchedules);
+elements.scheduleMode.addEventListener("change", updateScheduleMode);
 elements.refreshSuites.addEventListener("click", loadSuites);
 elements.trackSuite.addEventListener("click", () => {
   const suiteId = elements.suiteId.value.trim();
@@ -964,6 +1006,8 @@ elements.refreshInsights.addEventListener("click", () => {
   loadSuiteInsights(activeSuite);
 });
 
+if (!elements.scheduleDate.value) elements.scheduleDate.value = defaultOneShotDate();
+updateScheduleMode();
 loadSuites();
 loadModels();
 loadSchedules();

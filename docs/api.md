@@ -1019,14 +1019,30 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 
 #### POST `/api/suites/schedules`
 
-定时计划保存在本地 `data/suite_schedules/`。服务启动后内置轻量轮询器会检查 `next_run_at`，到点后自动触发 `SuiteDefaultRunRequest`。适合半夜低峰期执行模型评测。
+定时计划保存在本地 `data/suite_schedules/`。服务启动后内置轻量轮询器会检查 `next_run_at`，到点后自动触发 `SuiteDefaultRunRequest`。适合半夜低峰期执行模型评测。`run_once=true` 表示只执行一次，执行后计划会自动停用；周期任务使用 `interval_days` 控制重复间隔。
 
-请求示例：
+只执行一次请求示例：
+
+```json
+{
+  "name": "tonight-demo-chat",
+  "model_id": "demo-chat",
+  "run_once": true,
+  "run_date": "2026-08-08",
+  "time_of_day": "00:00",
+  "timezone": "Asia/Shanghai",
+  "stress_parallel": [1, 5],
+  "stress_number": [10, 50]
+}
+```
+
+周期执行请求示例：
 
 ```json
 {
   "name": "nightly-demo-chat",
   "model_id": "demo-chat",
+  "run_once": false,
   "time_of_day": "02:00",
   "timezone": "Asia/Shanghai",
   "interval_days": 1,
@@ -1044,8 +1060,10 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 | `enabled` | boolean | `true` | 是否启用。 |
 | `time_of_day` | string | `02:00` | 每次触发的本地时间，格式 `HH:MM`。 |
 | `timezone` | string | `Asia/Shanghai` | 计算 `next_run_at` 使用的时区。 |
-| `interval_days` | integer | `1` | 每隔多少天运行一次。 |
-| `next_run_at` | datetime/null | 自动计算 | 可显式指定下一次 UTC 触发时间，便于测试或临时调度。 |
+| `interval_days` | integer | `1` | 周期任务每隔多少天运行一次；`run_once=true` 时不会用于重复。 |
+| `run_once` | boolean | `false` | 是否只执行一次。为 `true` 时到点执行后自动停用计划。 |
+| `run_date` | date/null | `null` | 一次性任务的执行日期，格式 `YYYY-MM-DD`；和 `time_of_day`、`timezone` 一起计算 `next_run_at`。 |
+| `next_run_at` | datetime/null | 自动计算 | 可显式指定下一次 UTC 触发时间，便于测试或临时调度；一次性任务也可直接传它。 |
 | `stress_parallel` / `stress_number` | integer[]/null | `null` | 常用压测参数快捷字段。 |
 | `stress_options` | object | `{}` | 更完整的压测参数。 |
 
@@ -1071,7 +1089,7 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 
 #### POST `/api/suites/schedules/{schedule_id}/trigger`
 
-立即按该定时计划保存的请求启动一次 suite。可选 query 参数：`wait_for_completion`，默认 `false`。返回新建的 `SuiteRun`。
+立即按该定时计划保存的请求启动一次 suite。可选 query 参数：`wait_for_completion`，默认 `false`。返回新建的 `SuiteRun`。如果手动触发的是 `run_once=true` 的一次性计划，该计划也会被自动停用，避免后续重复执行。
 ## 14. OpenAI 兼容协议说明
 
 模型配置中的 `protocol` 决定上游调用风格：
@@ -1144,6 +1162,7 @@ Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/suites/$($suite.suite_id)/repo
 $scheduleBody = @{
   name = 'nightly-demo-chat'
   model_id = 'demo-chat'
+  run_once = $false
   time_of_day = '02:00'
   timezone = 'Asia/Shanghai'
   interval_days = 1

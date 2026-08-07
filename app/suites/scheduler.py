@@ -35,7 +35,10 @@ class SuiteScheduler:
                 triggered += 1
             except Exception as exc:
                 schedule.last_error = {"message": redact_text(str(exc)), "type": exc.__class__.__name__}
-            schedule.next_run_at = compute_following_run_at(schedule, now=now)
+            if schedule.run_once:
+                schedule.enabled = False
+            else:
+                schedule.next_run_at = compute_following_run_at(schedule, now=now)
             self.schedule_store.save(schedule)
         return triggered
 

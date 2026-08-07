@@ -19,6 +19,8 @@ def test_web_console_static_assets_are_served(monkeypatch):
     assert "大模型测试平台" in page.text
     assert "指标曲线" in page.text
     assert "定时一键评测" in page.text
+    assert "只执行一次" in page.text
+    assert "周期执行" in page.text
     assert "保存模型并创建定时计划" in page.text
     assert "/api/suites/quick" not in page.text  # API path lives in JS, not duplicated in markup.
 
@@ -28,6 +30,8 @@ def test_web_console_static_assets_are_served(monkeypatch):
     assert "apiFetch(\"/suites/schedules\"" in script.text
     assert "createScheduleFromQuick" in script.text
     assert "triggerSchedule" in script.text
+    assert "run_once" in script.text
+    assert "run_date" in script.text
     assert "buildStressCards" in script.text
     assert "createLineChart" in script.text
     assert "/stress/tasks/" in script.text
@@ -37,3 +41,4 @@ def test_web_console_static_assets_are_served(monkeypatch):
     assert "评测" not in style.text
     assert ".insights-grid" in style.text
     assert ".schedule-list" in style.text
+    assert ".hidden-field" in style.text

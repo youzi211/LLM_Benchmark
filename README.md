@@ -165,7 +165,7 @@ Windows PowerShell 使用脚本启动（默认只启动主服务）：
 - 访问 `http://<主服务地址>:8000/` 会跳转到 `http://<主服务地址>:8000/ui/`。
 - 控制台支持直接填写 `url`、`key`、`model`、`context_window_tokens`、`max_output_tokens` 后调用 `POST /api/suites/quick`。
 - 控制台也能读取已有模型配置并调用 `POST /api/suites/default`，以及跟踪最近 suite、打开最终总览报告。
-- 控制台支持创建定时一键评测计划：可为已有模型调用 `POST /api/suites/schedules`，也可将左侧临时模型参数先保存为模型配置再创建定时计划。
+- 控制台支持创建定时一键评测计划：默认“只执行一次”，也可切换为每天/每 N 天周期执行；可为已有模型调用 `POST /api/suites/schedules`，也可将左侧临时模型参数先保存为模型配置再创建定时计划。
 - 选择 suite 后会自动读取关联的 gateway、intelligence、stress 任务结果，展示压测吞吐/延迟/成功率曲线、智力评测分数柱状图和网关 smoke 指标状态。
 - 前端不会使用 localStorage 保存 Key；quick suite 的 Key 仍只随本次请求发送，服务端也不会写入 `data/models.json`。但如果在“定时一键评测”中选择保存左侧模型参数，Key 会随模型配置写入本机 `data/models.json`，用于后续定时执行。
 
@@ -198,9 +198,31 @@ uv run python scripts/test_deployment.py --main-url http://127.0.0.1:8000
 
 ### 6. 定时评测
 
-定时计划通过 API 创建，保存在本地 `data/suite_schedules/`。主服务启动后内置调度器会自动轮询到期计划。
+定时计划通过 API 创建，保存在本地 `data/suite_schedules/`。主服务启动后内置调度器会自动轮询到期计划。`run_once=true` 表示只执行一次，执行后计划会自动停用；周期任务则通过 `interval_days` 控制每隔多少天重复执行。
 
-创建每日 02:00 评测计划：
+创建只在 2026-08-08 00:00 执行一次的评测计划：
+
+```bash
+curl -fsS -X POST "$API_BASE/api/suites/schedules" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "tonight-demo-chat",
+    "model_id": "demo-chat",
+    "enabled": true,
+    "run_once": true,
+    "run_date": "2026-08-08",
+    "time_of_day": "00:00",
+    "timezone": "Asia/Shanghai",
+    "run_gateway": true,
+    "run_intelligence": true,
+    "run_stress": true,
+    "stress_parallel": [1, 5],
+    "stress_number": [10, 50],
+    "timeout_seconds": 86400
+  }'
+```
+
+创建每日 02:00 周期评测计划：
 
 ```bash
 curl -fsS -X POST "$API_BASE/api/suites/schedules" \
@@ -209,6 +231,7 @@ curl -fsS -X POST "$API_BASE/api/suites/schedules" \
     "name": "nightly-demo-chat",
     "model_id": "demo-chat",
     "enabled": true,
+    "run_once": false,
     "time_of_day": "02:00",
     "timezone": "Asia/Shanghai",
     "interval_days": 1,
@@ -535,7 +558,7 @@ curl -fsS -X POST "$API_BASE/api/suites/default" \
   }'
 ```
 
-半夜低峰期定时评测通过 API 创建本地计划：
+半夜低峰期定时评测通过 API 创建本地计划。只跑一次时传 `run_once=true` 和 `run_date`；需要每天重复时传 `run_once=false` 和 `interval_days=1`：
 
 ```bash
 curl -fsS -X POST "$API_BASE/api/suites/schedules" \
@@ -544,6 +567,7 @@ curl -fsS -X POST "$API_BASE/api/suites/schedules" \
     "name": "nightly-demo-chat",
     "model_id": "demo-chat",
     "enabled": true,
+    "run_once": false,
     "time_of_day": "02:00",
     "timezone": "Asia/Shanghai",
     "interval_days": 1,
@@ -556,7 +580,7 @@ curl -fsS -X POST "$API_BASE/api/suites/schedules" \
   }'
 ```
 
-定时计划保存在 `data/suite_schedules/`。主服务启动后会运行轻量轮询器，到 `next_run_at` 后自动创建 suite；最近一次 suite ID 会写回计划的 `last_suite_id`。如果需要临时关闭定时器，再设置环境变量 `LLM_BENCHMARK_SCHEDULER_DISABLED=1` 后重启服务。
+定时计划保存在 `data/suite_schedules/`。主服务启动后会运行轻量轮询器，到 `next_run_at` 后自动创建 suite；最近一次 suite ID 会写回计划的 `last_suite_id`。`run_once=true` 的计划执行后会自动停用，不会继续按 `interval_days` 重复。 如果需要临时关闭定时器，再设置环境变量 `LLM_BENCHMARK_SCHEDULER_DISABLED=1` 后重启服务。
 
 ## 执行网关 smoke 评测
 

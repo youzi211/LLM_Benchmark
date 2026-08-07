@@ -111,6 +111,8 @@ async def trigger_suite_schedule(schedule_id: str, background_tasks: BackgroundT
     schedule.last_suite_id = suite.suite_id
     schedule.last_run_at = suite.created_at
     schedule.run_count += 1
+    if schedule.run_once:
+        schedule.enabled = False
     schedule_store.save(schedule)
     if not wait_for_completion:
         background_tasks.add_task(_execute_suite_background, suite.suite_id)
