@@ -6,15 +6,30 @@ from fastapi import APIRouter, BackgroundTasks
 from fastapi.responses import FileResponse
 
 from app.api.errors import api_error
+from app.core.runner import TaskRunner
+from app.intelligence.runner import IntelligenceRunner
+from app.stress.runner import StressRunner
 from app.suites.runner import SuiteRunner
-from app.suites.schemas import SuiteDefaultRunRequest, SuiteScheduleCreate
+from app.suites.schemas import SuiteDefaultRunRequest, SuiteQuickRunRequest, SuiteScheduleCreate
 from app.suites.store import SuiteRunStore, SuiteScheduleStore
+from app.suites.transient_model_store import TransientModelStore
 
 router = APIRouter(prefix="/suites", tags=["suites"])
 
 
 def _runner() -> SuiteRunner:
     return SuiteRunner()
+
+
+def _quick_runner(request: SuiteQuickRunRequest) -> tuple[SuiteRunner, SuiteDefaultRunRequest]:
+    model = request.to_inline_model_config()
+    model_store = TransientModelStore([model])
+    runner = SuiteRunner(
+        gateway_runner=TaskRunner(model_store=model_store),
+        intelligence_runner=IntelligenceRunner(model_store=model_store),
+        stress_runner=StressRunner(model_store=model_store),
+    )
+    return runner, request.to_suite_request(model.id)
 
 
 async def _execute_suite_background(suite_id: str) -> None:
@@ -35,6 +50,22 @@ async def start_default_suite(request: SuiteDefaultRunRequest, background_tasks:
     if request.wait_for_completion:
         return suite
     background_tasks.add_task(_execute_suite_background, suite.suite_id)
+    return suite
+
+
+@router.post("/quick")
+async def start_quick_suite(request: SuiteQuickRunRequest, background_tasks: BackgroundTasks):
+    runner, suite_request = _quick_runner(request)
+    try:
+        suite = await runner.start_default(suite_request)
+    except ValueError as exc:
+        text = str(exc)
+        if text.startswith("model_disabled:"):
+            raise api_error(400, "model_disabled", f"Model config is disabled: {suite_request.model_id}")
+        raise api_error(400, "invalid_suite_request", text)
+    if request.wait_for_completion:
+        return suite
+    background_tasks.add_task(runner.execute, suite.suite_id)
     return suite
 
 

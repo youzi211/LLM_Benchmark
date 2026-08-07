@@ -345,6 +345,7 @@ GET    /api/overview/reports/{overview_id}
 GET    /api/overview/reports/{overview_id}/markdown
 
 POST   /api/suites/default
+POST   /api/suites/quick
 GET    /api/suites
 GET    /api/suites/{suite_id}
 GET    /api/suites/{suite_id}/report
@@ -420,7 +421,7 @@ curl -fsS -X POST "$API_BASE/api/models" \
 
 ## 一键评测与定时计划
 
-如果希望“给一个模型 ID，自动完成网关接入验收、EvalScope 能力评测、EvalScope 压测，并生成统一总览报告”，使用 Suite 接口。
+如果希望“自动完成网关接入验收、EvalScope 能力评测、EvalScope 压测，并生成统一总览报告”，使用 Suite 接口。已有模型配置时调用 `POST /api/suites/default` 并传 `model_id`；临时评测外部模型时调用 `POST /api/suites/quick`，直接传 `url`/`key`/`model`，不会把模型配置或密钥写入 `data/models.json`。
 
 默认 Suite 是当前推荐的一键测试计划，包含以下阶段：
 
@@ -452,6 +453,8 @@ curl -fsS -X POST "$API_BASE/api/models" \
 
 后台启动一键评测，接口立即返回 `suite_id`：
 
+已有 `model_id` 时：
+
 ```bash
 curl -fsS -X POST "$API_BASE/api/suites/default" \
   -H 'Content-Type: application/json' \
@@ -468,6 +471,29 @@ curl -fsS -X POST "$API_BASE/api/suites/default" \
     }
   }'
 ```
+
+不想先创建模型配置时，直接传 OpenAI 兼容入口、密钥和上游模型名：
+
+```bash
+curl -fsS -X POST "$API_BASE/api/suites/quick" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "url": "http://127.0.0.1:9001/v1",
+    "key": "<your-api-key>",
+    "model": "demo-model",
+    "title": "demo-model quick benchmark",
+    "run_gateway": true,
+    "run_intelligence": true,
+    "run_stress": true,
+    "wait_for_completion": false,
+    "stress_options": {
+      "parallel": [1, 5],
+      "number": [10, 50]
+    }
+  }'
+```
+
+`/api/suites/quick` 会为本次 suite 生成 `inline_*` 临时模型 ID；`url` 可以传基础地址（如 `/v1`），也可以传完整 `/chat/completions` 或 `/responses` 端点，服务会按 `protocol` 归一化。该接口只适合立即执行，不会创建可复用模型配置，也不会把传入的 `key` 写入 suite JSON 或报告。
 
 查询 suite 进度：
 

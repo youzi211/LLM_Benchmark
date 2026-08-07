@@ -559,6 +559,7 @@ GET    /api/overview/reports/{overview_id}
 GET    /api/overview/reports/{overview_id}/markdown
 
 POST   /api/suites/default
+POST   /api/suites/quick
 GET    /api/suites
 POST   /api/suites/schedules
 GET    /api/suites/schedules
@@ -621,9 +622,10 @@ GET    /api/suites/{suite_id}/report
 ### 8.7 扩展一键评测和定时计划
 
 1. Suite 层只做编排；新增正式评测能力时应优先接入 EvalScope 或已有 runner，再由 suite 引用。
-2. 修改 suite 状态或步骤字段时，更新 `app/suites/schemas.py`、`docs/api.md`、README、架构文档和测试。
-3. 定时计划当前是单机轻量轮询；多实例部署前必须增加锁，避免同一计划被重复触发。
-4. 定时压测建议配置较小默认档位，避免半夜任务无限排队或打满共享网关。
+2. `/api/suites/quick` 只为当前请求构造进程内 `inline_*` 临时模型配置，不能把调用方传入的 `key` 写入 `data/models.json`、suite JSON、报告或日志；后台任务未完成前如果服务进程重启，需要调用方重新提交。
+3. 修改 suite 状态或步骤字段时，更新 `app/suites/schemas.py`、`docs/api.md`、README、架构文档和测试。
+4. 定时计划当前是单机轻量轮询；多实例部署前必须增加锁，避免同一计划被重复触发。
+5. 定时压测建议配置较小默认档位，避免半夜任务无限排队或打满共享网关。
 
 ### 8.8 增加异步任务队列（未来方向）
 

@@ -863,7 +863,7 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 
 ## 13. 一键评测套件接口（Suites）
 
-Suites 是“一键评测模型并出报告”的编排层。它复用已有三类能力：先执行网关接入验收 smoke，再提交 EvalScope 能力评测和 EvalScope 压测，最后自动生成统一总览报告。Suites 不新增评测指标，也不重造 EvalScope 可视化，只负责串联、等待终态、归档 suite 状态和生成 overview 入口。
+Suites 是“一键评测模型并出报告”的编排层。它复用已有三类能力：先执行网关接入验收 smoke，再提交 EvalScope 能力评测和 EvalScope 压测，最后自动生成统一总览报告。Suites 不新增评测指标，也不重造 EvalScope 可视化，只负责串联、等待终态、归档 suite 状态和生成 overview 入口。已有模型配置时使用 `POST /api/suites/default`；临时外部模型可使用 `POST /api/suites/quick` 直接传 `url`、`key`、`model`。
 
 ### 13.1 SuiteDefaultRunRequest
 
@@ -930,25 +930,76 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 
 成功响应：`200 OK`，返回 `SuiteRun`。后台模式初始状态通常为 `queued`，随后可通过 `GET /api/suites/{suite_id}` 查询进度。
 
-### 13.4 查询 suite 列表
+### 13.4 临时模型一键评测
+
+#### POST `/api/suites/quick`
+
+调用方不需要先创建模型配置，直接传 OpenAI 兼容服务地址、密钥和上游模型名即可启动 suite。服务会为本次请求生成 `inline_*` 临时模型 ID，并用进程内临时模型存储驱动网关 smoke、EvalScope 能力评测和 EvalScope 压测；不会写入 `data/models.json`，也不会把传入的 `key`/`api_key` 持久化到 suite JSON 或报告中。
+
+请求字段：
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|---|---:|---:|---:|---|
+| `url` / `base_url` | string | 是 | - | OpenAI 兼容基础地址，例如 `http://127.0.0.1:9001/v1`。也可传完整 `/chat/completions` 或 `/responses` 端点，服务会按 `protocol` 去掉末尾接口路径。 |
+| `key` / `api_key` | string | 否 | `""` | 上游 API Key。无鉴权网关可以留空；响应、suite 文件和报告不会保存明文。 |
+| `model` | string | 是 | - | 上游模型名。 |
+| `name` | string/null | 否 | `null` | 临时模型展示名；为空时使用 `临时模型 <model>`。 |
+| `protocol` | string | 否 | `chat_completions` | `chat_completions` 或 `responses`。 |
+| `timeout_seconds` | integer | 否 | `60` | 单次上游请求超时时间，传给临时 `ModelConfig`。 |
+| `declared_context_tokens` / `declared_max_output_tokens` | integer/null | 否 | `null` | 可选声明上下文和最大输出能力，用于部分网关 smoke 探针。 |
+| `concurrency_levels` | integer[] | 否 | `[1,5,10,20]` | 网关 smoke 兼容并发档位声明。 |
+| `title`、`run_gateway`、`run_intelligence`、`run_stress`、`gateway_plan_id`、`gateway_metric_ids`、`stress_options`、`wait_for_completion`、`poll_interval_seconds` | - | 否 | 同 `SuiteDefaultRunRequest` | 与默认 suite 语义一致。 |
+| `timeout_seconds_total` | number/null | 否 | `null` | suite 等待 EvalScope 能力评测/压测终态的超时时间；对应默认 suite 的 `timeout_seconds`。 |
+
+请求示例：
+
+```json
+{
+  "url": "http://127.0.0.1:9001/v1",
+  "key": "<your-api-key>",
+  "model": "demo-model",
+  "title": "demo-model quick benchmark",
+  "stress_options": {
+    "parallel": [1, 5],
+    "number": [10, 50]
+  }
+}
+```
+
+如果调用方希望同步等待整套评测结束，可以设置：
+
+```json
+{
+  "url": "http://127.0.0.1:9001/v1/chat/completions",
+  "api_key": "<your-api-key>",
+  "model": "demo-model",
+  "wait_for_completion": true,
+  "poll_interval_seconds": 10,
+  "timeout_seconds_total": 86400
+}
+```
+
+成功响应：`200 OK`，返回 `SuiteRun`，其中 `model_id` 形如 `inline_yyyymmddhhmmss_xxxxxxxx`。后台模式依赖当前服务进程内的临时模型配置；如果进程在任务完成前重启，临时密钥不会被恢复，应重新提交 quick suite。
+
+### 13.5 查询 suite 列表
 
 #### GET `/api/suites`
 
 读取本地 suite 列表。可选 query 参数：`limit`，默认 `50`。
 
-### 13.5 查询 suite 详情
+### 13.6 查询 suite 详情
 
 #### GET `/api/suites/{suite_id}`
 
 返回 suite 元数据、步骤状态、三类子任务 ID 和 overview ID。不存在时返回 `404 suite_not_found`。
 
-### 13.6 下载 suite 总览报告
+### 13.7 下载 suite 总览报告
 
 #### GET `/api/suites/{suite_id}/report`
 
 下载 suite 自动生成的 overview Markdown。suite 尚未完成、没有生成 overview 或文件丢失时返回 `404 suite_report_not_found`。
 
-### 13.7 创建定时评测计划
+### 13.8 创建定时评测计划
 
 #### POST `/api/suites/schedules`
 
@@ -982,25 +1033,25 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 | `stress_parallel` / `stress_number` | integer[]/null | `null` | 常用压测参数快捷字段。 |
 | `stress_options` | object | `{}` | 更完整的压测参数。 |
 
-### 13.8 查询定时计划列表
+### 13.9 查询定时计划列表
 
 #### GET `/api/suites/schedules`
 
 读取本地定时计划列表。可选 query 参数：`limit`，默认 `50`。
 
-### 13.9 查询定时计划详情
+### 13.10 查询定时计划详情
 
 #### GET `/api/suites/schedules/{schedule_id}`
 
 返回定时计划、下一次运行时间、最近一次 suite ID、运行次数和最近错误。不存在时返回 `404 suite_schedule_not_found`。
 
-### 13.10 删除定时计划
+### 13.11 删除定时计划
 
 #### DELETE `/api/suites/schedules/{schedule_id}`
 
 删除本地定时计划。不存在时返回 `404 suite_schedule_not_found`。
 
-### 13.11 手动触发定时计划
+### 13.12 手动触发定时计划
 
 #### POST `/api/suites/schedules/{schedule_id}/trigger`
 

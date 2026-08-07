@@ -4,9 +4,9 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
-from app.core.models import utc_now
+from app.core.models import ModelConfig, Protocol, utc_now
 
 SuiteRunStatus = Literal["queued", "running", "completed", "partial", "failed"]
 SuiteStepStatus = Literal["pending", "running", "completed", "skipped", "failed"]
@@ -18,6 +18,22 @@ def new_suite_id() -> str:
 
 def new_schedule_id() -> str:
     return f"suite_schedule_{utc_now().strftime('%Y%m%d%H%M%S')}_{uuid4().hex[:8]}"
+
+
+def new_inline_model_id() -> str:
+    return f"inline_{utc_now().strftime('%Y%m%d%H%M%S')}_{uuid4().hex[:8]}"
+
+
+def _normalize_base_url(url: str, protocol: Protocol) -> str:
+    value = url.rstrip("/")
+    suffixes = {
+        "chat_completions": "/chat/completions",
+        "responses": "/responses",
+    }
+    suffix = suffixes.get(protocol)
+    if suffix and value.endswith(suffix):
+        return value[: -len(suffix)].rstrip("/")
+    return value
 
 
 class SuiteStressOptions(BaseModel):
@@ -70,6 +86,86 @@ class SuiteDefaultRunRequest(BaseModel):
         if not any([self.run_gateway, self.run_intelligence, self.run_stress]):
             raise ValueError("at least one suite component must be enabled")
         return self
+
+
+class SuiteInlineModelRequest(BaseModel):
+    url: str = Field(validation_alias=AliasChoices("url", "base_url"), min_length=1)
+    key: str = Field(default="", validation_alias=AliasChoices("key", "api_key"))
+    model: str = Field(min_length=1)
+    name: str | None = None
+    protocol: Protocol = "chat_completions"
+    timeout_seconds: int = Field(default=60, ge=1, le=600)
+    declared_context_tokens: int | None = Field(default=None, ge=1)
+    declared_max_output_tokens: int | None = Field(default=None, ge=1)
+    concurrency_levels: list[int] = Field(default_factory=lambda: [1, 5, 10, 20])
+
+    @field_validator("url")
+    @classmethod
+    def strip_url(cls, value: str) -> str:
+        return value.rstrip("/")
+
+    @field_validator("concurrency_levels")
+    @classmethod
+    def validate_concurrency_levels(cls, value: list[int]) -> list[int]:
+        if not value:
+            return [1, 5, 10, 20]
+        cleaned = sorted(set(value))
+        if any(item < 1 or item > 200 for item in cleaned):
+            raise ValueError("concurrency levels must be between 1 and 200")
+        return cleaned
+
+    def to_model_config(self, model_id: str | None = None) -> ModelConfig:
+        resolved_model_id = model_id or new_inline_model_id()
+        return ModelConfig(
+            id=resolved_model_id,
+            name=self.name or f"临时模型 {self.model}",
+            protocol=self.protocol,
+            base_url=_normalize_base_url(self.url, self.protocol),
+            api_key=self.key,
+            model=self.model,
+            timeout_seconds=self.timeout_seconds,
+            enabled=True,
+            declared_context_tokens=self.declared_context_tokens,
+            declared_max_output_tokens=self.declared_max_output_tokens,
+            concurrency_levels=self.concurrency_levels,
+        )
+
+
+class SuiteQuickRunRequest(SuiteInlineModelRequest):
+    title: str | None = None
+    run_gateway: bool = True
+    run_intelligence: bool = True
+    run_stress: bool = True
+    gateway_plan_id: str = "gateway_acceptance_v1"
+    gateway_metric_ids: list[str] | None = None
+    stress_options: SuiteStressOptions = Field(default_factory=SuiteStressOptions)
+    wait_for_completion: bool = False
+    poll_interval_seconds: float | None = Field(default=None, ge=0, le=3600)
+    timeout_seconds_total: float | None = Field(default=None, ge=1, le=172800)
+
+    @model_validator(mode="after")
+    def require_at_least_one_component(self) -> "SuiteQuickRunRequest":
+        if not any([self.run_gateway, self.run_intelligence, self.run_stress]):
+            raise ValueError("at least one suite component must be enabled")
+        return self
+
+    def to_inline_model_config(self) -> ModelConfig:
+        return self.to_model_config()
+
+    def to_suite_request(self, model_id: str) -> SuiteDefaultRunRequest:
+        return SuiteDefaultRunRequest(
+            model_id=model_id,
+            title=self.title or f"{self.model} 一键评测",
+            run_gateway=self.run_gateway,
+            run_intelligence=self.run_intelligence,
+            run_stress=self.run_stress,
+            gateway_plan_id=self.gateway_plan_id,
+            gateway_metric_ids=self.gateway_metric_ids,
+            stress_options=self.stress_options,
+            wait_for_completion=self.wait_for_completion,
+            poll_interval_seconds=self.poll_interval_seconds,
+            timeout_seconds=self.timeout_seconds_total,
+        )
 
 
 class SuiteStep(BaseModel):
