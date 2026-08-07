@@ -15,50 +15,208 @@
 
 ## 部署与启动
 
-面向 Linux 服务器部署时，推荐把服务作为一个长期运行的 FastAPI 进程启动，对外通过 HTTP API 调用。Suite 定时计划由主服务内的轻量调度器负责；只要没有设置 `LLM_BENCHMARK_SCHEDULER_DISABLED=1`，服务启动后会自动轮询 `data/suite_schedules/` 并按 `next_run_at` 触发评测。
+### 运行形态先说清楚
 
-安装依赖：
+本项目推荐部署为**一个 FastAPI 主服务进程**：
+
+- 主服务端口默认 `8000`，负责模型配置、网关 smoke、EvalScope 能力评测、EvalScope perf 压测、任务归档和 Markdown 报告。
+- EvalScope 能力评测和压测都在主服务进程内直接 `import evalscope` 执行，不再启动额外 EvalScope HTTP 包装服务。
+- 主服务启动时会启动内置 suite 定时调度器；只要没有设置 `LLM_BENCHMARK_SCHEDULER_DISABLED=1`，它会轮询 `data/suite_schedules/` 并按 `next_run_at` 触发评测。
+- **主服务不会自动启动 EvalScope sandbox / `ms-enclave server`。** MBPP、MBPP+、HumanEval、HumanEval+、LiveCodeBench 等代码执行评分需要 sandbox 时，必须先把 sandbox 作为独立服务启动，再在 `data/evalscope.json` 里配置它的地址。
+
+### 1. 安装依赖
+
+进入项目目录：
 
 ```bash
 cd /opt/LLM_Benchmark
+```
+
+生产/完整评测推荐安装 EvalScope、perf 和 sandbox 相关依赖：
+
+```bash
 uv sync --group evalscope
 ```
 
-如果不需要 EvalScope 能力评测和压测，只运行网关 smoke，也可以使用：
+如果只做网关 smoke，不跑 EvalScope 能力评测和压测，可以只安装基础依赖：
 
 ```bash
 uv sync
 ```
 
-启动服务：
+Windows PowerShell 同样使用：
+
+```powershell
+cd D:\lakala\LLM_Benchmark
+uv sync --group evalscope
+```
+
+### 2. 配置模型
+
+模型配置通过 API 写入本地 `data/models.json`，也可以手工准备该文件。该文件可能包含明文 API Key，**不要提交到 Git**。
+
+最常用方式是先启动主服务后调用：
+
+```bash
+export API_BASE=http://127.0.0.1:8000
+
+curl -fsS -X POST "$API_BASE/api/models" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "id": "demo-chat",
+    "name": "Demo Chat",
+    "protocol": "chat_completions",
+    "base_url": "http://127.0.0.1:9001/v1",
+    "api_key": "<your-api-key>",
+    "model": "demo-model",
+    "timeout_seconds": 60,
+    "enabled": true,
+    "declared_context_tokens": 8192,
+    "declared_max_output_tokens": 1024,
+    "concurrency_levels": [1, 2]
+  }'
+```
+
+如果需要报告分析模型或 EvalScope Judge，可在 `data/models.json` 顶层配置 `analysis_model_id`，指向某个已有模型配置 ID。Judge 的 URL 和 Key 仍然只放在 `data/models.json` 的模型配置里，不放在 `data/evalscope.json`。
+
+### 3. 可选：配置代码评分 sandbox
+
+只有跑代码执行类数据集时才需要 sandbox，例如：
+
+- `humaneval`
+- `humaneval_plus`
+- `mbpp`
+- `mbpp_plus`
+- `live_code_bench`
+
+如果不配置 sandbox，这些数据集会在执行阶段返回 `sandbox_required:<dataset>`，避免出现“预测已生成但没有分数”的情况。
+
+远程 sandbox 推荐作为独立服务启动。下面命令要在 sandbox 节点执行，不会被主服务启动脚本自动执行：
+
+```bash
+pip install "evalscope[sandbox]"
+ms-enclave server --host 0.0.0.0 --port 1234
+```
+
+确认 sandbox 健康：
+
+```bash
+curl -fsS http://<sandbox-host>:1234/health
+```
+
+然后在主服务节点创建 `data/evalscope.json`，或复制 `data/evalscope.remote-sandbox.json.example` 后修改地址：
+
+```json
+{
+  "datasets_dir": "data/evalscope_datasets",
+  "outputs_dir": "outputs/evalscope",
+  "sandbox_enabled": true,
+  "sandbox_type": "docker",
+  "sandbox_manager_config": {
+    "base_url": "http://<sandbox-host>:1234"
+  }
+}
+```
+
+安全建议：通过内网、防火墙或安全组限制 `1234` 端口只允许主服务访问。
+
+### 4. 启动主服务
+
+Linux 直接启动：
 
 ```bash
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-也可以使用仓库脚本启动，端口通过 `MAIN_PORT` 覆盖：
+Linux 使用脚本启动：
 
 ```bash
 MAIN_PORT=8000 bash scripts/start_all.sh
 ```
 
-健康检查：
+Windows PowerShell 直接启动：
+
+```powershell
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Windows PowerShell 使用脚本启动：
+
+```powershell
+.\scripts\start_all.ps1 -MainHost 0.0.0.0 -MainPort 8000
+```
+
+启动脚本只启动主服务，并会打印 sandbox 提醒；它不会自动执行 `ms-enclave server`。
+
+### 5. 健康检查和部署检查
+
+主服务健康检查：
 
 ```bash
 curl -fsS http://127.0.0.1:8000/health
+```
+
+EvalScope import 健康检查：
+
+```bash
 curl -fsS http://127.0.0.1:8000/api/intelligence/evalscope/health
 curl -fsS http://127.0.0.1:8000/api/stress/evalscope/health
 ```
 
-部署后也可以运行内置检查脚本：
+如果配置了远程 sandbox，再单独检查 sandbox：
+
+```bash
+curl -fsS http://<sandbox-host>:1234/health
+```
+
+部署后可以运行内置检查脚本：
 
 ```bash
 uv run python scripts/test_deployment.py --main-url http://127.0.0.1:8000
 ```
 
-### systemd 示例
+### 6. 定时评测
 
-生产环境可用 systemd 托管进程，示例：
+定时计划通过 API 创建，保存在本地 `data/suite_schedules/`。主服务启动后内置调度器会自动轮询到期计划。
+
+创建每日 02:00 评测计划：
+
+```bash
+curl -fsS -X POST "$API_BASE/api/suites/schedules" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "nightly-demo-chat",
+    "model_id": "demo-chat",
+    "enabled": true,
+    "time_of_day": "02:00",
+    "timezone": "Asia/Shanghai",
+    "interval_days": 1,
+    "run_gateway": true,
+    "run_intelligence": true,
+    "run_stress": true,
+    "stress_parallel": [1, 5],
+    "stress_number": [10, 50],
+    "timeout_seconds": 86400
+  }'
+```
+
+手动触发某个计划：
+
+```bash
+curl -fsS -X POST "$API_BASE/api/suites/schedules/<schedule_id>/trigger"
+```
+
+临时关闭定时器：
+
+```bash
+export LLM_BENCHMARK_SCHEDULER_DISABLED=1
+```
+
+关闭后重启主服务才生效。
+
+### 7. systemd 部署示例
+
+生产环境可以用 systemd 托管主服务进程：
 
 ```ini
 [Unit]
@@ -88,18 +246,25 @@ sudo systemctl status llm-benchmark
 journalctl -u llm-benchmark -f
 ```
 
-### 配置文件
+如果使用远程 sandbox，建议另建独立 systemd 服务管理 `ms-enclave server`，或者由专门的 Docker/运维系统管理；不要误以为 `llm-benchmark` 主服务会自动拉起 sandbox。
 
-- `data/models.json`：模型配置文件，可能包含明文 API Key，不要提交。`analysis_model_id` 可指向一个模型配置作为报告分析模型，同时也是 EvalScope 能力评测需要 LLM Judge 时的默认 Judge。
-- `data/evalscope.json`：可选覆盖文件。默认目录通常可直接运行；只有需要覆盖 EvalScope 数据集目录、输出目录或 Judge 选择时才创建。不要在这里保存 Judge 地址或密钥。
+### 8. 运行目录和敏感文件
 
-最小示例：
+不要提交以下运行文件或目录：
 
-```json
-{
-  "datasets_dir": "data/evalscope_datasets",
-  "outputs_dir": "outputs/evalscope"
-}
+```text
+data/models.json
+data/evalscope.json
+data/tasks/
+data/intelligence_tasks/
+data/stress_tasks/
+data/overview_reports/
+data/suite_runs/
+data/suite_schedules/
+reports/
+outputs/
+.env
+.venv/
 ```
 
 详细部署说明见 [部署指南](docs/deployment.md)。
@@ -271,6 +436,8 @@ curl -fsS -X POST "$API_BASE/api/models" \
 
 默认能力测试数据集当前不需要 LLM Judge；如果调用 `POST /api/intelligence/tasks` 自定义加入 `simple_qa`、`chinese_simpleqa`、`truthful_qa`、`alpaca_eval`、`arena_hard`、`longbench_v2` 等 Judge 数据集，则会使用内置 Judge 配置，缺少 Judge 时提交阶段返回 `400 judge_required`。
 
+> 代码类数据集虽然默认不需要 LLM Judge，但需要 EvalScope sandbox 才能评分。主服务不会自动启动 sandbox；运行 MBPP/MBPP+/HumanEval 等数据集前，请先独立启动 `ms-enclave server`，并在 `data/evalscope.json` 中配置 `sandbox_enabled=true` 和 `sandbox_manager_config.base_url`。
+
 后台启动一键评测，接口立即返回 `suite_id`：
 
 ```bash
@@ -362,9 +529,9 @@ curl -fsS "$API_BASE/api/reports/<task_id>" -o report.md
 head -80 report.md
 ```
 
-## EvalScope 压测
+## EvalScope 配置与压测
 
-压测通过 EvalScope `perf` 执行，本项目负责编排、归档和报告。通常不需要创建 `data/evalscope.json`；只有要覆盖本地目录时才使用这个最小示例：
+压测通过 EvalScope `perf` 执行，本项目负责编排、归档和报告。通常不需要创建 `data/evalscope.json`；只有要覆盖本地目录、Judge 选择或 sandbox 地址时才使用该文件。最小示例：
 
 ```json
 {

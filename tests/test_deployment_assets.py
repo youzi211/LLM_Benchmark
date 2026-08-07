@@ -85,3 +85,17 @@ def test_docs_and_start_scripts_explicitly_say_sandbox_is_external() -> None:
     assert "主服务启动时不会自动启动 sandbox" in metric_methods
     assert "不会启动 ms-enclave" in start_all_sh
     assert "不会启动 ms-enclave" in start_all_ps1
+
+
+
+def test_readme_documents_startup_deployment_and_sandbox_boundary() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "uv sync --group evalscope" in readme
+    assert "uv run uvicorn app.main:app --host 0.0.0.0 --port 8000" in readme
+    assert "scripts/start_all.sh" in readme
+    assert "scripts\\start_all.ps1" in readme
+    assert "主服务不会自动启动 EvalScope sandbox" in readme
+    assert "ms-enclave server --host 0.0.0.0 --port 1234" in readme
+    assert "LLM_BENCHMARK_SCHEDULER_DISABLED=1" in readme
+    assert "data/models.json" in readme
+    assert "data/evalscope.json" in readme
