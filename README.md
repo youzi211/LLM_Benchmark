@@ -22,7 +22,7 @@
 - 主服务端口默认 `8000`，负责模型配置、网关 smoke、EvalScope 能力评测、EvalScope perf 压测、任务归档和 Markdown 报告。
 - EvalScope 能力评测和压测都在主服务进程内直接 `import evalscope` 执行，不再启动额外 EvalScope HTTP 包装服务。
 - 主服务启动时会启动内置 suite 定时调度器；只要没有设置 `LLM_BENCHMARK_SCHEDULER_DISABLED=1`，它会轮询 `data/suite_schedules/` 并按 `next_run_at` 触发评测。
-- **主服务不会自动启动 EvalScope sandbox / `ms-enclave server`。** MBPP、MBPP+、HumanEval、HumanEval+、LiveCodeBench 等代码执行评分需要 sandbox 时，必须先把 sandbox 作为独立服务启动，再在 `data/evalscope.json` 里配置它的地址。
+- **FastAPI 主服务进程本身不会自动启动 EvalScope sandbox / `ms-enclave server`。** MBPP、MBPP+、HumanEval、HumanEval+、LiveCodeBench 等代码执行评分需要 sandbox 时，必须先把 sandbox 启动好，再在 `data/evalscope.json` 里配置它的地址；`scripts/start_all.*` 默认也不启动 sandbox，但支持显式参数在同机一并拉起。
 
 ### 1. 安装依赖
 
@@ -91,7 +91,7 @@ curl -fsS -X POST "$API_BASE/api/models" \
 
 如果不配置 sandbox，这些数据集会在执行阶段返回 `sandbox_required:<dataset>`，避免出现“预测已生成但没有分数”的情况。
 
-远程 sandbox 推荐作为独立服务启动。下面命令要在 sandbox 节点执行，不会被主服务启动脚本自动执行：
+生产或远程 sandbox 推荐作为独立服务启动。下面命令要在 sandbox 节点执行；`app.main` 不会自动执行它，`scripts/start_all.*` 也只有在显式开启 sandbox 参数时才会代为执行：
 
 ```bash
 pip install "evalscope[sandbox]"
@@ -118,7 +118,7 @@ curl -fsS http://<sandbox-host>:1234/health
 }
 ```
 
-安全建议：通过内网、防火墙或安全组限制 `1234` 端口只允许主服务访问。
+安全建议：通过内网、防火墙或安全组限制 `1234` 端口只允许主服务访问。无论 sandbox 是独立启动还是由 `scripts/start_all.*` 显式拉起，都仍然需要在 `data/evalscope.json` 中配置 `sandbox_enabled=true` 和正确的 `sandbox_manager_config.base_url`；启动脚本不会自动改写该配置文件。
 
 ### 4. 启动主服务
 
@@ -128,10 +128,16 @@ Linux 直接启动：
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-Linux 使用脚本启动：
+Linux 使用脚本启动（默认只启动主服务）：
 
 ```bash
 MAIN_PORT=8000 bash scripts/start_all.sh
+```
+
+如果 sandbox 与主服务在同一台机器，并且确认已安装 `ms-enclave`，可显式开启随脚本启动 sandbox：
+
+```bash
+START_SANDBOX=1 SANDBOX_HOST=0.0.0.0 SANDBOX_PORT=1234 MAIN_PORT=8000 bash scripts/start_all.sh
 ```
 
 Windows PowerShell 直接启动：
@@ -140,13 +146,19 @@ Windows PowerShell 直接启动：
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-Windows PowerShell 使用脚本启动：
+Windows PowerShell 使用脚本启动（默认只启动主服务）：
 
 ```powershell
 .\scripts\start_all.ps1 -MainHost 0.0.0.0 -MainPort 8000
 ```
 
-启动脚本只启动主服务，并会打印 sandbox 提醒；它不会自动执行 `ms-enclave server`。
+如果 sandbox 与主服务在同一台机器，并且确认已安装 `ms-enclave`，可显式开启随脚本启动 sandbox：
+
+```powershell
+.\scripts\start_all.ps1 -MainHost 0.0.0.0 -MainPort 8000 -StartSandbox -SandboxHost 0.0.0.0 -SandboxPort 1234
+```
+
+启动脚本默认只启动主服务并打印 sandbox 提醒；只有设置 `START_SANDBOX=1` 或传入 `-StartSandbox` 时才会执行 `ms-enclave server`。主服务日志写入 `.tmp/logs/main.*.log`，sandbox 日志写入 `.tmp/logs/sandbox.*.log`。
 
 ### 5. 健康检查和部署检查
 
@@ -246,7 +258,7 @@ sudo systemctl status llm-benchmark
 journalctl -u llm-benchmark -f
 ```
 
-如果使用远程 sandbox，建议另建独立 systemd 服务管理 `ms-enclave server`，或者由专门的 Docker/运维系统管理；不要误以为 `llm-benchmark` 主服务会自动拉起 sandbox。
+如果使用远程 sandbox，建议另建独立 systemd 服务管理 `ms-enclave server`，或者由专门的 Docker/运维系统管理；不要误以为 `llm-benchmark` FastAPI 主服务会自动拉起 sandbox。单机开发/验证时才建议用 `START_SANDBOX=1 bash scripts/start_all.sh` 或 PowerShell 的 `-StartSandbox` 作为便捷入口。
 
 ### 8. 运行目录和敏感文件
 
@@ -436,7 +448,7 @@ curl -fsS -X POST "$API_BASE/api/models" \
 
 默认能力测试数据集当前不需要 LLM Judge；如果调用 `POST /api/intelligence/tasks` 自定义加入 `simple_qa`、`chinese_simpleqa`、`truthful_qa`、`alpaca_eval`、`arena_hard`、`longbench_v2` 等 Judge 数据集，则会使用内置 Judge 配置，缺少 Judge 时提交阶段返回 `400 judge_required`。
 
-> 代码类数据集虽然默认不需要 LLM Judge，但需要 EvalScope sandbox 才能评分。主服务不会自动启动 sandbox；运行 MBPP/MBPP+/HumanEval 等数据集前，请先独立启动 `ms-enclave server`，并在 `data/evalscope.json` 中配置 `sandbox_enabled=true` 和 `sandbox_manager_config.base_url`。
+> 代码类数据集虽然默认不需要 LLM Judge，但需要 EvalScope sandbox 才能评分。FastAPI 主服务本身不会自动启动 sandbox；运行 MBPP/MBPP+/HumanEval 等数据集前，请先独立启动 `ms-enclave server`，或用 `scripts/start_all.*` 的显式 sandbox 选项在同机拉起，并在 `data/evalscope.json` 中配置 `sandbox_enabled=true` 和 `sandbox_manager_config.base_url`。
 
 后台启动一键评测，接口立即返回 `suite_id`：
 

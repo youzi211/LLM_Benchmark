@@ -17,7 +17,7 @@
 | 正式压测 | `app/stress/*` 直接 import EvalScope perf，输出吞吐、延迟分位数、TTFT/TPOT。 |
 | 旧基础指标定位 | `/api/tasks/run` 是网关接入 smoke；其中 `concurrency` / `rate_limit` 只是兼容 smoke，不是正式压测。 |
 | Judge 默认来源 | `data/models.json` 顶层 `analysis_model_id` 指向的模型；可用 `data/evalscope.json` 的 `judge_model_config_id` 覆盖。 |
-| 代码评分 sandbox | MBPP/MBPP+/HumanEval 等代码执行类评测需要 EvalScope sandbox；主服务启动时不会自动启动 sandbox，生产推荐将 `ms-enclave server` 作为独立服务运行，地址通过 `data/evalscope.json` 的 `sandbox_manager_config.base_url` 覆盖。 |
+| 代码评分 sandbox | MBPP/MBPP+/HumanEval 等代码执行类评测需要 EvalScope sandbox；FastAPI 主服务启动时不会在 `app.main` 中自动启动 sandbox，生产推荐将 `ms-enclave server` 作为独立服务运行，地址通过 `data/evalscope.json` 的 `sandbox_manager_config.base_url` 覆盖；单机验证可用 `scripts/start_all.*` 的显式 sandbox 选项一并拉起。 |
 | 不该提交 | `data/models.json`、`data/evalscope.json`、`data/*_tasks/`、`data/suite_*`、`reports/`、`outputs/`、`.env`、`.venv/`。 |
 
 推荐阅读顺序：
@@ -377,12 +377,12 @@ Suite 层解决“一个模型 ID 自动完成整套评测并出最终总览报�
 | `app/api/routes_suites.py` | suite 启动、查询、报告下载、定时计划 CRUD 和手动触发接口。 |
 ### 4.12 单服务部署层：`scripts/`
 
-推荐部署方式：一个仓库、一台服务器、一个 FastAPI 主服务进程。主服务监听 `8000`，能力评测和压测在进程内直接调用 EvalScope Python package。注意：这里的“单服务”指本项目主服务不再启动 EvalScope HTTP 包装服务；代码评分所需的 sandbox 是隔离执行依赖，需要独立启动和运维。
+推荐部署方式：一个仓库、一台服务器、一个 FastAPI 主服务进程。主服务监听 `8000`，能力评测和压测在进程内直接调用 EvalScope Python package。注意：这里的“单服务”指本项目主服务不再启动 EvalScope HTTP 包装服务；代码评分所需的 sandbox 是隔离执行依赖，生产上建议独立启动和运维，单机验证时可通过启动脚本显式拉起。
 
 | 文件 | 用途 |
 |---|---|
 | `scripts/start_main.ps1` / `scripts/start_main.sh` | 启动 `LLM_Benchmark` 主服务。 |
-| `scripts/start_all.ps1` / `scripts/start_all.sh` | 单服务启动入口；当前等价于启动主服务并提示 in-process EvalScope 模式。 |
+| `scripts/start_all.ps1` / `scripts/start_all.sh` | 单服务启动入口；默认启动主服务并提示 in-process EvalScope 模式；显式传入 `-StartSandbox` 或 `START_SANDBOX=1` 时，会同机启动 `ms-enclave server` 并写入 sandbox 日志。 |
 | `scripts/test_deployment.py` | 检查主服务健康检查，以及主服务内 EvalScope intelligence/stress 健康入口。 |
 | `scripts/smoke_deploy.py` | 使用临时 `data/`、`reports/`、`outputs/` 目录拉起测试端口并自动执行部署健康检查。 |
 

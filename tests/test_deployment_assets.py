@@ -70,7 +70,7 @@ def test_deployment_scripts_cover_single_process_and_smoke_check() -> None:
     assert "/health" in checker
 
 
-def test_docs_and_start_scripts_explicitly_say_sandbox_is_external() -> None:
+def test_docs_and_start_scripts_document_optional_sandbox_startup() -> None:
     deployment = (ROOT / "docs" / "deployment.md").read_text(encoding="utf-8")
     api = (ROOT / "docs" / "api.md").read_text(encoding="utf-8")
     architecture = (ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
@@ -78,13 +78,26 @@ def test_docs_and_start_scripts_explicitly_say_sandbox_is_external() -> None:
     start_all_sh = (ROOT / "scripts" / "start_all.sh").read_text(encoding="utf-8")
     start_all_ps1 = (ROOT / "scripts" / "start_all.ps1").read_text(encoding="utf-8")
 
-    assert "不会自动启动 EvalScope sandbox" in deployment
-    assert "启动 `scripts/start_all.*` 或 `uvicorn app.main:app` 不会自动执行它" in deployment
-    assert "主服务启动时不会自动启动 sandbox" in api
-    assert "主服务启动时不会自动启动 sandbox" in architecture
-    assert "主服务启动时不会自动启动 sandbox" in metric_methods
-    assert "不会启动 ms-enclave" in start_all_sh
-    assert "不会启动 ms-enclave" in start_all_ps1
+    assert "FastAPI 主服务启动时" in deployment
+    assert "`scripts/start_all.*` 默认也不启动 sandbox" in deployment
+    assert "START_SANDBOX=1" in deployment
+    assert "-StartSandbox" in deployment
+    assert "sandbox.out.log" in deployment
+    assert "sandbox.err.log" in deployment
+    assert "不会在 `app.main` 中自动启动 sandbox" in api
+    assert "`scripts/start_all.*` 的显式 sandbox 选项" in api
+    assert "`-StartSandbox` 或 `START_SANDBOX=1`" in architecture
+    assert "`scripts/start_all.*` 的显式 sandbox 选项" in metric_methods
+    assert "START_SANDBOX" in start_all_sh
+    assert "SANDBOX_HOST" in start_all_sh
+    assert "SANDBOX_PORT" in start_all_sh
+    assert "sandbox.out.log" in start_all_sh
+    assert "sandbox.err.log" in start_all_sh
+    assert "StartSandbox" in start_all_ps1
+    assert "SandboxHost" in start_all_ps1
+    assert "SandboxPort" in start_all_ps1
+    assert "sandbox.out.log" in start_all_ps1
+    assert "sandbox.err.log" in start_all_ps1
 
 
 
@@ -94,8 +107,11 @@ def test_readme_documents_startup_deployment_and_sandbox_boundary() -> None:
     assert "uv run uvicorn app.main:app --host 0.0.0.0 --port 8000" in readme
     assert "scripts/start_all.sh" in readme
     assert "scripts\\start_all.ps1" in readme
-    assert "主服务不会自动启动 EvalScope sandbox" in readme
+    assert "FastAPI 主服务进程本身不会自动启动 EvalScope sandbox" in readme
+    assert "START_SANDBOX=1" in readme
+    assert "-StartSandbox" in readme
     assert "ms-enclave server --host 0.0.0.0 --port 1234" in readme
+    assert "sandbox.*.log" in readme
     assert "LLM_BENCHMARK_SCHEDULER_DISABLED=1" in readme
     assert "data/models.json" in readme
     assert "data/evalscope.json" in readme
