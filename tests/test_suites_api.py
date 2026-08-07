@@ -155,6 +155,8 @@ def test_suite_quick_request_builds_transient_model_from_url_key_model(temp_data
         base_url="http://gateway.example/v1/chat/completions",
         api_key="<test-key>",
         model="demo-model",
+        context_window_tokens=8192,
+        max_output_tokens=2048,
         run_stress=False,
     )
 
@@ -165,6 +167,8 @@ def test_suite_quick_request_builds_transient_model_from_url_key_model(temp_data
     assert model_config.base_url == "http://gateway.example/v1"
     assert model_config.api_key == "<test-key>"
     assert model_config.model == "demo-model"
+    assert model_config.declared_context_tokens == 8192
+    assert model_config.declared_max_output_tokens == 2048
     assert suite_request.model_id == model_config.id
     assert suite_request.title == "demo-model 一键评测"
     assert suite_request.run_stress is False

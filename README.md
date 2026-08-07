@@ -481,6 +481,8 @@ curl -fsS -X POST "$API_BASE/api/suites/quick" \
     "url": "http://127.0.0.1:9001/v1",
     "key": "<your-api-key>",
     "model": "demo-model",
+    "context_window_tokens": 8192,
+    "max_output_tokens": 1024,
     "title": "demo-model quick benchmark",
     "run_gateway": true,
     "run_intelligence": true,
@@ -493,7 +495,7 @@ curl -fsS -X POST "$API_BASE/api/suites/quick" \
   }'
 ```
 
-`/api/suites/quick` 会为本次 suite 生成 `inline_*` 临时模型 ID；`url` 可以传基础地址（如 `/v1`），也可以传完整 `/chat/completions` 或 `/responses` 端点，服务会按 `protocol` 归一化。该接口只适合立即执行，不会创建可复用模型配置，也不会把传入的 `key` 写入 suite JSON 或报告。
+`/api/suites/quick` 会为本次 suite 生成 `inline_*` 临时模型 ID；`url` 可以传基础地址（如 `/v1`），也可以传完整 `/chat/completions` 或 `/responses` 端点，服务会按 `protocol` 归一化。建议同时传 `context_window_tokens`（或兼容字段 `declared_context_tokens`）和 `max_output_tokens`（或 `declared_max_output_tokens`）：不传窗口大小时仍可评测，但网关 smoke 中的 `context_length` 会跳过，输出长度探针会按默认 1024 tokens 观察。该接口只适合立即执行，不会创建可复用模型配置，也不会把传入的 `key` 写入 suite JSON 或报告。
 
 查询 suite 进度：
 

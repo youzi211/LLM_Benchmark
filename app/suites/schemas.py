@@ -95,8 +95,21 @@ class SuiteInlineModelRequest(BaseModel):
     name: str | None = None
     protocol: Protocol = "chat_completions"
     timeout_seconds: int = Field(default=60, ge=1, le=600)
-    declared_context_tokens: int | None = Field(default=None, ge=1)
-    declared_max_output_tokens: int | None = Field(default=None, ge=1)
+    declared_context_tokens: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "declared_context_tokens",
+            "context_window_tokens",
+            "context_window",
+            "max_context_tokens",
+        ),
+        ge=1,
+    )
+    declared_max_output_tokens: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("declared_max_output_tokens", "max_output_tokens"),
+        ge=1,
+    )
     concurrency_levels: list[int] = Field(default_factory=lambda: [1, 5, 10, 20])
 
     @field_validator("url")

@@ -946,7 +946,8 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 | `name` | string/null | 否 | `null` | 临时模型展示名；为空时使用 `临时模型 <model>`。 |
 | `protocol` | string | 否 | `chat_completions` | `chat_completions` 或 `responses`。 |
 | `timeout_seconds` | integer | 否 | `60` | 单次上游请求超时时间，传给临时 `ModelConfig`。 |
-| `declared_context_tokens` / `declared_max_output_tokens` | integer/null | 否 | `null` | 可选声明上下文和最大输出能力，用于部分网关 smoke 探针。 |
+| `context_window_tokens` / `declared_context_tokens` / `context_window` / `max_context_tokens` | integer/null | 建议 | `null` | 模型上下文窗口大小。用于网关 smoke 的 `context_length`；不传时该指标会跳过。 |
+| `max_output_tokens` / `declared_max_output_tokens` | integer/null | 建议 | `null` | 模型最大输出长度。用于 `output_length`；不传时按默认 1024 tokens 观察。 |
 | `concurrency_levels` | integer[] | 否 | `[1,5,10,20]` | 网关 smoke 兼容并发档位声明。 |
 | `title`、`run_gateway`、`run_intelligence`、`run_stress`、`gateway_plan_id`、`gateway_metric_ids`、`stress_options`、`wait_for_completion`、`poll_interval_seconds` | - | 否 | 同 `SuiteDefaultRunRequest` | 与默认 suite 语义一致。 |
 | `timeout_seconds_total` | number/null | 否 | `null` | suite 等待 EvalScope 能力评测/压测终态的超时时间；对应默认 suite 的 `timeout_seconds`。 |
@@ -958,6 +959,8 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
   "url": "http://127.0.0.1:9001/v1",
   "key": "<your-api-key>",
   "model": "demo-model",
+  "context_window_tokens": 8192,
+  "max_output_tokens": 1024,
   "title": "demo-model quick benchmark",
   "stress_options": {
     "parallel": [1, 5],
@@ -973,6 +976,8 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
   "url": "http://127.0.0.1:9001/v1/chat/completions",
   "api_key": "<your-api-key>",
   "model": "demo-model",
+  "context_window_tokens": 8192,
+  "max_output_tokens": 1024,
   "wait_for_completion": true,
   "poll_interval_seconds": 10,
   "timeout_seconds_total": 86400
