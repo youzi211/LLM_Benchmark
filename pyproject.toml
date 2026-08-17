@@ -20,3 +20,7 @@ evalscope = ["evalscope[perf,sandbox]>=1.1.0"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 pythonpath = ["."]
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true

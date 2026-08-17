@@ -246,17 +246,45 @@ class StressRunner:
         return data
 
     async def refresh_status(self, task_id: str) -> StressTask | None:
-        return self.task_store.get(task_id)
+        return self._maybe_renormalize(self.task_store.get(task_id))
 
     async def fetch_result(self, task_id: str) -> StressTask | None:
         task = self.task_store.get(task_id)
         if task is None:
             return None
+        task = self._maybe_renormalize(task)
         if task.status in TERMINAL_STATUSES and not task.report_path:
             report_path = write_stress_report(task, self.reports_dir)
             task.report_path = str(report_path)
             task.updated_at = utc_now()
             self.task_store.save(task)
+        return task
+
+    def _maybe_renormalize(self, task: StressTask | None) -> StressTask | None:
+        """对终态任务做展示回填：旧版 executor 返回的 metrics 是 pydantic 对象，
+        导致持久化的 normalized_result.runs 为空（档位被解析跳过）。这里在读取时
+        按 raw_result 重新标准化，让历史任务的档位表/一眼看懂也能正常显示。"""
+        if task is None or task.status not in TERMINAL_STATUSES:
+            return task
+        if not task.raw_result:
+            return task
+        nr = task.normalized_result
+        if nr is not None and nr.runs:
+            return task
+        try:
+            fresh = self._normalize(task, task.raw_result)
+        except Exception:  # noqa: BLE001 - 回填失败不应阻断读取
+            return task
+        if not fresh.runs:
+            return task
+        task.normalized_result = fresh
+        task.updated_at = utc_now()
+        try:
+            report_path = write_stress_report(task, self.reports_dir)
+            task.report_path = str(report_path)
+        except Exception:  # noqa: BLE001 - 报告重写失败不阻断读取
+            pass
+        self.task_store.save(task)
         return task
 
     def _normalize(self, task: StressTask, raw_result: dict[str, Any]) -> StressNormalizedResult:

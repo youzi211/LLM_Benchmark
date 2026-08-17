@@ -574,3 +574,5 @@ POST /api/suites/schedules，run_once=false，interval_days=1，time_of_day=00:0
 4. `next_run_at` 返回 UTC 时间；如果 `timezone` 是 `Asia/Shanghai`，北京时间 `00:00` 会显示为前一天 UTC `16:00`。
 5. 代码执行类智力评测，例如 MBPP/MBPP+、HumanEval/HumanEval+，需要 sandbox 服务保持运行，否则可能无法评分。
 6. 建议对接方保存 `suite_id` 和 `schedule_id`，方便后续查询进度、报告和问题排查。
+7. 能力评测默认会从 ModelScope 下载默认数据集（`humaneval`、`gsm8k` 等 10 个）。若希望评测时不依赖外网、不重复下载，可提前在 `data/evalscope_datasets/` 下按数据集名准备本地目录（例如 `data/evalscope_datasets/gsm8k/`、`data/evalscope_datasets/humaneval/`），后端会自动识别并改为本地加载（日志显示 `Loading dataset ... from local` 而非 `from modelscope`）。通过 `GET /api/intelligence/datasets/local` 可确认本机已就绪的数据集（`available_local=true`）。同机已有另一份完整数据集时，对每个数据集目录建立符号链接即可复用，无需复制，尤其推荐用于 `live_code_bench` 等大体量数据集。
+8. `data/models.json` 可能包含明文 API Key，已在 `.gitignore` 中忽略，切勿提交到 Git；`data/evalscope_datasets/`、`data/evalscope.json` 同理。

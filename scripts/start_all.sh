@@ -28,15 +28,17 @@ if [[ "$START_SANDBOX" == "1" || "$START_SANDBOX" == "true" || "$START_SANDBOX" 
     echo "未找到 ms-enclave 命令；请先安装 evalscope[sandbox] 或关闭 START_SANDBOX。" >&2
     exit 127
   fi
-  ms-enclave server --host "$SANDBOX_HOST" --port "$SANDBOX_PORT" >"$LOG_DIR/sandbox.out.log" 2>"$LOG_DIR/sandbox.err.log" &
+  ms-enclave server --host "$SANDBOX_HOST" --port "$SANDBOX_PORT" >>"$LOG_DIR/sandbox.out.log" 2>>"$LOG_DIR/sandbox.err.log" &
   sandbox_pid=$!
+  printf '\n=== %s 启动 sandbox (PID %s, 端口 %s) ===\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$sandbox_pid" "$SANDBOX_PORT" | tee -a "$LOG_DIR/sandbox.out.log" "$LOG_DIR/sandbox.err.log" >/dev/null
   echo "EvalScope sandbox PID: $sandbox_pid, 地址: http://127.0.0.1:$SANDBOX_PORT"
 else
   echo "Sandbox 模式: 默认不启动；如需随脚本启动，设置 START_SANDBOX=1。"
 fi
 
-HOST_ADDRESS=0.0.0.0 PORT="$MAIN_PORT" "$ROOT/scripts/start_main.sh" >"$LOG_DIR/main.out.log" 2>"$LOG_DIR/main.err.log" &
+HOST_ADDRESS=0.0.0.0 PORT="$MAIN_PORT" "$ROOT/scripts/start_main.sh" >>"$LOG_DIR/main.out.log" 2>>"$LOG_DIR/main.err.log" &
 main_pid=$!
+printf '\n=== %s 启动 main (PID %s, 端口 %s) ===\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$main_pid" "$MAIN_PORT" | tee -a "$LOG_DIR/main.out.log" "$LOG_DIR/main.err.log" >/dev/null
 
 echo "LLM_Benchmark 主服务 PID: $main_pid, 地址: http://127.0.0.1:$MAIN_PORT"
 echo "EvalScope 执行模式: in-process（主服务内直接 import evalscope）"

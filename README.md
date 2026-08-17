@@ -19,7 +19,7 @@
 
 本项目推荐部署为**一个 FastAPI 主服务进程**：
 
-- 主服务端口默认 `8000`，负责模型配置、网关 smoke、EvalScope 能力评测、EvalScope perf 压测、任务归档和 Markdown 报告。
+- 主服务端口默认 `8020`，负责模型配置、网关 smoke、EvalScope 能力评测、EvalScope perf 压测、任务归档和 Markdown 报告。
 - EvalScope 能力评测和压测都在主服务进程内直接 `import evalscope` 执行，不再启动额外 EvalScope HTTP 包装服务。
 - 主服务启动时会启动内置 suite 定时调度器；只要没有设置 `LLM_BENCHMARK_SCHEDULER_DISABLED=1`，它会轮询 `data/suite_schedules/` 并按 `next_run_at` 触发评测。
 - **FastAPI 主服务进程本身不会自动启动 EvalScope sandbox / `ms-enclave server`。** MBPP、MBPP+、HumanEval、HumanEval+、LiveCodeBench 等代码执行评分需要 sandbox 时，必须先把 sandbox 启动好，再在 `data/evalscope.json` 里配置它的地址；`scripts/start_all.*` 默认也不启动 sandbox，但支持显式参数在同机一并拉起。
@@ -58,7 +58,7 @@ uv sync --group evalscope
 最常用方式是先启动主服务后调用：
 
 ```bash
-export API_BASE=http://127.0.0.1:8000
+export API_BASE=http://127.0.0.1:8020
 
 curl -fsS -X POST "$API_BASE/api/models" \
   -H 'Content-Type: application/json' \
@@ -125,44 +125,44 @@ curl -fsS http://<sandbox-host>:1234/health
 Linux 直接启动：
 
 ```bash
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8020
 ```
 
 Linux 使用脚本启动（默认只启动主服务）：
 
 ```bash
-MAIN_PORT=8000 bash scripts/start_all.sh
+MAIN_PORT=8020 bash scripts/start_all.sh
 ```
 
 如果 sandbox 与主服务在同一台机器，并且确认已安装 `ms-enclave`，可显式开启随脚本启动 sandbox：
 
 ```bash
-START_SANDBOX=1 SANDBOX_HOST=0.0.0.0 SANDBOX_PORT=1234 MAIN_PORT=8000 bash scripts/start_all.sh
+START_SANDBOX=1 SANDBOX_HOST=0.0.0.0 SANDBOX_PORT=1234 MAIN_PORT=8020 bash scripts/start_all.sh
 ```
 
 Windows PowerShell 直接启动：
 
 ```powershell
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8020
 ```
 
 Windows PowerShell 使用脚本启动（默认只启动主服务）：
 
 ```powershell
-.\scripts\start_all.ps1 -MainHost 0.0.0.0 -MainPort 8000
+.\scripts\start_all.ps1 -MainHost 0.0.0.0 -MainPort 8020
 ```
 
 如果 sandbox 与主服务在同一台机器，并且确认已安装 `ms-enclave`，可显式开启随脚本启动 sandbox：
 
 ```powershell
-.\scripts\start_all.ps1 -MainHost 0.0.0.0 -MainPort 8000 -StartSandbox -SandboxHost 0.0.0.0 -SandboxPort 1234
+.\scripts\start_all.ps1 -MainHost 0.0.0.0 -MainPort 8020 -StartSandbox -SandboxHost 0.0.0.0 -SandboxPort 1234
 ```
 
 启动脚本默认只启动主服务并打印 sandbox 提醒；只有设置 `START_SANDBOX=1` 或传入 `-StartSandbox` 时才会执行 `ms-enclave server`。主服务日志写入 `.tmp/logs/main.*.log`，sandbox 日志写入 `.tmp/logs/sandbox.*.log`。
 
 主服务启动后会同时提供一个轻量 Web 控制台，不需要额外前端构建或 Node 服务：
 
-- 访问 `http://<主服务地址>:8000/` 会跳转到 `http://<主服务地址>:8000/ui/`。
+- 访问 `http://<主服务地址>:8020/` 会跳转到 `http://<主服务地址>:8020/ui/`。
 - 控制台支持直接填写 `url`、`key`、`model`、`context_window_tokens`、`max_output_tokens` 后调用 `POST /api/suites/quick`。
 - 控制台也能读取已有模型配置并调用 `POST /api/suites/default`，以及跟踪最近 suite、打开最终总览报告。
 - 控制台支持创建定时一键评测计划：默认“只执行一次”，也可切换为每天/每 N 天周期执行；可为已有模型调用 `POST /api/suites/schedules`，也可将左侧临时模型参数先保存为模型配置再创建定时计划。
@@ -174,14 +174,14 @@ Windows PowerShell 使用脚本启动（默认只启动主服务）：
 主服务健康检查：
 
 ```bash
-curl -fsS http://127.0.0.1:8000/health
+curl -fsS http://127.0.0.1:8020/health
 ```
 
 EvalScope import 健康检查：
 
 ```bash
-curl -fsS http://127.0.0.1:8000/api/intelligence/evalscope/health
-curl -fsS http://127.0.0.1:8000/api/stress/evalscope/health
+curl -fsS http://127.0.0.1:8020/api/intelligence/evalscope/health
+curl -fsS http://127.0.0.1:8020/api/stress/evalscope/health
 ```
 
 如果配置了远程 sandbox，再单独检查 sandbox：
@@ -193,7 +193,7 @@ curl -fsS http://<sandbox-host>:1234/health
 部署后可以运行内置检查脚本：
 
 ```bash
-uv run python scripts/test_deployment.py --main-url http://127.0.0.1:8000
+uv run python scripts/test_deployment.py --main-url http://127.0.0.1:8020
 ```
 
 ### 6. 定时评测
@@ -271,9 +271,9 @@ After=network.target
 Type=simple
 WorkingDirectory=/opt/LLM_Benchmark
 Environment=HOST_ADDRESS=0.0.0.0
-Environment=PORT=8000
+Environment=PORT=8020
 # 不设置 LLM_BENCHMARK_SCHEDULER_DISABLED 时，定时 suite 会随主服务启用。
-ExecStart=/usr/local/bin/uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+ExecStart=/usr/local/bin/uv run uvicorn app.main:app --host 0.0.0.0 --port 8020
 Restart=always
 RestartSec=5
 
@@ -392,7 +392,7 @@ POST   /api/suites/schedules/{schedule_id}/trigger
 以下 API 示例默认先设置服务地址：
 
 ```bash
-export API_BASE=http://127.0.0.1:8000
+export API_BASE=http://127.0.0.1:8020
 ```
 
 ## 模型配置示例
@@ -481,6 +481,8 @@ curl -fsS -X POST "$API_BASE/api/models" \
 | `bbh` | BBH | Reasoning | Big-Bench Hard 复杂推理。 | 否 |
 
 默认能力测试数据集当前不需要 LLM Judge；如果调用 `POST /api/intelligence/tasks` 自定义加入 `simple_qa`、`chinese_simpleqa`、`truthful_qa`、`alpaca_eval`、`arena_hard`、`longbench_v2` 等 Judge 数据集，则会使用内置 Judge 配置，缺少 Judge 时提交阶段返回 `400 judge_required`。
+
+> 能力评测支持本地数据集复用，避免每次评测都从 ModelScope 下载。把数据集放到 `data/evalscope_datasets/` 下，使每个数据集成为一个与数据集同名的顶层目录（例如 `data/evalscope_datasets/gsm8k/`、`data/evalscope_datasets/humaneval/`）。后端会扫描该目录，对名字匹配的子目录注入 `local_path`，EvalScope 改为 `Loading dataset ... from local` 而非 `from modelscope`。通过 `GET /api/intelligence/datasets/local` 可查看本机已就绪的数据集（`available_local=true`）。符号链接同样生效——若同机已有另一份完整数据集目录，可对其逐个 `ln -s` 而不必复制（`live_code_bench` 等大体量数据集尤其推荐此法）。
 
 > 代码类数据集虽然默认不需要 LLM Judge，但需要 EvalScope sandbox 才能评分。FastAPI 主服务本身不会自动启动 sandbox；运行 MBPP/MBPP+/HumanEval 等数据集前，请先独立启动 `ms-enclave server`，或用 `scripts/start_all.*` 的显式 sandbox 选项在同机拉起，并在 `data/evalscope.json` 中配置 `sandbox_enabled=true` 和 `sandbox_manager_config.base_url`。
 
