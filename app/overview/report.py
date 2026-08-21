@@ -186,8 +186,8 @@ def build_overview_report(
     model_id = request.model_id or (gateway_task.model_id if gateway_task else None) or (intelligence_task.model_id if intelligence_task else None) or (stress_task.model_id if stress_task else None)
     components = [
         _gateway_component(gateway_task, request.gateway_task_id),
-        _intelligence_component(intelligence_task, request.intelligence_task_id),
         _stress_component(stress_task, request.stress_task_id),
+        _intelligence_component(intelligence_task, request.intelligence_task_id),
     ]
     provided_components = [item for item in components if item.status not in {"not_provided"}]
     completed = sum(1 for item in provided_components if item.status == "completed")
@@ -242,11 +242,11 @@ def write_overview_markdown(report: OverviewReport, reports_dir: Path | None = N
     lines.append("")
     _append_component_detail(lines, report.components[0])
 
-    lines.append("## 3. EvalScope 能力评测摘要")
+    lines.append("## 3. EvalScope 压测摘要")
     lines.append("")
     _append_component_detail(lines, report.components[1])
 
-    lines.append("## 4. EvalScope 压测摘要")
+    lines.append("## 4. EvalScope 能力评测摘要")
     lines.append("")
     _append_component_detail(lines, report.components[2])
 

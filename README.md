@@ -315,11 +315,14 @@ outputs/
 
 ## 项目文档
 
+所有文档的分层索引和关键约定速查见 [文档索引](docs/README.md)。
+
 - [系统架构说明](docs/architecture.md)：记录当前模块分层、数据流、存储结构、扩展点和 Codex 快速排查入口。
 - [API 接口文档](docs/api.md)：记录所有服务接口、请求/响应结构、错误格式、协议兼容说明和调用示例。
 - [模型评测与定时评测接口对接说明](docs/model-evaluation-integration.md)：面向调用方，说明如何在 `8020` 端口服务上提交一次模型评测、查询报告、创建一次性或周期性定时评测。
 - [指标测试方法文档](docs/metric-test-methods.md)：记录网关 smoke 指标、EvalScope 能力评测、EvalScope 压测和统一报告的测试目标、调用方式、观测字段、状态规则和人工关注点。
 - [部署指南](docs/deployment.md)：记录 Linux 服务器安装、启动、健康检查和运行目录说明。
+- [Web 控制台操作说明](docs/web-console.md)：记录内置 Web 控制台的功能面板、访问方式、操作步骤、安全边界和调用的后端接口清单。
 - EvalScope 智力评测接口已纳入 [API 接口文档](docs/api.md) 和 [系统架构说明](docs/architecture.md)，用于模型代码、数学、知识、推理等数据集表现评测。
 - EvalScope 压测接口已纳入文档，用于获取并发、限流、延迟、TTFT/TPOT 等正式性能数据。
 
@@ -456,14 +459,16 @@ curl -fsS -X POST "$API_BASE/api/models" \
 
 如果希望“自动完成网关接入验收、EvalScope 能力评测、EvalScope 压测，并生成统一总览报告”，使用 Suite 接口。已有模型配置时调用 `POST /api/suites/default` 并传 `model_id`；临时评测外部模型时调用 `POST /api/suites/quick`，直接传 `url`/`key`/`model`，不会把模型配置或密钥写入 `data/models.json`。
 
-默认 Suite 是当前推荐的一键测试计划，包含以下阶段：
+默认 Suite 是当前推荐的一键测试计划，包含以下阶段（按执行顺序：网关 → 压测 → 智力评测 → 总览；先跑压测拿到性能数据，再跑智力评测，避免长时智力评测卡死整条 suite 时丢掉性能结果）：
 
 | 阶段 | 默认接口 | 测什么 | 主要输出 |
 |---|---|---|---|
 | 网关 smoke | `POST /api/tasks/run`，计划 `gateway_acceptance_v1` | OpenAI 兼容协议、连通性、流式、usage、上下文、输出长度、错误结构、缓存观测等工程接入项。 | `data/tasks/` 结构化结果和 `reports/YYYY-MM-DD/` Markdown。 |
-| 模型能力测试 | `POST /api/intelligence/tasks/default` | 通过 EvalScope 跑默认公开数据集，覆盖代码、数学、知识、中文和复杂推理。 | `data/intelligence_tasks/` 标准化结果、能力维度汇总、EvalScope 原始输出和 Markdown 报告。 |
 | 性能压测 | `POST /api/stress/tasks/default` | 通过 EvalScope `perf` 采集并发、吞吐、延迟、TTFT/TPOT、失败率等性能数据。 | `data/stress_tasks/` 结果、`outputs/evalscope/` 原始输出和 Markdown 报告。 |
-| 统一总览 | `POST /api/overview/reports` | 汇总三类任务，给出统一中文摘要和详情入口。 | `data/overview_reports/` 与 `reports/overview/` 总览报告。 |
+| 模型能力测试 | `POST /api/intelligence/tasks/default` | 通过 EvalScope 跑默认公开数据集，覆盖代码、数学、知识、中文和复杂推理。 | `data/intelligence_tasks/` 标准化结果、能力维度汇总、EvalScope 原始输出和 Markdown 报告。 |
+| 统一总览 | `POST /api/overview/reports` | 汇总三类任务，给出统一中文摘要和详情入口（章节顺序与执行顺序一致：网关 → 压测 → 能力评测）。 | `data/overview_reports/` 与 `reports/overview/` 总览报告。 |
+
+> 能力评测样本上限 `intelligence_limit`：可选字段，控制能力评测每个数据集只取前 N 条样本（在数据集加载阶段截断，分数仍按已评测样本的平均准确率计算）。`null` 表示不限制、全量评测。**定时计划未显式传值时默认 `200`**（常量 `DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`），防止 `live_code_bench` 等大体量数据集把半夜的定时评测卡死；手动 `POST /api/suites/default` 和 `POST /api/suites/quick` 默认不限。需要精确分数时手动调用且不传该字段即可跑全量。
 
 默认模型能力数据集如下；完整元数据可通过 `GET /api/intelligence/datasets` 查询，本机已准备的数据集可通过 `GET /api/intelligence/datasets/local` 查询。
 
@@ -583,7 +588,7 @@ curl -fsS -X POST "$API_BASE/api/suites/schedules" \
   }'
 ```
 
-定时计划保存在 `data/suite_schedules/`。主服务启动后会运行轻量轮询器，到 `next_run_at` 后自动创建 suite；最近一次 suite ID 会写回计划的 `last_suite_id`。`run_once=true` 的计划执行后会自动停用，不会继续按 `interval_days` 重复。 如果需要临时关闭定时器，再设置环境变量 `LLM_BENCHMARK_SCHEDULER_DISABLED=1` 后重启服务。
+定时计划保存在 `data/suite_schedules/`。主服务启动后会运行轻量轮询器，到 `next_run_at` 后自动创建 suite；最近一次 suite ID 会写回计划的 `last_suite_id`。`run_once=true` 的计划执行后会自动停用，不会继续按 `interval_days` 重复。定时智力评测默认每个数据集只取前 `200` 条样本（可传 `intelligence_limit` 覆盖），手动调用 default/quick 评测不受此默认值约束。如果需要临时关闭定时器，再设置环境变量 `LLM_BENCHMARK_SCHEDULER_DISABLED=1` 后重启服务。
 
 ## 执行网关 smoke 评测
 

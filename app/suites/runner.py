@@ -73,10 +73,10 @@ class SuiteRunner:
         try:
             if suite.request.run_gateway:
                 await self._run_gateway(suite)
-            if suite.request.run_intelligence:
-                await self._run_intelligence(suite)
             if suite.request.run_stress:
                 await self._run_stress(suite)
+            if suite.request.run_intelligence:
+                await self._run_intelligence(suite)
             self._write_overview(suite)
             suite.status = "partial" if suite.errors else "completed"
         except Exception as exc:
@@ -100,8 +100,8 @@ class SuiteRunner:
     def _initial_steps(self, request: SuiteDefaultRunRequest) -> list[SuiteStep]:
         return [
             SuiteStep(name="gateway", title="网关接入验收", enabled=request.run_gateway, status="pending" if request.run_gateway else "skipped"),
-            SuiteStep(name="intelligence", title="EvalScope 能力评测", enabled=request.run_intelligence, status="pending" if request.run_intelligence else "skipped"),
             SuiteStep(name="stress", title="EvalScope 压测", enabled=request.run_stress, status="pending" if request.run_stress else "skipped"),
+            SuiteStep(name="intelligence", title="EvalScope 能力评测", enabled=request.run_intelligence, status="pending" if request.run_intelligence else "skipped"),
             SuiteStep(name="overview", title="统一总览报告", enabled=True, status="pending"),
         ]
 
@@ -151,7 +151,7 @@ class SuiteRunner:
     async def _run_intelligence(self, suite: SuiteRun) -> None:
         self._start_step(suite, "intelligence")
         try:
-            task = await self.intelligence_runner.submit_default(suite.model_id)
+            task = await self.intelligence_runner.submit_default(suite.model_id, limit=suite.request.intelligence_limit)
             suite.intelligence_task_id = task.task_id
             self.suite_store.save(suite)
             task = await self._wait_for_intelligence(task.task_id, suite.request)

@@ -15,6 +15,7 @@ class StressDefaultRunRequest(BaseModel):
     parallel: list[int] | None = None
     number: list[int] | None = None
     dataset: str | None = None
+    dataset_path: str | None = None
     stream: bool | None = None
     min_prompt_length: int | None = Field(default=None, ge=0)
     max_prompt_length: int | None = Field(default=None, ge=1)
@@ -38,14 +39,19 @@ class StressRemoteSubmitPayload(BaseModel):
     api: str = "openai"
     parallel: list[int] = Field(default_factory=lambda: [1, 5, 10, 20])
     number: list[int] = Field(default_factory=lambda: [10, 50, 100, 200])
-    dataset: str = "random"
+    dataset: str = "longalpaca"
+    dataset_path: str | None = None
     stream: bool = True
-    min_prompt_length: int = Field(default=1024, ge=0)
-    max_prompt_length: int = Field(default=1024, ge=1)
+    # 长度与 tokenizer 默认值对齐 EvalScope 官方默认（见 parameters 文档 Prompt 设置）：
+    # min_prompt_length=0、max_prompt_length=131072、tokenizer_path=None。
+    # tokenizer_path=None 时 EvalScope 按字符长度过滤，正好适配 longalpaca 这类
+    # 真实长文本语料；原先 1024 token + Qwen tokenizer 的过滤会把长文本几乎全部丢弃。
+    min_prompt_length: int = Field(default=0, ge=0)
+    max_prompt_length: int = Field(default=131072, ge=1)
     min_tokens: int = Field(default=512, ge=1)
     max_tokens: int = Field(default=512, ge=1)
     rate: float = -1
-    tokenizer_path: str = "Qwen/Qwen2.5-7B-Instruct"
+    tokenizer_path: str | None = None
     prefix_length: int = Field(default=0, ge=0)
     dataset_args: dict[str, Any] = Field(default_factory=dict)
     extra_args: dict[str, Any] = Field(default_factory=dict)

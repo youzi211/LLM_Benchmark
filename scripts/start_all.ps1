@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$MainHost = "0.0.0.0",
-    [int]$MainPort = 8000,
+    [int]$MainPort = 8020,
     [switch]$NoSync,
     [switch]$StartSandbox,
     [string]$SandboxHost = "0.0.0.0",

@@ -35,7 +35,7 @@ Use `uv` for all Python environment and dependency operations.
 
 ```powershell
 uv sync
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8020
 uv run uvicorn examples.fake_openai_server:app --host 127.0.0.1 --port 9001
 uv run pytest -q
 ```

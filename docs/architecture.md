@@ -11,7 +11,7 @@
 |---|---|
 | 项目做什么 | 给内部模型网关接入前采集工程 smoke、能力评测、压测和统一报告。 |
 | 主入口 | `app/main.py` 注册所有 `/api/*` 路由；启动后访问 `GET /health`。 |
-| 一键评测 | `POST /api/suites/default`，由 `app/suites/runner.py` 串起网关 smoke、EvalScope 能力、EvalScope perf 压测和 overview 报告。 |
+| 一键评测 | `POST /api/suites/default`，由 `app/suites/runner.py` 串起网关 smoke、EvalScope perf 压测、EvalScope 能力评测和 overview 报告（执行顺序：网关 → 压测 → 智力评测 → 总览）。 |
 | 定时低峰评测 | `POST /api/suites/schedules` 创建计划，`app/suites/scheduler.py` 单机轮询触发；可用 `LLM_BENCHMARK_SCHEDULER_DISABLED=1` 关闭。 |
 | 正式能力评测 | `app/intelligence/*` 直接 import EvalScope，逐数据集调用 `run_task(TaskConfig)`。 |
 | 正式压测 | `app/stress/*` 直接 import EvalScope perf，输出吞吐、延迟分位数、TTFT/TPOT。 |
@@ -22,10 +22,13 @@
 
 推荐阅读顺序：
 
+0. `docs/README.md` 查文档索引与关键约定速查（端口、执行顺序、`intelligence_limit` 等）。
 1. 本文第 1、3、4、5、9 节理解主流程。
 2. `docs/api.md` 查接口契约。
 3. `docs/metric-test-methods.md` 查每类评测的口径和字段。
-4. 需要改代码时，从本文件第 8 节的扩展指南开始定位改动面。
+4. `docs/web-console.md` 查 Web 控制台操作。
+5. `docs/model-evaluation-integration.md` 查模型接入评测的端到端流程。
+6. 需要改代码时，从本文件第 8 节的扩展指南开始定位改动面。
 
 常见误区：
 
@@ -67,7 +70,7 @@
 
 ```powershell
 uv sync
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8020
 ```
 
 健康检查：
@@ -332,7 +335,7 @@ EvalScope 原始输出"]
 
 ### 4.10 统一总览报告层：`app/overview/`
 
-统一总览报告层是本次收缩后的最终展示入口，负责把已有网关接入验收任务、EvalScope 能力评测任务和 EvalScope 压测任务合并为一份中文 Markdown 摘要。
+统一总览报告层是本次收缩后的最终展示入口，负责把已有网关接入验收任务、EvalScope 压测任务和 EvalScope 能力评测任务合并为一份中文 Markdown 摘要（章节顺序与 suite 执行顺序一致：网关 → 压测 → 能力评测）。
 
 它的边界很窄：
 
@@ -361,23 +364,26 @@ Suite 层解决“一个模型 ID 自动完成整套评测并出最终总览报�
 
 - 复用现有 `TaskRunner`、`IntelligenceRunner`、`StressRunner` 和 overview 生成器，不新增指标。
 - `POST /api/suites/default` 创建 suite；后台模式立即返回 `suite_id`，同步模式等待完成后返回。
-- suite 顺序执行：网关接入验收 -> EvalScope 能力评测 -> EvalScope 压测 -> overview 总览报告。
+- suite 顺序执行：网关接入验收 -> EvalScope 压测 -> EvalScope 能力评测 -> overview 总览报告。
+  先跑压测拿到性能数据，再跑智力评测，避免长时智力评测卡死整条 suite 而拿不到性能结果。
+- 智力评测默认每个数据集取前 N 条样本：定时评测（`SuiteScheduleCreate.to_run_request()`）未显式指定 `intelligence_limit` 时默认 `200`（常量 `DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`），避免 `live_code_bench` 等大体量数据集磨死整条 suite；手动 `/api/suites/default` 与 `/api/suites/quick` 默认 `intelligence_limit=None` 不限制，需精确分数时跑全量。`limit` 在数据集加载阶段截断，仍会产出并上报分数，只是统计基数变小。
 - 子任务失败时尽量继续生成 overview；suite 可能进入 `partial`，便于报告中展示缺失模块和错误。
 - `POST /api/suites/schedules` 保存本地定时计划，主服务启动后轻量轮询器按 `next_run_at` 自动触发。
+- 定时计划支持 `run_once=true` + `run_date`/`next_run_at` 的“一次性”计划，触发后自动 `enabled=false`；默认为按 `interval_days` 重复。
 - 定时计划只保存在本机 JSON，不依赖外部任务队列；如果未来要多实例部署，需要引入分布式锁或外部调度器。
 
 关键文件：
 
 | 文件 | 职责 |
 |---|---|
-| `app/suites/schemas.py` | `SuiteDefaultRunRequest`、`SuiteRun`、`SuiteSchedule` 等数据结构。 |
+| `app/suites/schemas.py` | `SuiteDefaultRunRequest`、`SuiteRun`、`SuiteSchedule` 等数据结构；`intelligence_limit` 字段与定时默认上限常量 `DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`。 |
 | `app/suites/runner.py` | 串联三类 runner，等待 EvalScope 终态，生成 overview。 |
 | `app/suites/store.py` | 本地 JSON 存储 suite 和 schedule。 |
 | `app/suites/scheduler.py` | 服务内轻量定时轮询器，支持 `LLM_BENCHMARK_SCHEDULER_DISABLED` 关闭。 |
 | `app/api/routes_suites.py` | suite 启动、查询、报告下载、定时计划 CRUD 和手动触发接口。 |
 ### 4.12 单服务部署层：`scripts/`
 
-推荐部署方式：一个仓库、一台服务器、一个 FastAPI 主服务进程。主服务监听 `8000`，能力评测和压测在进程内直接调用 EvalScope Python package。注意：这里的“单服务”指本项目主服务不再启动 EvalScope HTTP 包装服务；代码评分所需的 sandbox 是隔离执行依赖，生产上建议独立启动和运维，单机验证时可通过启动脚本显式拉起。
+推荐部署方式：一个仓库、一台服务器、一个 FastAPI 主服务进程。主服务监听 `8020`，能力评测和压测在进程内直接调用 EvalScope Python package。注意：这里的“单服务”指本项目主服务不再启动 EvalScope HTTP 包装服务；代码评分所需的 sandbox 是隔离执行依赖，生产上建议独立启动和运维，单机验证时可通过启动脚本显式拉起。
 
 | 文件 | 用途 |
 |---|---|
@@ -626,6 +632,7 @@ GET    /api/suites/{suite_id}/report
 3. 修改 suite 状态或步骤字段时，更新 `app/suites/schemas.py`、`docs/api.md`、README、架构文档和测试。
 4. 定时计划当前是单机轻量轮询；多实例部署前必须增加锁，避免同一计划被重复触发。
 5. 定时压测建议配置较小默认档位，避免半夜任务无限排队或打满共享网关。
+6. 调整智力评测样本上限时关注 `intelligence_limit`：改默认值改 `DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`（只影响定时评测）；改字段语义改 `SuiteDefaultRunRequest`/`SuiteQuickRunRequest`/`SuiteScheduleCreate` 三处并同步 `to_run_request()`/`to_suite_request()`；同步更新 `app/intelligence/runner.py` 的 `submit_default(limit=)` 透传与 `docs/api.md` 字段表。`limit` 在 EvalScope 数据集加载阶段截断，截断后仍按已评样本计算并上报分数。
 
 ### 8.8 增加异步任务队列（未来方向）
 
@@ -646,7 +653,7 @@ GET    /api/suites/{suite_id}/report
 uv run pytest -q
 
 # 启动服务
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8020
 
 # 启动假上游服务
 uv run uvicorn examples.fake_openai_server:app --host 127.0.0.1 --port 9001

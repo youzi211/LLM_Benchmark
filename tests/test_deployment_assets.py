@@ -104,7 +104,7 @@ def test_docs_and_start_scripts_document_optional_sandbox_startup() -> None:
 def test_readme_documents_startup_deployment_and_sandbox_boundary() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert "uv sync --group evalscope" in readme
-    assert "uv run uvicorn app.main:app --host 0.0.0.0 --port 8000" in readme
+    assert "uv run uvicorn app.main:app --host 0.0.0.0 --port 8020" in readme
     assert "scripts/start_all.sh" in readme
     assert "scripts\\start_all.ps1" in readme
     assert "FastAPI 主服务进程本身不会自动启动 EvalScope sandbox" in readme

@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST_ADDRESS="${HOST_ADDRESS:-0.0.0.0}"
-PORT="${PORT:-8000}"
+PORT="${PORT:-8020}"
 
 cd "$ROOT"
 cmd=(uv run)

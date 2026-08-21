@@ -151,8 +151,8 @@ class IntelligenceRunner:
             return None, None, f"configured Judge model not found: {', '.join(missing)}"
         return None, None, "no Judge model configured; set analysis_model_id or judge_model_config_id"
 
-    async def submit_default(self, model_id: str) -> IntelligenceTask:
-        return await self.submit_custom(model_id=model_id, datasets=list(DEFAULT_DATASETS))
+    async def submit_default(self, model_id: str, *, limit: int | None = None) -> IntelligenceTask:
+        return await self.submit_custom(model_id=model_id, datasets=list(DEFAULT_DATASETS), limit=limit)
 
     async def submit_custom(
         self,

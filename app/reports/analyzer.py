@@ -141,7 +141,7 @@ class ReportAnalyzer:
         request = AdapterRequest(
             prompt=prompt,
             system_prompt=_SYSTEM_PROMPT,
-            max_tokens=2048,
+            max_tokens=4096,
             temperature=0,
         )
 

@@ -5,7 +5,7 @@
 ## 1. 基本约定
 
 - 服务框架：FastAPI。
-- 默认本地地址：`http://127.0.0.1:8000`。
+- 默认本地地址：`http://127.0.0.1:8020`。
 - 所有业务接口前缀：`/api`。
 - 当前不做平台鉴权；上游模型 API Key 仅保存在本地 `data/models.json`，不要提交。
 - 请求与响应默认使用 JSON；报告下载接口返回 Markdown 文件。
@@ -728,12 +728,13 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 | `parallel` | integer[]/null | 否 | `[1, 5, 10]` | EvalScope 并发档位。 |
 | `number` | integer[]/null | 否 | `[10, 50, 100]` | 每个并发档位请求数。 |
 | `rate` | number[]/null | 否 | `null` | 限速档位，传给 EvalScope。 |
-| `dataset` | string/null | 否 | `null` | EvalScope perf 数据集。为空时使用长度生成参数。 |
+| `dataset` | string/null | 否 | `null` | EvalScope perf 数据集。为空时走 `StressRemoteSubmitPayload` 默认 `longalpaca`。 |
+| `dataset_path` | string/null | 否 | `null` | EvalScope perf 数据集路径。命中 `longalpaca` 等会从 ModelScope 下载的数据集、且 `data/stress_datasets/` 下有同名目录或 `<name>.json` 时自动补齐，使 EvalScope 改为本地加载，避免每次评测联网下载。 |
 | `dataset_args` | object/null | 否 | `{}` | 数据集参数，例如自定义 prompt 文件。 |
-| `min_prompt_length` / `max_prompt_length` | integer/null | 否 | `1024` | 随机 prompt 长度范围。 |
+| `min_prompt_length` / `max_prompt_length` | integer/null | 否 | `0` / `131072` | prompt 长度过滤范围，对齐 EvalScope 官方默认。`tokenizer_path` 为空时按字符长度过滤；`max_prompt_length=131072` 超出即丢弃。 |
 | `min_tokens` / `max_tokens` | integer/null | 否 | `512` | 输出 token 范围。 |
 | `stream` | boolean/null | 否 | `true` | 是否使用流式请求；TTFT 统计通常要求开启。 |
-| `tokenizer_path` | string/null | 否 | `null` | EvalScope tokenizer 路径。 |
+| `tokenizer_path` | string/null | 否 | `null` | EvalScope tokenizer 路径。为空时按字符长度过滤，适配 longalpaca 这类真实长文本语料。 |
 | `prefix_length` | integer/null | 否 | `0` | 前缀长度，用于后续缓存/前缀压测。 |
 | `extra_args` | object/null | 否 | `{}` | 透传给 EvalScope perf 的扩展参数。 |
 
@@ -781,11 +782,11 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
   "parallel": [1, 5],
   "number": [10, 50],
   "stream": true,
-  "min_prompt_length": 1024,
-  "max_prompt_length": 1024,
   "max_tokens": 512
 }
 ```
+
+> 不传 `dataset` 时默认使用 `longalpaca`（已离线落盘到 `data/stress_datasets/longalpaca.json`，runner 自动补齐 `dataset_path` 指向本地文件），并采用 EvalScope 官方默认的长度过滤（`min_prompt_length=0`、`max_prompt_length=131072`、`tokenizer_path=null`）。如需按 token 长度随机生成 prompt，显式传 `"dataset": "random"` 并设置 `min_prompt_length` / `max_prompt_length` / `tokenizer_path`。
 
 成功响应：`200 OK`，返回 `StressTask`。模型不存在返回 `404 model_not_found`；模型禁用返回 `400 model_disabled`；参数错误返回 `400 invalid_stress_task_request`。
 
@@ -811,7 +812,7 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 
 ## 12. 统一总览报告接口（Overview）
 
-统一总览报告用于把已有的网关接入验收任务、EvalScope 能力评测任务和 EvalScope 压测任务组合成一份中文 Markdown 导航摘要。本接口不自动触发新的评测任务，也不重做 EvalScope 可视化；它只负责汇总状态、关键指标、风险提示和三类详情报告入口。
+统一总览报告用于把已有的网关接入验收任务、EvalScope 压测任务和 EvalScope 能力评测任务组合成一份中文 Markdown 导航摘要（章节顺序与 suite 执行顺序一致：网关 → 压测 → 能力评测）。本接口不自动触发新的评测任务，也不重做 EvalScope 可视化；它只负责汇总状态、关键指标、风险提示和三类详情报告入口。
 
 ### 12.1 OverviewReportRequest
 
@@ -870,11 +871,11 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 
 #### GET `/api/overview/reports/{overview_id}/markdown`
 
-下载统一总览 Markdown 报告。报告包含“一眼看懂”、模型与任务信息、网关接入验收摘要、EvalScope 能力评测摘要、EvalScope 压测摘要和详细报告入口。报告不存在或文件丢失时返回 `404 overview_report_not_found`。
+下载统一总览 Markdown 报告。报告包含“一眼看懂”、模型与任务信息、网关接入验收摘要、EvalScope 压测摘要、EvalScope 能力评测摘要和详细报告入口（章节顺序与 suite 执行顺序一致：网关 → 压测 → 能力评测）。报告不存在或文件丢失时返回 `404 overview_report_not_found`。
 
 ## 13. 一键评测套件接口（Suites）
 
-Suites 是“一键评测模型并出报告”的编排层。它复用已有三类能力：先执行网关接入验收 smoke，再提交 EvalScope 能力评测和 EvalScope 压测，最后自动生成统一总览报告。Suites 不新增评测指标，也不重造 EvalScope 可视化，只负责串联、等待终态、归档 suite 状态和生成 overview 入口。已有模型配置时使用 `POST /api/suites/default`；临时外部模型可使用 `POST /api/suites/quick` 直接传 `url`、`key`、`model`。
+Suites 是“一键评测模型并出报告”的编排层。它复用已有三类能力，执行顺序为：先执行网关接入验收 smoke，再提交 EvalScope 压测，最后提交 EvalScope 能力评测，全部完成后自动生成统一总览报告（总览章节顺序与之保持一致：网关 → 压测 → 能力评测）。先跑压测是为了在长时能力评测之前先拿到性能数据，避免能力评测卡死整条 suite 时丢失性能结果。Suites 不新增评测指标，也不重造 EvalScope 可视化，只负责串联、等待终态、归档 suite 状态和生成 overview 入口。已有模型配置时使用 `POST /api/suites/default`；临时外部模型可使用 `POST /api/suites/quick` 直接传 `url`、`key`、`model`。
 
 ### 13.1 SuiteDefaultRunRequest
 
@@ -888,6 +889,7 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 | `gateway_plan_id` | string | 否 | `gateway_acceptance_v1` | 网关验收计划。 |
 | `gateway_metric_ids` | string[]/null | 否 | `null` | 显式指定网关验收指标；为空时按计划默认指标执行。 |
 | `stress_options` | object | 否 | `{}` | 压测参数子集，例如 `parallel`、`number`、`rate`、`prefix_length`、`dataset_args`。 |
+| `intelligence_limit` | integer/null | 否 | `null` | 能力评测每个数据集取前 N 条样本截断；`null` 表示不限制（全量评测）。手动发起的 default 评测默认不限；需精确分数时不传即可。 |
 | `wait_for_completion` | boolean | 否 | `false` | `false` 时后台运行并立即返回 suite；`true` 时接口等待整套评测完成后返回。 |
 | `poll_interval_seconds` | number/null | 否 | runner 默认值 | 等待 EvalScope 任务终态时的轮询间隔。 |
 | `timeout_seconds` | number/null | 否 | `null` | 单个 EvalScope 等待阶段的超时时间。 |
@@ -901,7 +903,7 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 | `suite_id` | string | 一键评测套件 ID，例如 `suite_yyyymmddhhmmss_xxxxxxxx`。 |
 | `model_id` | string | 模型配置 ID。 |
 | `status` | string | `queued`、`running`、`completed`、`partial`、`failed`。 |
-| `current_step` | string/null | 当前执行步骤：`gateway`、`intelligence`、`stress`、`overview`。 |
+| `current_step` | string/null | 当前执行步骤，按执行顺序为：`gateway`、`stress`、`intelligence`、`overview`。 |
 | `gateway_task_id` / `intelligence_task_id` / `stress_task_id` | string/null | 三类子任务 ID。 |
 | `overview_id` | string/null | 自动生成的统一总览报告 ID。 |
 | `overview_report_path` | string/null | 总览 Markdown 本地路径。 |
@@ -960,7 +962,7 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 | `context_window_tokens` / `declared_context_tokens` / `context_window` / `max_context_tokens` | integer/null | 建议 | `null` | 模型上下文窗口大小。用于网关 smoke 的 `context_length`；不传时该指标会跳过。 |
 | `max_output_tokens` / `declared_max_output_tokens` | integer/null | 建议 | `null` | 模型最大输出长度。用于 `output_length`；不传时按默认 1024 tokens 观察。 |
 | `concurrency_levels` | integer[] | 否 | `[1,5,10,20]` | 网关 smoke 兼容并发档位声明。 |
-| `title`、`run_gateway`、`run_intelligence`、`run_stress`、`gateway_plan_id`、`gateway_metric_ids`、`stress_options`、`wait_for_completion`、`poll_interval_seconds` | - | 否 | 同 `SuiteDefaultRunRequest` | 与默认 suite 语义一致。 |
+| `title`、`run_gateway`、`run_intelligence`、`run_stress`、`gateway_plan_id`、`gateway_metric_ids`、`stress_options`、`intelligence_limit`、`wait_for_completion`、`poll_interval_seconds` | - | 否 | 同 `SuiteDefaultRunRequest` | 与默认 suite 语义一致；`intelligence_limit` 默认 `null` 不限制。 |
 | `timeout_seconds_total` | number/null | 否 | `null` | suite 等待 EvalScope 能力评测/压测终态的超时时间；对应默认 suite 的 `timeout_seconds`。 |
 
 请求示例：
@@ -1066,6 +1068,10 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 | `next_run_at` | datetime/null | 自动计算 | 可显式指定下一次 UTC 触发时间，便于测试或临时调度；一次性任务也可直接传它。 |
 | `stress_parallel` / `stress_number` | integer[]/null | `null` | 常用压测参数快捷字段。 |
 | `stress_options` | object | `{}` | 更完整的压测参数。 |
+| `run_gateway` / `run_intelligence` / `run_stress` | boolean | `true` | 触发时是否执行对应阶段。 |
+| `gateway_plan_id` / `gateway_metric_ids` | string / string[]/null | `gateway_acceptance_v1` / `null` | 网关验收计划与指标。 |
+| `intelligence_limit` | integer/null | `200`（定时默认） | 能力评测每个数据集取前 N 条样本截断。**定时计划未显式传值时默认 `200`**（对应常量 `DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`），防止大体量数据集把定时 suite 卡死；显式传更大值或传一个足够大的数可取消限制。手动 `POST /api/suites/default` 不受此默认值约束。 |
+| `poll_interval_seconds` / `timeout_seconds` | number/null | `null` | 等待 EvalScope 终态的轮询间隔与超时。 |
 
 ### 13.9 查询定时计划列表
 
@@ -1118,7 +1124,7 @@ $body = @{
   concurrency_levels = @(1, 2)
 } | ConvertTo-Json
 
-Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/models' `
+Invoke-RestMethod -Uri 'http://127.0.0.1:8020/api/models' `
   -Method Post `
   -ContentType 'application/json' `
   -Body $body | ConvertTo-Json -Depth 10
@@ -1128,14 +1134,14 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/models' `
 
 ```powershell
 $runBody = @{ model_id = 'demo-chat'; plan_id = 'gateway_acceptance_v1' } | ConvertTo-Json
-$result = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/tasks/run' `
+$result = Invoke-RestMethod -Uri 'http://127.0.0.1:8020/api/tasks/run' `
   -Method Post `
   -ContentType 'application/json' `
   -Body $runBody
 
 $result | ConvertTo-Json -Depth 20
 $taskId = $result.task_id
-Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/reports/$taskId" -OutFile "$taskId.md"
+Invoke-WebRequest -Uri "http://127.0.0.1:8020/api/reports/$taskId" -OutFile "$taskId.md"
 ```
 
 
@@ -1152,8 +1158,8 @@ $suiteBody = @{
     number = @(10, 50)
   }
 } | ConvertTo-Json -Depth 10
-$suite = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/suites/default' -Method Post -ContentType 'application/json' -Body $suiteBody
-Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/suites/$($suite.suite_id)/report" -OutFile "suite-overview.md"
+$suite = Invoke-RestMethod -Uri 'http://127.0.0.1:8020/api/suites/default' -Method Post -ContentType 'application/json' -Body $suiteBody
+Invoke-WebRequest -Uri "http://127.0.0.1:8020/api/suites/$($suite.suite_id)/report" -OutFile "suite-overview.md"
 ```
 
 ### 创建半夜定时评测计划
@@ -1169,7 +1175,7 @@ $scheduleBody = @{
   stress_parallel = @(1, 5)
   stress_number = @(10, 50)
 } | ConvertTo-Json -Depth 10
-Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/suites/schedules' -Method Post -ContentType 'application/json' -Body $scheduleBody | ConvertTo-Json -Depth 20
+Invoke-RestMethod -Uri 'http://127.0.0.1:8020/api/suites/schedules' -Method Post -ContentType 'application/json' -Body $scheduleBody | ConvertTo-Json -Depth 20
 ```
 ### 生成统一总览报告
 
@@ -1179,6 +1185,6 @@ $overviewBody = @{
   intelligence_task_id = '<intel-task-id>'
   stress_task_id = '<stress-task-id>'
 } | ConvertTo-Json
-$overview = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/overview/reports' -Method Post -ContentType 'application/json' -Body $overviewBody
-Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/overview/reports/$($overview.overview_id)/markdown" -OutFile "overview.md"
+$overview = Invoke-RestMethod -Uri 'http://127.0.0.1:8020/api/overview/reports' -Method Post -ContentType 'application/json' -Body $overviewBody
+Invoke-WebRequest -Uri "http://127.0.0.1:8020/api/overview/reports/$($overview.overview_id)/markdown" -OutFile "overview.md"
 ```

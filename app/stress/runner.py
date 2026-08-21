@@ -23,6 +23,47 @@ from app.stress.schemas import (
     StressTask,
 )
 
+# 压测用本地数据集目录（与智力评测的 data/evalscope_datasets 分开，避免语义混淆）。
+# 仅当用户指定了本地数据集名但未显式给出 dataset_path 时自动填充。
+STRESS_DATASETS_DIR = Path(os.getenv("LLM_BENCHMARK_STRESS_DATASETS_DIR", "data/stress_datasets"))
+
+# 透传给 EvalScope perf 的字段。dataset_path 不在此列：由 _resolve_dataset_path
+# 按本地数据集约定补齐，避免把占位默认值当成真实路径传给 EvalScope。
+ALLOWED_OPTION_KEYS: tuple[str, ...] = (
+    "parallel",
+    "number",
+    "dataset",
+    "dataset_path",
+    "stream",
+    "min_prompt_length",
+    "max_prompt_length",
+    "min_tokens",
+    "max_tokens",
+    "rate",
+    "tokenizer_path",
+    "prefix_length",
+    "dataset_args",
+    "extra_args",
+)
+
+# 已知会从 ModelScope 下载的真实语料数据集。当 dataset 命中且 data/stress_datasets
+# 下存在同名顶层目录或 .json 文件时，自动补 dataset_path，EvalScope 的 load_hub_dataset
+# 会据此改为 local 加载（"from local" 而非 "from modelscope"），实现一次下载、永久离线复用。
+# random / speed_benchmark 等不下载的内置数据集不在其中。
+LOCAL_RESOLVABLE_DATASETS = frozenset(
+    {
+        "longalpaca",
+        "openqa",
+        "share_gpt_zh",
+        "share_gpt_en",
+        "share_gpt_zh_multi_turn",
+        "share_gpt_en_multi_turn",
+        "flickr8k",
+        "kontext_bench",
+        "swe_smith",
+    }
+)
+
 TERMINAL_STATUSES = {"completed", "failed"}
 ALLOWED_STATUSES = {"pending", "running", "completed", "failed"}
 IN_PROCESS_EVALSCOPE = "in-process"
@@ -76,11 +117,6 @@ def _api_type(model: ModelConfig) -> str:
     if model.protocol == "responses":
         return "openai_responses"
     raise ValueError(f"unsupported_protocol:{model.protocol}")
-
-
-def _set_if_not_none(payload: dict[str, Any], key: str, value: Any) -> None:
-    if value is not None:
-        payload[key] = value
 
 
 def _parse_parallel_number(label: str) -> tuple[int | None, int | None]:
@@ -222,23 +258,41 @@ class StressRunner:
             "api_key": model.api_key or "EMPTY",
             "api": _api_type(model),
         }
-        for key in (
-            "parallel",
-            "number",
-            "dataset",
-            "stream",
-            "min_prompt_length",
-            "max_prompt_length",
-            "min_tokens",
-            "max_tokens",
-            "rate",
-            "tokenizer_path",
-            "prefix_length",
-            "dataset_args",
-            "extra_args",
-        ):
-            _set_if_not_none(data, key, getattr(options, key, None))
+        dataset_path = self._resolve_dataset_path(options)
+        for key in ALLOWED_OPTION_KEYS:
+            value = getattr(options, key, None)
+            if value is None:
+                # dataset_path 单独处理：用户未显式指定时，按本地数据集约定补齐，
+                # 让 EvalScope 改为 local 加载；其它字段为空一律不透传。
+                if key == "dataset_path" and dataset_path is not None:
+                    value = dataset_path
+                else:
+                    continue
+            data[key] = value
         return StressRemoteSubmitPayload.model_validate(data)
+
+    def _resolve_dataset_path(self, options: StressDefaultRunRequest) -> str | None:
+        """命中本地可复用数据集时补齐 dataset_path，避免每次评测都从 ModelScope 下载。
+
+        仅当用户显式给出 dataset_path 时以用户值为准；否则当 dataset 命中
+        LOCAL_RESOLVABLE_DATASETS 且本地存在同名目录或 .json 文件时自动补齐。
+        """
+        user_path = getattr(options, "dataset_path", None)
+        if user_path:
+            return user_path
+
+        dataset = getattr(options, "dataset", None)
+        if dataset not in LOCAL_RESOLVABLE_DATASETS:
+            return None
+        if not STRESS_DATASETS_DIR.exists():
+            return None
+        candidate_dir = STRESS_DATASETS_DIR / dataset
+        if candidate_dir.is_dir():
+            return str(candidate_dir)
+        candidate_file = STRESS_DATASETS_DIR / f"{dataset}.json"
+        if candidate_file.is_file():
+            return str(candidate_file)
+        return None
 
     def _public_request_config(self, payload: StressRemoteSubmitPayload) -> dict[str, Any]:
         data = payload.model_dump(mode="json")

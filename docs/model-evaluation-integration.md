@@ -111,6 +111,7 @@ curl -X POST "$API_BASE/suites/quick" \
 | `wait_for_completion` | 否 | boolean | 是否阻塞等待评测完成。对接口对接建议填 `false`，然后轮询查询。 |
 | `poll_interval_seconds` | 否 | number | 服务内部等待子任务完成的轮询间隔。 |
 | `timeout_seconds_total` | 否 | number | 整个 suite 最长等待时间，例如 `7200` 秒。 |
+| `intelligence_limit` | 否 | integer | 智力评测每个数据集取前 N 条样本截断。`null`（不传）表示全量评测。定时评测会默认取前 `200` 条（见第五节），quick 评测默认不限。 |
 
 > 至少要有一个评测通道为 `true`：`run_gateway`、`run_intelligence`、`run_stress` 不能全是 `false`。
 
@@ -185,15 +186,15 @@ curl -X GET "$API_BASE/suites/suite_20260807153021_ab12cd34"
 {
   "suite_id": "suite_20260807153021_ab12cd34",
   "status": "running",
-  "current_step": "stress",
+  "current_step": "intelligence",
   "gateway_task_id": "task_xxx",
-  "intelligence_task_id": "intel_task_xxx",
-  "stress_task_id": null,
+  "intelligence_task_id": null,
+  "stress_task_id": "stress_task_xxx",
   "overview_report_path": null,
   "steps": [
     {"name": "gateway", "status": "completed"},
-    {"name": "intelligence", "status": "completed"},
-    {"name": "stress", "status": "running"}
+    {"name": "stress", "status": "completed"},
+    {"name": "intelligence", "status": "running"}
   ],
   "errors": []
 }
@@ -370,6 +371,9 @@ curl -X POST "$API_BASE/suites/schedules" \
 | `stress_options` | 否 | object | 压测参数。 |
 | `poll_interval_seconds` | 否 | number | suite 内部轮询间隔。 |
 | `timeout_seconds` | 否 | number | 定时 suite 总等待超时时间，和 quick 接口的 `timeout_seconds_total` 含义一致。 |
+| `intelligence_limit` | 否 | integer | 智力评测每个数据集取前 N 条样本截断。**不传时定时计划默认 `200`**（常量 `DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`），避免大体量数据集把半夜的定时评测卡死；需要全量精确分数时显式传一个足够大的数。手动 `POST /api/suites/default` 不受此默认值约束。 |
+
+> 执行顺序说明：suite 内部按 网关 smoke → EvalScope 压测 → EvalScope 智力评测 → 总览报告 的顺序执行（先跑压测拿到性能数据，再跑智力评测，避免长时智力评测卡死整条 suite 时丢掉性能结果）。返回示例里的 `steps` 和 `current_step` 也按这个顺序推进。
 
 ### 5.3 返回值示例
 

@@ -51,7 +51,7 @@ def _check_once(endpoints: list[Endpoint], request_timeout: float) -> tuple[bool
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="验证单服务部署是否可用")
-    parser.add_argument("--main-url", default="http://127.0.0.1:8000", help="LLM_Benchmark 主服务地址")
+    parser.add_argument("--main-url", default="http://127.0.0.1:8020", help="LLM_Benchmark 主服务地址")
     parser.add_argument("--timeout", type=float, default=60.0, help="整体等待超时时间，秒")
     parser.add_argument("--request-timeout", type=float, default=5.0, help="单次 HTTP 请求超时时间，秒")
     parser.add_argument("--interval", type=float, default=1.0, help="重试间隔，秒")

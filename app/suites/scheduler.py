@@ -33,6 +33,9 @@ class SuiteScheduler:
                 schedule.run_count += 1
                 schedule.last_error = None
                 triggered += 1
+                # 到点投递后台执行即返回，不阻塞调度循环——镜像 /suites/default 路由的
+                # background_tasks.add_task 模式，避免单个长 suite 冻结后续所有定时触发。
+                asyncio.create_task(runner.execute(suite.suite_id))
             except Exception as exc:
                 schedule.last_error = {"message": redact_text(str(exc)), "type": exc.__class__.__name__}
             if schedule.run_once:

@@ -855,6 +855,7 @@ EvalScope 压测不是 `gateway_acceptance_v1` 的同步接入验收指标，而
 - 本项目不设置自动阈值，不给出“通过/不通过”结论；相关人员根据模型用途和压测曲线自行分析。
 - `stream=true` 是 TTFT 可信统计的前提。
 - `prefix_length` 和 `dataset_args.prefix_file` 可用于后续观察前缀/缓存压测，但当前缓存能力基础指标仍由 `cache_behavior` smoke 负责。
+- 压测数据集默认使用 `longalpaca`（真实长文本语料，一次性下载到 `data/stress_datasets/longalpaca.json`，runner 自动补齐 `dataset_path` 指向本地文件，EvalScope 改为 `from local` 加载，不再每次评测从 ModelScope 下载）。长度过滤对齐 EvalScope 官方默认：`min_prompt_length=0`、`max_prompt_length=131072`、`tokenizer_path=null`（按字符长度过滤），避免原先 1024 token 过滤把长文本几乎全部丢弃。若要按 token 长度随机生成 prompt，提交时显式传 `dataset=random` 并设置 `min_prompt_length` / `max_prompt_length` / `tokenizer_path`。
 - 主服务内 EvalScope 执行链路必须避免在响应、任务 JSON、报告和日志中泄露 `api_key`。
 
 ## 17. EvalScope 智力评测说明

@@ -30,6 +30,7 @@ def test_suite_schedule_routes_are_not_swallowed_by_suite_id(temp_data_dirs, mon
     assert schedule["run_once"] is False
     assert schedule["request"]["wait_for_completion"] is True
     assert schedule["request"]["stress_options"]["parallel"] == [1, 5]
+    assert schedule["request"]["intelligence_limit"] == 200
 
     listed = client.get("/api/suites/schedules")
     assert listed.status_code == 200
@@ -59,6 +60,7 @@ def test_suite_schedule_accepts_one_shot_run_date(temp_data_dirs, monkeypatch):
             "run_date": "2099-01-02",
             "stress_parallel": [1],
             "stress_number": [1],
+            "intelligence_limit": 50,
         },
     )
 
@@ -68,6 +70,7 @@ def test_suite_schedule_accepts_one_shot_run_date(temp_data_dirs, monkeypatch):
     assert schedule["run_date"] == "2099-01-02"
     assert schedule["enabled"] is True
     assert schedule["next_run_at"].startswith("2099-01-01T16:00:00")
+    assert schedule["request"]["intelligence_limit"] == 50
 
 
 def test_suite_default_and_report_routes(temp_data_dirs, monkeypatch):

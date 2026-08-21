@@ -11,6 +11,10 @@ from app.core.models import ModelConfig, Protocol, utc_now
 SuiteRunStatus = Literal["queued", "running", "completed", "partial", "failed"]
 SuiteStepStatus = Literal["pending", "running", "completed", "skipped", "failed"]
 
+# 定时智力评测默认每个数据集只取前 N 条样本，避免 live_code_bench 等大体量数据集磨死整条 suite。
+# 手动/quick 评测默认 intelligence_limit=None 不限制；需精确分数时可手动跑全量。
+DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT = 200
+
 
 def new_suite_id() -> str:
     return f"suite_{utc_now().strftime('%Y%m%d%H%M%S')}_{uuid4().hex[:8]}"
@@ -40,6 +44,7 @@ class SuiteStressOptions(BaseModel):
     parallel: list[int] | None = None
     number: list[int] | None = None
     dataset: str | None = None
+    dataset_path: str | None = None
     stream: bool | None = None
     min_prompt_length: int | None = Field(default=None, ge=0)
     max_prompt_length: int | None = Field(default=None, ge=1)
@@ -77,6 +82,7 @@ class SuiteDefaultRunRequest(BaseModel):
     gateway_plan_id: str = "gateway_acceptance_v1"
     gateway_metric_ids: list[str] | None = None
     stress_options: SuiteStressOptions = Field(default_factory=SuiteStressOptions)
+    intelligence_limit: int | None = Field(default=None, ge=1)
     wait_for_completion: bool = False
     poll_interval_seconds: float | None = Field(default=None, ge=0, le=3600)
     timeout_seconds: float | None = Field(default=None, ge=1, le=172800)
@@ -152,6 +158,7 @@ class SuiteQuickRunRequest(SuiteInlineModelRequest):
     gateway_plan_id: str = "gateway_acceptance_v1"
     gateway_metric_ids: list[str] | None = None
     stress_options: SuiteStressOptions = Field(default_factory=SuiteStressOptions)
+    intelligence_limit: int | None = Field(default=None, ge=1)
     wait_for_completion: bool = False
     poll_interval_seconds: float | None = Field(default=None, ge=0, le=3600)
     timeout_seconds_total: float | None = Field(default=None, ge=1, le=172800)
@@ -175,6 +182,7 @@ class SuiteQuickRunRequest(SuiteInlineModelRequest):
             gateway_plan_id=self.gateway_plan_id,
             gateway_metric_ids=self.gateway_metric_ids,
             stress_options=self.stress_options,
+            intelligence_limit=self.intelligence_limit,
             wait_for_completion=self.wait_for_completion,
             poll_interval_seconds=self.poll_interval_seconds,
             timeout_seconds=self.timeout_seconds_total,
@@ -232,6 +240,7 @@ class SuiteScheduleCreate(BaseModel):
     stress_parallel: list[int] | None = None
     stress_number: list[int] | None = None
     stress_options: SuiteStressOptions = Field(default_factory=SuiteStressOptions)
+    intelligence_limit: int | None = Field(default=None, ge=1)
     poll_interval_seconds: float | None = Field(default=None, ge=0, le=3600)
     timeout_seconds: float | None = Field(default=None, ge=1, le=172800)
 
@@ -267,7 +276,8 @@ class SuiteScheduleCreate(BaseModel):
             gateway_plan_id=self.gateway_plan_id,
             gateway_metric_ids=self.gateway_metric_ids,
             stress_options=stress_options,
-            wait_for_completion=True,
+            intelligence_limit=self.intelligence_limit if self.intelligence_limit is not None else DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT,
+            wait_for_completion=False,
             poll_interval_seconds=self.poll_interval_seconds,
             timeout_seconds=self.timeout_seconds,
         )

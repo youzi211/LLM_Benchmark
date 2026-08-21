@@ -79,7 +79,7 @@ def write_stress_report(task: StressTask, reports_dir: Path | None = None) -> Pa
     lines.append("")
     cfg = dict(task.request_config or {})
     cfg.pop("api_key", None)
-    for key in ["api", "url", "parallel", "number", "rate", "stream", "dataset", "tokenizer_path", "min_prompt_length", "max_prompt_length", "min_tokens", "max_tokens", "prefix_length", "dataset_args", "extra_args"]:
+    for key in ["api", "url", "parallel", "number", "rate", "stream", "dataset", "dataset_path", "tokenizer_path", "min_prompt_length", "max_prompt_length", "min_tokens", "max_tokens", "prefix_length", "dataset_args", "extra_args"]:
         if key in cfg:
             lines.append(f"- `{key}`：`{_cell(cfg[key])}`")
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 from pathlib import Path
 
@@ -49,7 +50,7 @@ class FakeIntelligenceRunner:
     def __init__(self, store: IntelligenceTaskStore):
         self.store = store
 
-    async def submit_default(self, model_id: str) -> IntelligenceTask:
+    async def submit_default(self, model_id: str, *, limit: int | None = None) -> IntelligenceTask:
         task = IntelligenceTask(
             task_id="intel_task_suite",
             evalscope_task_id="eval_intel_suite",
@@ -157,10 +158,16 @@ async def test_suite_runner_runs_all_components_and_creates_overview(tmp_path: P
 class RecordingSuiteRunner:
     def __init__(self):
         self.requests: list[SuiteDefaultRunRequest] = []
+        self.executed_suite_ids: list[str] = []
 
     async def start_default(self, request: SuiteDefaultRunRequest, **kwargs):
         self.requests.append(request)
         return type("Suite", (), {"suite_id": "suite_recorded"})()
+
+    async def execute(self, suite_id: str):
+        # 记录后台执行被投递；真实 runner 这里会跑完整条 suite，但调度器不应阻塞等待它。
+        self.executed_suite_ids.append(suite_id)
+        return type("Suite", (), {"suite_id": suite_id, "status": "completed"})()
 
 
 @pytest.mark.asyncio
@@ -179,6 +186,9 @@ async def test_suite_scheduler_triggers_due_schedule_and_updates_next_run(tmp_pa
     schedule = schedule_store.create(due)
 
     triggered = await scheduler.tick_once(now=utc_now())
+    # 让被投递的后台 execute 任务有机会运行（fire-and-forget via asyncio.create_task）。
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
 
     updated = schedule_store.get(schedule.schedule_id)
     assert triggered == 1
@@ -190,6 +200,8 @@ async def test_suite_scheduler_triggers_due_schedule_and_updates_next_run(tmp_pa
     assert updated.last_run_at is not None
     assert updated.next_run_at > utc_now()
     assert updated.run_count == 1
+    # 调度器投递了后台执行任务，且调度器自身没有阻塞等待其完成。
+    assert suite_runner.executed_suite_ids == ["suite_recorded"]
 
 
 @pytest.mark.asyncio
@@ -209,6 +221,8 @@ async def test_suite_scheduler_disables_one_shot_schedule_after_trigger(tmp_path
     schedule = schedule_store.create(due)
 
     triggered = await scheduler.tick_once(now=utc_now())
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
 
     updated = schedule_store.get(schedule.schedule_id)
     assert triggered == 1
@@ -217,3 +231,4 @@ async def test_suite_scheduler_disables_one_shot_schedule_after_trigger(tmp_path
     assert updated.run_once is True
     assert updated.enabled is False
     assert updated.run_count == 1
+    assert suite_runner.executed_suite_ids == ["suite_recorded"]

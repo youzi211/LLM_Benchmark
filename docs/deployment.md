@@ -8,7 +8,7 @@
 
 ```text
 LLM_Benchmark/
-├── app/                  # 主服务，端口 8000
+├── app/                  # 主服务，端口 8020
 ├── data/                 # 本地配置和任务 JSON，不提交
 ├── outputs/evalscope/    # EvalScope 原始输出，不提交
 ├── reports/              # Markdown 报告，不提交
@@ -94,7 +94,7 @@ bash scripts/start_all.sh
 Linux（同机显式启动 sandbox）：
 
 ```bash
-START_SANDBOX=1 SANDBOX_HOST=0.0.0.0 SANDBOX_PORT=1234 MAIN_PORT=8000 bash scripts/start_all.sh
+START_SANDBOX=1 SANDBOX_HOST=0.0.0.0 SANDBOX_PORT=1234 MAIN_PORT=8020 bash scripts/start_all.sh
 ```
 
 Windows PowerShell（默认只启动主服务）：
@@ -106,12 +106,12 @@ Windows PowerShell（默认只启动主服务）：
 Windows PowerShell（同机显式启动 sandbox）：
 
 ```powershell
-.\scripts\start_all.ps1 -MainHost 0.0.0.0 -MainPort 8000 -StartSandbox -SandboxHost 0.0.0.0 -SandboxPort 1234
+.\scripts\start_all.ps1 -MainHost 0.0.0.0 -MainPort 8020 -StartSandbox -SandboxHost 0.0.0.0 -SandboxPort 1234
 ```
 
 默认端口与日志：
 
-- 主服务：`http://127.0.0.1:8000`，日志写入 `.tmp/logs/main.out.log` / `.tmp/logs/main.err.log`
+- 主服务：`http://127.0.0.1:8020`，日志写入 `.tmp/logs/main.out.log` / `.tmp/logs/main.err.log`
 - sandbox：默认不随主服务启动；如果要跑代码评分，推荐使用独立的 `ms-enclave server`，例如 `http://sandbox-host:1234`；同机便捷模式可用 `START_SANDBOX=1` 或 `-StartSandbox`，日志写入 `.tmp/logs/sandbox.out.log` / `.tmp/logs/sandbox.err.log`；无论哪种方式，都要在 `data/evalscope.json` 中配置对应 `base_url`
 - EvalScope 执行模式：`in-process`，由主服务内直接 `import evalscope`
 

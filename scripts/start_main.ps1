@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$HostAddress = "0.0.0.0",
-    [int]$Port = 8000,
+    [int]$Port = 8020,
     [string]$DataDir = "",
     [string]$ReportsDir = "",
     [switch]$NoSync
