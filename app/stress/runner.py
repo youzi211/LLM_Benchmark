@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import re
-import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -10,6 +9,7 @@ from uuid import uuid4
 
 from app.core.models import ModelConfig, utc_now
 from app.intelligence.config_store import EvalScopeConfigStore
+from app.jobs.executor import get_job_executor
 from app.reports.markdown import redact_text
 from app.storage.model_store import ModelStore
 from app.storage.stress_task_store import StressTaskStore
@@ -218,8 +218,12 @@ class StressRunner:
 
     def _start(self, task_id: str, payload: StressRemoteSubmitPayload) -> None:
         if self.run_in_background:
-            thread = threading.Thread(target=self._execute, args=(task_id, payload), daemon=True)
-            thread.start()
+            get_job_executor().submit_sync(
+                job_type="stress",
+                target_id=task_id,
+                payload={"task_id": task_id},
+                func=lambda: self._execute(task_id, payload),
+            )
         else:
             self._execute(task_id, payload)
 

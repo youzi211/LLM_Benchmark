@@ -145,6 +145,7 @@ uv run python scripts/smoke_deploy.py
 - `data/evalscope.json`
 - `data/evalscope_datasets/`
 - `data/tasks/`
+- `data/jobs/`
 - `data/intelligence_tasks/`
 - `data/stress_tasks/`
 - `data/overview_reports/`

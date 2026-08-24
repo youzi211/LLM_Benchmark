@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import threading
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -10,6 +9,7 @@ from uuid import uuid4
 
 from app.core.models import ModelConfig, utc_now
 from app.intelligence.config_store import EvalScopeConfigStore
+from app.jobs.executor import get_job_executor
 from app.intelligence.evalscope_direct import (
     DEFAULT_DATASETS,
     EvalScopeIntelligenceExecutor,
@@ -215,8 +215,12 @@ class IntelligenceRunner:
 
     def _start(self, task_id: str, **kwargs: Any) -> None:
         if self.run_in_background:
-            thread = threading.Thread(target=self._execute, args=(task_id,), kwargs=kwargs, daemon=True)
-            thread.start()
+            get_job_executor().submit_sync(
+                job_type="intelligence",
+                target_id=task_id,
+                payload={"task_id": task_id},
+                func=lambda: self._execute(task_id, **kwargs),
+            )
         else:
             self._execute(task_id, **kwargs)
 

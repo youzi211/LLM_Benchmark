@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.routes_evalscope import router as evalscope_router
 from app.api.routes_intelligence import router as intelligence_router
+from app.api.routes_jobs import router as jobs_router
 from app.api.routes_metrics import router as metrics_router
 from app.api.routes_overview import router as overview_router
 from app.api.routes_models import router as models_router
@@ -15,6 +16,7 @@ from app.api.routes_reports import router as reports_router
 from app.api.routes_stress import router as stress_router
 from app.api.routes_suites import router as suites_router
 from app.api.routes_tasks import router as tasks_router
+from app.jobs.executor import shutdown_job_executor
 from app.suites.scheduler import start_scheduler, stop_scheduler
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
@@ -44,6 +46,7 @@ app.include_router(metrics_router, prefix="/api")
 app.include_router(overview_router, prefix="/api")
 app.include_router(evalscope_router, prefix="/api")
 app.include_router(intelligence_router, prefix="/api")
+app.include_router(jobs_router, prefix="/api")
 app.include_router(tasks_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(stress_router, prefix="/api")
@@ -59,3 +62,4 @@ async def startup_scheduler():
 @app.on_event("shutdown")
 async def shutdown_scheduler():
     stop_scheduler()
+    await shutdown_job_executor()

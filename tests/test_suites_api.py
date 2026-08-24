@@ -272,6 +272,61 @@ def test_suite_schedule_last_run_route_summarizes_last_suite(temp_data_dirs, mon
     assert data["last_suite_errors"] == [{"step": "stress", "message": "boom"}]
 
 
+
+def test_default_suite_background_uses_job_executor(temp_data_dirs, monkeypatch):
+    data_dir, _ = temp_data_dirs
+    monkeypatch.setenv("LLM_BENCHMARK_SCHEDULER_DISABLED", "1")
+    captured = {}
+
+    class FakeRunner:
+        suite_store = SuiteRunStore(data_dir / "suite_runs")
+
+        async def start_default(self, request: SuiteDefaultRunRequest, schedule_id: str | None = None):
+            suite = SuiteRun(model_id=request.model_id, title=request.title, request=request, schedule_id=schedule_id)
+            self.suite_store.save(suite)
+            return suite
+
+        async def execute(self, suite_id: str):
+            captured["executed"] = suite_id
+
+    class FakeJobExecutor:
+        def submit_async(self, *, job_type: str, target_id: str, payload: dict, func):
+            captured["job"] = {"job_type": job_type, "target_id": target_id, "payload": payload, "func": func}
+            return type("Job", (), {"job_id": "job_suite_route"})()
+
+    monkeypatch.setattr(routes_suites, "_runner", lambda: FakeRunner())
+    monkeypatch.setattr(routes_suites, "_job_executor", lambda: FakeJobExecutor())
+    client = TestClient(app)
+
+    response = client.post("/api/suites/default", json={"model_id": "demo-chat"})
+
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["job_id"] == "job_suite_route"
+    assert captured["job"]["job_type"] == "suite"
+    assert captured["job"]["target_id"] == data["suite_id"]
+    assert "executed" not in captured
+
+
+def test_jobs_routes_return_job_records(temp_data_dirs, monkeypatch):
+    data_dir, _ = temp_data_dirs
+    monkeypatch.setenv("LLM_BENCHMARK_SCHEDULER_DISABLED", "1")
+    from app.jobs.schemas import JobRecord
+    from app.jobs.store import JobStore
+
+    job = JobRecord(job_id="job_demo", job_type="suite", target_id="suite_demo", payload={"suite_id": "suite_demo"})
+    JobStore(data_dir / "jobs").save(job)
+    client = TestClient(app)
+
+    listed = client.get("/api/jobs")
+    fetched = client.get("/api/jobs/job_demo")
+
+    assert listed.status_code == 200, listed.text
+    assert listed.json()[0]["job_id"] == "job_demo"
+    assert fetched.status_code == 200, fetched.text
+    assert fetched.json()["target_id"] == "suite_demo"
+
+
 def test_suite_default_and_report_routes(temp_data_dirs, monkeypatch):
     data_dir, reports_dir = temp_data_dirs
     monkeypatch.setenv("LLM_BENCHMARK_SCHEDULER_DISABLED", "1")

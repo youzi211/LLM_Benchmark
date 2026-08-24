@@ -63,6 +63,7 @@
 | EvalScope 执行 | 主服务内 in-process 调用 | `app/intelligence/evalscope_direct.py`、`app/stress/evalscope_direct.py`、`outputs/evalscope/` |
 | 报告输出 | Markdown | `app/reports/markdown.py`、`app/intelligence/report.py`、`app/stress/report.py`、`app/overview/report.py`、`reports/` |
 | 一键编排/定时 | 本地 suite + profile + 轻量轮询器 | `app/suites/*`、`app/api/routes_suites.py`、`app/api/routes_evalscope.py`、`data/suite_runs/`、`data/suite_schedules/`、可选 `data/evalscope_profiles.json` |
+| 后台执行 | 进程内 JobExecutor | `app/jobs/*`、`app/api/routes_jobs.py`、`data/jobs/` |
 | 测试框架 | pytest | `tests/` |
 | 本地假上游 | FastAPI 示例服务 | `examples/fake_openai_server.py` |
 
@@ -680,7 +681,7 @@ git status --short
 | 智力评测为什么失败 | `app/intelligence/runner.py`、`app/intelligence/evalscope_direct.py`、`data/intelligence_tasks/`、`outputs/evalscope/intelligence/` |
 | 压测为什么失败 | `app/stress/runner.py`、`app/stress/evalscope_direct.py`、`data/stress_tasks/`、`outputs/evalscope/stress/` |
 | 总览报告为什么缺模块 | `app/overview/report.py`、`data/overview_reports/`，以及被引用的三类任务 JSON |
-| 一键评测为什么卡住 | `app/suites/runner.py`、suite JSON 的 `current_step`/`steps`，以及 EvalScope 子任务状态 |
+| 一键评测为什么卡住 | `app/jobs/` 的 job 状态、`app/suites/runner.py`、suite JSON 的 `job_id`/`current_step`/`steps`，以及 EvalScope 子任务状态 |
 | 定时计划为什么没触发 | `app/suites/scheduler.py`、`data/suite_schedules/`、`next_run_at`、`LLM_BENCHMARK_SCHEDULER_DISABLED` |
 | 启动后 scheduler 行为 | `app/main.py` startup/shutdown hooks、`app/suites/scheduler.py` |
 | Markdown 报告排版 | 网关验收看 `app/reports/markdown.py`，能力评测看 `app/intelligence/report.py`，压测看 `app/stress/report.py`，总览看 `app/overview/report.py` |

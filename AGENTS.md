@@ -54,7 +54,7 @@ uv run pytest -q
 - `data/models.json` stores model configs and may contain plaintext upstream API keys. Never commit or paste it.
 - `analysis_model_id` in `data/models.json` is reused as the default built-in EvalScope Judge model.
 - Optional `data/evalscope.json` is intentionally small: use it only for EvalScope dataset/output directories and optional Judge override knobs such as `judge_model_config_id`, `judge_generation_config`, and `judge_worker_num`. Do not store Judge URLs or keys there.
-- Runtime output directories include `data/tasks/`, `data/intelligence_tasks/`, `data/stress_tasks/`, `data/overview_reports/`, `data/suite_runs/`, `data/suite_schedules/`, `reports/`, and `outputs/`.
+- Runtime output directories include `data/tasks/`, `data/jobs/`, `data/intelligence_tasks/`, `data/stress_tasks/`, `data/overview_reports/`, `data/suite_runs/`, `data/suite_schedules/`, `reports/`, and `outputs/`.
 
 ## Coding Style & Naming Conventions
 
@@ -77,6 +77,6 @@ Follow Conventional Commits as used in history, for example `fix: ...`, `docs: .
 
 ## Security & Configuration Tips
 
-Do not commit `data/models.json`, `data/evalscope.json`, `data/tasks/`, `data/intelligence_tasks/`, `data/stress_tasks/`, `data/overview_reports/`, `data/suite_runs/`, `data/suite_schedules/`, `reports/`, `outputs/`, `.env`, or `.venv/`. API responses and reports should remain redacted; never paste secrets into commits, reports, logs, or documentation examples.
+Do not commit `data/models.json`, `data/evalscope.json`, `data/tasks/`, `data/jobs/`, `data/intelligence_tasks/`, `data/stress_tasks/`, `data/overview_reports/`, `data/suite_runs/`, `data/suite_schedules/`, `reports/`, `outputs/`, `.env`, or `.venv/`. API responses and reports should remain redacted; never paste secrets into commits, reports, logs, or documentation examples.
 
 Before committing, explicitly inspect staged paths and check for secrets. Dummy test strings are fine, but real `sk-...` or `ark-...` keys are not.

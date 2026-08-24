@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from app.jobs.executor import JobExecutor
+from app.jobs.store import JobStore
 from app.core.models import MetricResult, TaskResult, utc_now
 from app.intelligence.schemas import (
     IntelligenceCategorySummary,
@@ -227,11 +229,21 @@ class RecordingSuiteRunner:
         return type("Suite", (), {"suite_id": suite_id, "status": "completed"})()
 
 
+class RecordingJobExecutor:
+    def __init__(self):
+        self.submissions: list[dict] = []
+
+    def submit_async(self, *, job_type: str, target_id: str, payload: dict, func):
+        self.submissions.append({"job_type": job_type, "target_id": target_id, "payload": payload, "func": func})
+        return type("Job", (), {"job_id": f"job_{target_id}"})()
+
+
 @pytest.mark.asyncio
 async def test_suite_scheduler_triggers_due_schedule_and_updates_next_run(tmp_path: Path):
     schedule_store = SuiteScheduleStore(tmp_path / "suite_schedules")
     suite_runner = RecordingSuiteRunner()
-    scheduler = SuiteScheduler(schedule_store=schedule_store, suite_runner_factory=lambda: suite_runner)
+    job_executor = RecordingJobExecutor()
+    scheduler = SuiteScheduler(schedule_store=schedule_store, suite_runner_factory=lambda: suite_runner, job_executor=job_executor)
     due = SuiteScheduleCreate(
         name="nightly demo",
         model_id="demo-chat",
@@ -243,10 +255,6 @@ async def test_suite_scheduler_triggers_due_schedule_and_updates_next_run(tmp_pa
     schedule = schedule_store.create(due)
 
     triggered = await scheduler.tick_once(now=utc_now())
-    # 让被投递的后台 execute 任务有机会运行（fire-and-forget via asyncio.create_task）。
-    await asyncio.sleep(0)
-    await asyncio.sleep(0)
-
     updated = schedule_store.get(schedule.schedule_id)
     assert triggered == 1
     assert len(suite_runner.requests) == 1
@@ -257,15 +265,20 @@ async def test_suite_scheduler_triggers_due_schedule_and_updates_next_run(tmp_pa
     assert updated.last_run_at is not None
     assert updated.next_run_at > utc_now()
     assert updated.run_count == 1
-    # 调度器投递了后台执行任务，且调度器自身没有阻塞等待其完成。
-    assert suite_runner.executed_suite_ids == ["suite_recorded"]
+    # 调度器只提交 suite job，不直接 create_task 执行 suite。
+    assert suite_runner.executed_suite_ids == []
+    assert len(job_executor.submissions) == 1
+    assert job_executor.submissions[0]["job_type"] == "suite"
+    assert job_executor.submissions[0]["target_id"] == "suite_recorded"
+    assert updated.last_job_id == "job_suite_recorded"
 
 
 @pytest.mark.asyncio
 async def test_suite_scheduler_disables_one_shot_schedule_after_trigger(tmp_path: Path):
     schedule_store = SuiteScheduleStore(tmp_path / "suite_schedules")
     suite_runner = RecordingSuiteRunner()
-    scheduler = SuiteScheduler(schedule_store=schedule_store, suite_runner_factory=lambda: suite_runner)
+    job_executor = RecordingJobExecutor()
+    scheduler = SuiteScheduler(schedule_store=schedule_store, suite_runner_factory=lambda: suite_runner, job_executor=job_executor)
     due = SuiteScheduleCreate(
         name="one shot demo",
         model_id="demo-chat",
@@ -278,9 +291,6 @@ async def test_suite_scheduler_disables_one_shot_schedule_after_trigger(tmp_path
     schedule = schedule_store.create(due)
 
     triggered = await scheduler.tick_once(now=utc_now())
-    await asyncio.sleep(0)
-    await asyncio.sleep(0)
-
     updated = schedule_store.get(schedule.schedule_id)
     assert triggered == 1
     assert len(suite_runner.requests) == 1
@@ -288,7 +298,10 @@ async def test_suite_scheduler_disables_one_shot_schedule_after_trigger(tmp_path
     assert updated.run_once is True
     assert updated.enabled is False
     assert updated.run_count == 1
-    assert suite_runner.executed_suite_ids == ["suite_recorded"]
+    assert suite_runner.executed_suite_ids == []
+    assert len(job_executor.submissions) == 1
+    assert updated.last_job_id == "job_suite_recorded"
+
 
 
 class FailingExecuteSuiteRunner(RecordingSuiteRunner):
@@ -298,10 +311,11 @@ class FailingExecuteSuiteRunner(RecordingSuiteRunner):
 
 
 @pytest.mark.asyncio
-async def test_suite_scheduler_logs_background_execute_failure(tmp_path: Path, caplog):
+async def test_suite_scheduler_records_background_job_failure(tmp_path: Path, caplog):
     schedule_store = SuiteScheduleStore(tmp_path / "suite_schedules")
     suite_runner = FailingExecuteSuiteRunner()
-    scheduler = SuiteScheduler(schedule_store=schedule_store, suite_runner_factory=lambda: suite_runner)
+    job_executor = JobExecutor(store=JobStore(tmp_path / "jobs"), max_concurrency=1)
+    scheduler = SuiteScheduler(schedule_store=schedule_store, suite_runner_factory=lambda: suite_runner, job_executor=job_executor)
     due = SuiteScheduleCreate(
         name="nightly demo",
         model_id="demo-chat",
@@ -312,16 +326,58 @@ async def test_suite_scheduler_logs_background_execute_failure(tmp_path: Path, c
     )
     schedule = schedule_store.create(due)
 
-    with caplog.at_level("ERROR", logger="app.suites.scheduler"):
+    with caplog.at_level("ERROR", logger="app.jobs.executor"):
         triggered = await scheduler.tick_once(now=utc_now())
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
+        updated = schedule_store.get(schedule.schedule_id)
+        assert updated is not None and updated.last_job_id is not None
+        job = await job_executor.wait(updated.last_job_id, timeout=5)
 
-    updated = schedule_store.get(schedule.schedule_id)
     assert triggered == 1
-    assert updated is not None
     assert updated.last_error is None
-    assert "Scheduled suite background execution failed" in caplog.text
-    assert schedule.schedule_id in caplog.text
-    assert "suite_recorded" in caplog.text
-    assert "background explode" in caplog.text
+    assert job is not None
+    assert job.status == "failed"
+    assert job.error == {"message": "background explode", "type": "RuntimeError"}
+    assert suite_runner.executed_suite_ids == ["suite_recorded"]
+    assert "Job failed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_suite_runner_uses_custom_intelligence_profile_options(tmp_path: Path):
+    data_dir = tmp_path / "data"
+    reports_dir = tmp_path / "reports"
+    intelligence_store = IntelligenceTaskStore(data_dir / "intelligence_tasks")
+    intelligence_runner = FakeIntelligenceRunner(intelligence_store)
+    runner = SuiteRunner(
+        suite_store=SuiteRunStore(data_dir / "suite_runs"),
+        gateway_task_store=TaskStore(data_dir / "tasks"),
+        intelligence_task_store=intelligence_store,
+        stress_task_store=StressTaskStore(data_dir / "stress_tasks"),
+        gateway_runner=FakeGatewayRunner(TaskStore(data_dir / "tasks")),
+        intelligence_runner=intelligence_runner,
+        stress_runner=FakeStressRunner(StressTaskStore(data_dir / "stress_tasks")),
+        reports_dir=reports_dir,
+        poll_interval_seconds=0,
+    )
+
+    suite = await runner.start_default(
+        SuiteDefaultRunRequest(
+            model_id="demo-chat",
+            run_gateway=False,
+            run_stress=False,
+            run_intelligence=True,
+            intelligence_datasets=["gsm8k"],
+            intelligence_limit=3,
+            intelligence_eval_batch_size=2,
+            intelligence_generation_config={"temperature": 0.0, "max_tokens": 64},
+            wait_for_completion=True,
+        )
+    )
+
+    assert suite.status == "completed"
+    assert intelligence_runner.submitted_custom == {
+        "model_id": "demo-chat",
+        "datasets": ["gsm8k"],
+        "limit": 3,
+        "eval_batch_size": 2,
+        "generation_config": {"temperature": 0.0, "max_tokens": 64},
+    }

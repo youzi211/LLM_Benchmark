@@ -6,6 +6,7 @@
 # Runtime data containing local model configs, task history, and possible API keys
 /data/models.json
 /data/tasks/
+/data/jobs/
 
 # Generated benchmark reports
 /reports/

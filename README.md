@@ -301,6 +301,7 @@ journalctl -u llm-benchmark -f
 data/models.json
 data/evalscope.json
 data/tasks/
+data/jobs/
 data/intelligence_tasks/
 data/stress_tasks/
 data/overview_reports/
@@ -357,6 +358,9 @@ GET    /api/tasks
 GET    /api/tasks/{task_id}
 
 GET    /api/reports/{task_id}
+
+GET    /api/jobs
+GET    /api/jobs/{job_id}
 
 GET    /api/evalscope/profiles
 
@@ -471,6 +475,7 @@ curl -fsS -X POST "$API_BASE/api/models" \
 | 性能压测 | `POST /api/stress/tasks/default` | 通过 EvalScope `perf` 采集并发、吞吐、延迟、TTFT/TPOT、失败率等性能数据。 | `data/stress_tasks/` 结果、`outputs/evalscope/` 原始输出和 Markdown 报告。 |
 | 模型能力测试 | `POST /api/intelligence/tasks/default` | 通过 EvalScope 跑默认公开数据集，覆盖代码、数学、知识、中文和复杂推理。 | `data/intelligence_tasks/` 标准化结果、能力维度汇总、EvalScope 原始输出和 Markdown 报告。 |
 | 统一总览 | `POST /api/overview/reports` | 汇总三类任务，给出统一中文摘要和详情入口（章节顺序与执行顺序一致：网关 → 压测 → 能力评测）。 | `data/overview_reports/` 与 `reports/overview/` 总览报告。 |
+| 后台执行 | `GET /api/jobs` / `GET /api/jobs/{job_id}` | suite、能力评测、压测的后台执行统一由进程内 JobExecutor 记录状态、异常和目标任务 ID。 | `data/jobs/`。 |
 
 > 能力评测样本上限 `intelligence_limit`：可选字段，控制能力评测每个数据集只取前 N 条样本（在数据集加载阶段截断，分数仍按已评测样本的平均准确率计算）。`null` 表示不限制、全量评测。**定时计划未显式传值时默认 `200`**（常量 `DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`），防止 `live_code_bench` 等大体量数据集把半夜的定时评测卡死；手动 `POST /api/suites/default` 和 `POST /api/suites/quick` 默认不限。需要精确分数时手动调用且不传该字段即可跑全量。
 

@@ -149,3 +149,45 @@ async def test_intelligence_runner_rejects_judge_dataset_without_builtin_judge(t
         await runner.submit_custom(model_id="m1", datasets=["simple_qa"])
 
     assert executor.calls == []
+
+
+@pytest.mark.asyncio
+async def test_intelligence_runner_background_uses_job_executor(tmp_path, monkeypatch):
+    from app.core.models import ModelConfigCreate
+    from app.intelligence import runner as intelligence_runner_module
+    from app.intelligence.runner import IntelligenceRunner
+    from app.storage.intelligence_task_store import IntelligenceTaskStore
+    from app.storage.model_store import ModelStore
+
+    class FakeExecutor:
+        def __init__(self):
+            self.called = False
+
+        def run(self, **kwargs):
+            self.called = True
+            return {"status": "completed", "task_id": kwargs["task_id"], "model": kwargs["model"], "datasets": kwargs["datasets"], "results": []}
+
+    submissions = []
+
+    class FakeJobExecutor:
+        def submit_sync(self, *, job_type: str, target_id: str, payload: dict, func):
+            submissions.append({"job_type": job_type, "target_id": target_id, "payload": payload, "func": func})
+            return type("Job", (), {"job_id": "job_intel"})()
+
+    model_store = ModelStore(tmp_path / "models.json")
+    model_store.create(ModelConfigCreate(id="m1", name="Model", protocol="chat_completions", base_url="http://model/v1", api_key="dummy", model="upstream"))
+    fake_executor = FakeExecutor()
+    monkeypatch.setattr(intelligence_runner_module, "get_job_executor", lambda: FakeJobExecutor())
+    runner = IntelligenceRunner(
+        model_store=model_store,
+        task_store=IntelligenceTaskStore(tmp_path / "intelligence_tasks"),
+        executor=fake_executor,
+        reports_dir=tmp_path / "reports",
+        run_in_background=True,
+    )
+
+    task = await runner.submit_custom(model_id="m1", datasets=["gsm8k"], limit=1)
+
+    assert task.status == "pending"
+    assert submissions == [{"job_type": "intelligence", "target_id": task.task_id, "payload": {"task_id": task.task_id}, "func": submissions[0]["func"]}]
+    assert fake_executor.called is False

@@ -238,6 +238,7 @@ class SuiteRun(BaseModel):
     current_step: str | None = None
     request: SuiteDefaultRunRequest
     schedule_id: str | None = None
+    job_id: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     started_at: datetime | None = None
@@ -348,6 +349,7 @@ class SuiteSchedule(BaseModel):
     next_run_at: datetime
     last_run_at: datetime | None = None
     last_suite_id: str | None = None
+    last_job_id: str | None = None
     run_count: int = 0
     last_error: dict[str, Any] | None = None
 

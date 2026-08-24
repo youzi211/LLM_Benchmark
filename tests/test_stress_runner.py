@@ -147,3 +147,29 @@ def test_stress_runner_resolves_local_jsonl_dataset_path(tmp_path, monkeypatch):
     resolved = runner._resolve_dataset_path(stress_runner_module.StressDefaultRunRequest(model_id="m1", dataset="openqa"))
 
     assert resolved == str(dataset_file)
+
+
+@pytest.mark.asyncio
+async def test_stress_runner_background_uses_job_executor(tmp_path, monkeypatch):
+    executor = FakeStressExecutor()
+    submissions = []
+
+    class FakeJobExecutor:
+        def submit_sync(self, *, job_type: str, target_id: str, payload: dict, func):
+            submissions.append({"job_type": job_type, "target_id": target_id, "payload": payload, "func": func})
+            return type("Job", (), {"job_id": "job_stress"})()
+
+    monkeypatch.setattr(stress_runner_module, "get_job_executor", lambda: FakeJobExecutor())
+    runner = StressRunner(
+        model_store=_model_store(tmp_path / "models.json"),
+        task_store=StressTaskStore(tmp_path / "stress_tasks"),
+        executor=executor,
+        reports_dir=tmp_path / "reports",
+        run_in_background=True,
+    )
+
+    task = await runner.submit_default("m1")
+
+    assert task.status == "pending"
+    assert submissions == [{"job_type": "stress", "target_id": task.task_id, "payload": {"task_id": task.task_id}, "func": submissions[0]["func"]}]
+    assert executor.submitted_payload is None

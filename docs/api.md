@@ -873,6 +873,18 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 
 下载统一总览 Markdown 报告。报告包含“一眼看懂”、模型与任务信息、网关接入验收摘要、EvalScope 压测摘要、EvalScope 能力评测摘要和详细报告入口（章节顺序与 suite 执行顺序一致：网关 → 压测 → 能力评测）。报告不存在或文件丢失时返回 `404 overview_report_not_found`。
 
+## 12.7 后台 Job 查询
+
+#### GET `/api/jobs`
+
+返回进程内 JobExecutor 已持久化的后台 job 列表，可选 query 参数 `limit`，默认 `50`。
+
+#### GET `/api/jobs/{job_id}`
+
+返回单个后台 job 记录。不存在时返回 `404 job_not_found`。
+
+Job 状态包括 `queued`、`running`、`completed`、`failed`、`interrupted`。suite、intelligence、stress 后台执行都会写入 `data/jobs/`。
+
 ## 13. 一键评测套件接口（Suites）
 
 ### 13.0 查询 EvalScope 评测 profiles

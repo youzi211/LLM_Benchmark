@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
 from app.api.errors import api_error
 from app.core.runner import TaskRunner
 from app.intelligence.runner import IntelligenceRunner
+from app.jobs.executor import get_job_executor
 from app.stress.runner import StressRunner
 from app.suites.runner import SuiteRunner
 from app.suites.schemas import SuiteDefaultRunRequest, SuiteQuickRunRequest, SuiteScheduleCreate, SuiteScheduleLastRun
@@ -21,6 +22,10 @@ def _runner() -> SuiteRunner:
     return SuiteRunner()
 
 
+def _job_executor():
+    return get_job_executor()
+
+
 def _quick_runner(request: SuiteQuickRunRequest) -> tuple[SuiteRunner, SuiteDefaultRunRequest]:
     model = request.to_inline_model_config()
     model_store = TransientModelStore([model])
@@ -32,14 +37,36 @@ def _quick_runner(request: SuiteQuickRunRequest) -> tuple[SuiteRunner, SuiteDefa
     return runner, request.to_suite_request(model.id)
 
 
-async def _execute_suite_background(suite_id: str) -> None:
-    await _runner().execute(suite_id)
+async def _run_suite_job(runner: SuiteRunner, suite_id: str):
+    return await runner.execute(suite_id)
+
+
+async def _submit_suite_job(runner: SuiteRunner, suite, *, wait_for_completion: bool):
+    if suite.status in {"completed", "partial", "failed"}:
+        return suite
+    job = _job_executor().submit_async(
+        job_type="suite",
+        target_id=suite.suite_id,
+        payload={"suite_id": suite.suite_id, "schedule_id": suite.schedule_id},
+        func=lambda: _run_suite_job(runner, suite.suite_id),
+    )
+    suite.job_id = job.job_id
+    if hasattr(runner, "suite_store"):
+        runner.suite_store.save(suite)
+    else:
+        SuiteRunStore().save(suite)
+    if wait_for_completion:
+        await _job_executor().wait(job.job_id)
+        return runner.suite_store.get(suite.suite_id) or suite
+    return suite
 
 
 @router.post("/default")
-async def start_default_suite(request: SuiteDefaultRunRequest, background_tasks: BackgroundTasks):
+async def start_default_suite(request: SuiteDefaultRunRequest):
+    runner = _runner()
+    start_request = request.model_copy(update={"wait_for_completion": False})
     try:
-        suite = await _runner().start_default(request)
+        suite = await runner.start_default(start_request)
     except ValueError as exc:
         text = str(exc)
         if text.startswith("model_not_found:"):
@@ -47,26 +74,21 @@ async def start_default_suite(request: SuiteDefaultRunRequest, background_tasks:
         if text.startswith("model_disabled:"):
             raise api_error(400, "model_disabled", f"Model config is disabled: {request.model_id}")
         raise api_error(400, "invalid_suite_request", text)
-    if request.wait_for_completion:
-        return suite
-    background_tasks.add_task(_execute_suite_background, suite.suite_id)
-    return suite
+    return await _submit_suite_job(runner, suite, wait_for_completion=request.wait_for_completion)
 
 
 @router.post("/quick")
-async def start_quick_suite(request: SuiteQuickRunRequest, background_tasks: BackgroundTasks):
+async def start_quick_suite(request: SuiteQuickRunRequest):
     runner, suite_request = _quick_runner(request)
+    start_request = suite_request.model_copy(update={"wait_for_completion": False})
     try:
-        suite = await runner.start_default(suite_request)
+        suite = await runner.start_default(start_request)
     except ValueError as exc:
         text = str(exc)
         if text.startswith("model_disabled:"):
             raise api_error(400, "model_disabled", f"Model config is disabled: {suite_request.model_id}")
         raise api_error(400, "invalid_suite_request", text)
-    if request.wait_for_completion:
-        return suite
-    background_tasks.add_task(runner.execute, suite.suite_id)
-    return suite
+    return await _submit_suite_job(runner, suite, wait_for_completion=request.wait_for_completion)
 
 
 @router.get("")
@@ -128,21 +150,35 @@ def delete_suite_schedule(schedule_id: str):
 
 
 @router.post("/schedules/{schedule_id}/trigger")
-async def trigger_suite_schedule(schedule_id: str, background_tasks: BackgroundTasks, wait_for_completion: bool = False):
+async def trigger_suite_schedule(schedule_id: str, wait_for_completion: bool = False):
     schedule_store = SuiteScheduleStore()
     schedule = schedule_store.get(schedule_id)
     if schedule is None:
         raise api_error(404, "suite_schedule_not_found", f"Suite schedule not found: {schedule_id}")
-    request = schedule.request.model_copy(update={"wait_for_completion": wait_for_completion})
-    suite = await _runner().start_default(request, schedule_id=schedule.schedule_id)
+    runner = _runner()
+    request = schedule.request.model_copy(update={"wait_for_completion": False})
+    suite = await runner.start_default(request, schedule_id=schedule.schedule_id)
     schedule.last_suite_id = suite.suite_id
     schedule.last_run_at = suite.created_at
     schedule.run_count += 1
+    job = _job_executor().submit_async(
+        job_type="suite",
+        target_id=suite.suite_id,
+        payload={"suite_id": suite.suite_id, "schedule_id": schedule.schedule_id},
+        func=lambda: _run_suite_job(runner, suite.suite_id),
+    )
+    suite.job_id = job.job_id
+    if hasattr(runner, "suite_store"):
+        runner.suite_store.save(suite)
+    else:
+        SuiteRunStore().save(suite)
+    schedule.last_job_id = job.job_id
     if schedule.run_once:
         schedule.enabled = False
     schedule_store.save(schedule)
-    if not wait_for_completion:
-        background_tasks.add_task(_execute_suite_background, suite.suite_id)
+    if wait_for_completion:
+        await _job_executor().wait(job.job_id)
+        return runner.suite_store.get(suite.suite_id) or suite
     return suite
 
 
