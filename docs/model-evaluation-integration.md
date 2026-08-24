@@ -406,7 +406,7 @@ curl -X POST "$API_BASE/suites/schedules" \
 | `run_once` | `true` 表示只执行一次。执行后计划会自动变成 `enabled=false`。 |
 | `last_suite_id` | 最近一次由该计划触发出的 `suite_id`。刚创建时为 `null`。 |
 | `run_count` | 已触发次数。 |
-| `last_error` | 最近一次调度错误。正常为 `null`。 |
+| `last_error` | 最近一次调度投递错误。正常为 `null`；它不代表最近 suite 的执行结果，执行失败请看 `last-run` 或 `GET /api/suites/{last_suite_id}`。 |
 
 ---
 
@@ -480,7 +480,7 @@ curl -X GET "$API_BASE/suites/schedules/<schedule_id>"
 curl -X POST "$API_BASE/suites/schedules/<schedule_id>/trigger"
 ```
 
-含义：不等 `next_run_at`，立刻按该计划保存的配置启动一次 suite。
+含义：不等 `next_run_at`，立刻按该计划保存的配置启动一次 suite。默认 `wait_for_completion=false`，即立即返回新建 suite；需要阻塞等待时可加 query 参数 `?wait_for_completion=true`。
 
 注意：
 
@@ -489,7 +489,22 @@ curl -X POST "$API_BASE/suites/schedules/<schedule_id>/trigger"
 
 返回值是新创建的 `SuiteRun`，里面会有新的 `suite_id`。
 
-### 7.4 删除计划
+### 7.4 查询最近一次计划执行结果
+
+```bash
+curl -X GET "$API_BASE/suites/schedules/<schedule_id>/last-run"
+```
+
+该接口返回计划本身和最近一次 `last_suite_id` 对应的 suite 摘要，重点字段包括：
+
+- `last_suite_status`：最近一次 suite 的状态。
+- `last_suite_current_step`：最近一次 suite 当前步骤。
+- `last_suite_error_count`：最近一次 suite 错误数量。
+- `last_suite_errors`：最近一次 suite 错误摘要。
+
+注意：`GET /api/suites/schedules/<schedule_id>` 中的 `last_error` 只代表调度器投递 suite 失败，例如模型配置缺失或创建 suite 失败；如果 `last_error=null` 但 `last_suite_status=partial/failed`，说明计划已成功触发，但评测执行阶段失败。
+
+### 7.5 删除计划
 
 ```bash
 curl -X DELETE "$API_BASE/suites/schedules/<schedule_id>"
@@ -526,10 +541,10 @@ POST /api/models
   -> 得到或确认 model_id
 POST /api/suites/schedules，run_once=true，run_date=目标日期，time_of_day=00:00
   -> 得到 schedule_id 和 next_run_at
-GET /api/suites/schedules/{schedule_id}
-  -> 到点后查看 last_suite_id / run_count / last_error
+GET /api/suites/schedules/{schedule_id}/last-run
+  -> 到点后查看 last_suite_id / run_count / last_error / last_suite_status / last_suite_errors
 GET /api/suites/{last_suite_id}
-  -> 查看评测进度
+  -> 必要时查看完整评测进度
 GET /api/suites/{last_suite_id}/report
   -> 下载报告
 ```
@@ -577,6 +592,6 @@ POST /api/suites/schedules，run_once=false，interval_days=1，time_of_day=00:0
 3. `url` / `base_url` 是上游模型服务地址，不是本评测服务的 `8020` 地址。
 4. `next_run_at` 返回 UTC 时间；如果 `timezone` 是 `Asia/Shanghai`，北京时间 `00:00` 会显示为前一天 UTC `16:00`。
 5. 代码执行类智力评测，例如 MBPP/MBPP+、HumanEval/HumanEval+，需要 sandbox 服务保持运行，否则可能无法评分。
-6. 建议对接方保存 `suite_id` 和 `schedule_id`，方便后续查询进度、报告和问题排查。
+6. 建议对接方保存 `suite_id` 和 `schedule_id`，并优先用 `GET /api/suites/schedules/{schedule_id}/last-run` 排查定时任务执行结果。
 7. 能力评测默认会从 ModelScope 下载默认数据集（`humaneval`、`gsm8k` 等 10 个）。若希望评测时不依赖外网、不重复下载，可提前在 `data/evalscope_datasets/` 下按数据集名准备本地目录（例如 `data/evalscope_datasets/gsm8k/`、`data/evalscope_datasets/humaneval/`），后端会自动识别并改为本地加载（日志显示 `Loading dataset ... from local` 而非 `from modelscope`）。通过 `GET /api/intelligence/datasets/local` 可确认本机已就绪的数据集（`available_local=true`）。同机已有另一份完整数据集时，对每个数据集目录建立符号链接即可复用，无需复制，尤其推荐用于 `live_code_bench` 等大体量数据集。
 8. `data/models.json` 可能包含明文 API Key，已在 `.gitignore` 中忽略，切勿提交到 Git；`data/evalscope_datasets/`、`data/evalscope.json` 同理。

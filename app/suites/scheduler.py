@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from datetime import datetime
 from typing import Callable
@@ -9,6 +10,8 @@ from app.core.models import utc_now
 from app.reports.markdown import redact_text
 from app.suites.runner import SuiteRunner
 from app.suites.store import SuiteScheduleStore, compute_following_run_at
+
+logger = logging.getLogger(__name__)
 
 
 class SuiteScheduler:
@@ -35,7 +38,10 @@ class SuiteScheduler:
                 triggered += 1
                 # 到点投递后台执行即返回，不阻塞调度循环——镜像 /suites/default 路由的
                 # background_tasks.add_task 模式，避免单个长 suite 冻结后续所有定时触发。
-                asyncio.create_task(runner.execute(suite.suite_id))
+                task = asyncio.create_task(runner.execute(suite.suite_id))
+                task.add_done_callback(
+                    _log_background_suite_failure(schedule_id=schedule.schedule_id, suite_id=suite.suite_id)
+                )
             except Exception as exc:
                 schedule.last_error = {"message": redact_text(str(exc)), "type": exc.__class__.__name__}
             if schedule.run_once:
@@ -44,6 +50,26 @@ class SuiteScheduler:
                 schedule.next_run_at = compute_following_run_at(schedule, now=now)
             self.schedule_store.save(schedule)
         return triggered
+
+
+def _log_background_suite_failure(*, schedule_id: str, suite_id: str):
+    def _callback(task: asyncio.Task) -> None:
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            logger.info(
+                "Scheduled suite background execution was cancelled",
+                extra={"schedule_id": schedule_id, "suite_id": suite_id},
+            )
+        except Exception as exc:  # noqa: BLE001 - callback must never leak to event loop
+            logger.exception(
+                "Scheduled suite background execution failed: schedule_id=%s suite_id=%s error=%s",
+                schedule_id,
+                suite_id,
+                exc,
+            )
+
+    return _callback
 
 
 _scheduler_task: asyncio.Task | None = None

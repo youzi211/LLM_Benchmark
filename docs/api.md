@@ -19,7 +19,7 @@
 - `GET /`：浏览器访问时跳转到 `/ui/`。
 - `GET /ui/`：打开评测控制台页面。
 - 控制台主要调用现有 JSON API：`POST /api/suites/quick`、`POST /api/suites/default`、`GET /api/suites`、`GET /api/suites/{suite_id}` 和 `GET /api/suites/{suite_id}/report`。
-- 定时一键评测区域会调用 `GET /api/models`、`POST /api/models`、`PUT /api/models/{model_id}`、`POST /api/suites/schedules`、`GET /api/suites/schedules`、`POST /api/suites/schedules/{schedule_id}/trigger` 和 `DELETE /api/suites/schedules/{schedule_id}`。
+- 定时一键评测区域会调用 `GET /api/models`、`POST /api/models`、`PUT /api/models/{model_id}`、`POST /api/suites/schedules`、`GET /api/suites/schedules`、`GET /api/suites/schedules/{schedule_id}/last-run`、`POST /api/suites/schedules/{schedule_id}/trigger` 和 `DELETE /api/suites/schedules/{schedule_id}`。
 - 指标曲线区域会按 suite 中的 `gateway_task_id`、`intelligence_task_id`、`stress_task_id` 继续读取 `GET /api/tasks/{task_id}`、`GET /api/intelligence/tasks/{task_id}/result` 和 `GET /api/stress/tasks/{task_id}/result`，用于展示 smoke 状态、数据集分数、吞吐、延迟、TTFT/TPOT 和成功率。
 - 控制台不在浏览器 localStorage 中保存 API Key；临时模型一键评测仍遵循 `/api/suites/quick` 的安全边界，即不把传入 Key 写入 `data/models.json`、suite JSON 或报告。定时计划需要持久化模型配置；如果从左侧临时参数创建定时计划，Key 会写入本机 `data/models.json`。
 
@@ -1021,7 +1021,7 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 
 #### POST `/api/suites/schedules`
 
-定时计划保存在本地 `data/suite_schedules/`。服务启动后内置轻量轮询器会检查 `next_run_at`，到点后自动触发 `SuiteDefaultRunRequest`。适合半夜低峰期执行模型评测。`run_once=true` 表示只执行一次，执行后计划会自动停用；周期任务使用 `interval_days` 控制重复间隔。
+定时计划保存在本地 `data/suite_schedules/`。服务启动后内置轻量轮询器会检查 `next_run_at`，到点后异步投递 `SuiteDefaultRunRequest`，调度循环不会等待整套评测完成。适合半夜低峰期执行模型评测。`run_once=true` 表示只执行一次，触发后计划会自动停用；周期任务使用 `interval_days` 控制重复间隔。
 
 只执行一次请求示例：
 
@@ -1071,7 +1071,7 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 | `run_gateway` / `run_intelligence` / `run_stress` | boolean | `true` | 触发时是否执行对应阶段。 |
 | `gateway_plan_id` / `gateway_metric_ids` | string / string[]/null | `gateway_acceptance_v1` / `null` | 网关验收计划与指标。 |
 | `intelligence_limit` | integer/null | `200`（定时默认） | 能力评测每个数据集取前 N 条样本截断。**定时计划未显式传值时默认 `200`**（对应常量 `DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`），防止大体量数据集把定时 suite 卡死；显式传更大值或传一个足够大的数可取消限制。手动 `POST /api/suites/default` 不受此默认值约束。 |
-| `poll_interval_seconds` / `timeout_seconds` | number/null | `null` | 等待 EvalScope 终态的轮询间隔与超时。 |
+| `poll_interval_seconds` / `timeout_seconds` | number/null | `null` | suite 内部等待 EvalScope 子任务终态的轮询间隔与超时。定时调度器自身始终异步投递，不会因该字段阻塞。 |
 
 ### 13.9 查询定时计划列表
 
@@ -1083,15 +1083,45 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 
 #### GET `/api/suites/schedules/{schedule_id}`
 
-返回定时计划、下一次运行时间、最近一次 suite ID、运行次数和最近错误。不存在时返回 `404 suite_schedule_not_found`。
+返回定时计划、下一次运行时间、最近一次 suite ID、运行次数和最近调度错误。`last_error` 只表示调度投递阶段错误；如果最近一次 suite 执行失败，应继续查询 last-run 或 suite 详情。不存在时返回 `404 suite_schedule_not_found`。
 
-### 13.11 删除定时计划
+### 13.11 查询定时计划最近一次执行
+
+#### GET `/api/suites/schedules/{schedule_id}/last-run`
+
+返回定时计划和最近一次 suite 的合并诊断视图。适合排查“计划已触发但评测失败”的情况。
+
+响应字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `schedule` | object | `SuiteSchedule` 原始计划。 |
+| `suite` | object/null | `last_suite_id` 对应的 `SuiteRun`；尚未触发时为 `null`。 |
+| `last_suite_status` | string/null | 最近 suite 的状态：`queued`、`running`、`completed`、`partial`、`failed`。 |
+| `last_suite_current_step` | string/null | 最近 suite 当前步骤。 |
+| `last_suite_error_count` | integer | 最近 suite 的错误数量；尚未触发时为 `0`。 |
+| `last_suite_errors` | object[] | 最近 suite 的错误摘要。 |
+
+示例：
+
+```json
+{
+  "schedule": {"schedule_id": "suite_schedule_20260807154500_ab12cd34", "last_suite_id": "suite_20260808000000_ab12cd34"},
+  "suite": {"suite_id": "suite_20260808000000_ab12cd34", "status": "partial"},
+  "last_suite_status": "partial",
+  "last_suite_current_step": null,
+  "last_suite_error_count": 1,
+  "last_suite_errors": [{"step": "stress", "message": "stress task failed"}]
+}
+```
+
+### 13.12 删除定时计划
 
 #### DELETE `/api/suites/schedules/{schedule_id}`
 
 删除本地定时计划。不存在时返回 `404 suite_schedule_not_found`。
 
-### 13.12 手动触发定时计划
+### 13.13 手动触发定时计划
 
 #### POST `/api/suites/schedules/{schedule_id}/trigger`
 

@@ -10,7 +10,7 @@ from app.core.runner import TaskRunner
 from app.intelligence.runner import IntelligenceRunner
 from app.stress.runner import StressRunner
 from app.suites.runner import SuiteRunner
-from app.suites.schemas import SuiteDefaultRunRequest, SuiteQuickRunRequest, SuiteScheduleCreate
+from app.suites.schemas import SuiteDefaultRunRequest, SuiteQuickRunRequest, SuiteScheduleCreate, SuiteScheduleLastRun
 from app.suites.store import SuiteRunStore, SuiteScheduleStore
 from app.suites.transient_model_store import TransientModelStore
 
@@ -82,6 +82,23 @@ def create_suite_schedule(request: SuiteScheduleCreate):
 @router.get("/schedules")
 def list_suite_schedules(limit: int = 50):
     return SuiteScheduleStore().list(limit=limit)
+
+
+@router.get("/schedules/{schedule_id}/last-run", response_model=SuiteScheduleLastRun)
+def get_suite_schedule_last_run(schedule_id: str):
+    schedule = SuiteScheduleStore().get(schedule_id)
+    if schedule is None:
+        raise api_error(404, "suite_schedule_not_found", f"Suite schedule not found: {schedule_id}")
+    suite = SuiteRunStore().get(schedule.last_suite_id) if schedule.last_suite_id else None
+    errors = suite.errors if suite is not None else []
+    return SuiteScheduleLastRun(
+        schedule=schedule,
+        suite=suite,
+        last_suite_status=suite.status if suite is not None else None,
+        last_suite_current_step=suite.current_step if suite is not None else None,
+        last_suite_error_count=len(errors),
+        last_suite_errors=errors,
+    )
 
 
 @router.get("/schedules/{schedule_id}")

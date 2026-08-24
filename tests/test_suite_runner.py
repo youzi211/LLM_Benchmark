@@ -232,3 +232,39 @@ async def test_suite_scheduler_disables_one_shot_schedule_after_trigger(tmp_path
     assert updated.enabled is False
     assert updated.run_count == 1
     assert suite_runner.executed_suite_ids == ["suite_recorded"]
+
+
+class FailingExecuteSuiteRunner(RecordingSuiteRunner):
+    async def execute(self, suite_id: str):
+        self.executed_suite_ids.append(suite_id)
+        raise RuntimeError("background explode")
+
+
+@pytest.mark.asyncio
+async def test_suite_scheduler_logs_background_execute_failure(tmp_path: Path, caplog):
+    schedule_store = SuiteScheduleStore(tmp_path / "suite_schedules")
+    suite_runner = FailingExecuteSuiteRunner()
+    scheduler = SuiteScheduler(schedule_store=schedule_store, suite_runner_factory=lambda: suite_runner)
+    due = SuiteScheduleCreate(
+        name="nightly demo",
+        model_id="demo-chat",
+        time_of_day="02:00",
+        next_run_at=utc_now() - timedelta(seconds=1),
+        stress_parallel=[1],
+        stress_number=[1],
+    )
+    schedule = schedule_store.create(due)
+
+    with caplog.at_level("ERROR", logger="app.suites.scheduler"):
+        triggered = await scheduler.tick_once(now=utc_now())
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    updated = schedule_store.get(schedule.schedule_id)
+    assert triggered == 1
+    assert updated is not None
+    assert updated.last_error is None
+    assert "Scheduled suite background execution failed" in caplog.text
+    assert schedule.schedule_id in caplog.text
+    assert "suite_recorded" in caplog.text
+    assert "background explode" in caplog.text

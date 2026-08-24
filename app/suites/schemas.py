@@ -302,3 +302,12 @@ class SuiteSchedule(BaseModel):
     last_suite_id: str | None = None
     run_count: int = 0
     last_error: dict[str, Any] | None = None
+
+
+class SuiteScheduleLastRun(BaseModel):
+    schedule: SuiteSchedule
+    suite: SuiteRun | None = None
+    last_suite_status: SuiteRunStatus | None = None
+    last_suite_current_step: str | None = None
+    last_suite_error_count: int = 0
+    last_suite_errors: list[dict[str, Any]] = Field(default_factory=list)

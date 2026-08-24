@@ -28,7 +28,7 @@ def test_suite_schedule_routes_are_not_swallowed_by_suite_id(temp_data_dirs, mon
     schedule = response.json()
     assert schedule["schedule_id"].startswith("suite_schedule_")
     assert schedule["run_once"] is False
-    assert schedule["request"]["wait_for_completion"] is True
+    assert schedule["request"]["wait_for_completion"] is False
     assert schedule["request"]["stress_options"]["parallel"] == [1, 5]
     assert schedule["request"]["intelligence_limit"] == 200
 
@@ -71,6 +71,83 @@ def test_suite_schedule_accepts_one_shot_run_date(temp_data_dirs, monkeypatch):
     assert schedule["enabled"] is True
     assert schedule["next_run_at"].startswith("2099-01-01T16:00:00")
     assert schedule["request"]["intelligence_limit"] == 50
+
+
+
+def test_suite_schedule_last_run_route_returns_schedule_without_suite(temp_data_dirs, monkeypatch):
+    monkeypatch.setenv("LLM_BENCHMARK_SCHEDULER_DISABLED", "1")
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/suites/schedules",
+        json={
+            "name": "nightly-demo",
+            "model_id": "demo-chat",
+            "time_of_day": "02:00",
+            "timezone": "Asia/Shanghai",
+            "stress_parallel": [1],
+            "stress_number": [1],
+        },
+    )
+    assert response.status_code == 200, response.text
+    schedule = response.json()
+
+    last_run = client.get(f"/api/suites/schedules/{schedule['schedule_id']}/last-run")
+
+    assert last_run.status_code == 200, last_run.text
+    data = last_run.json()
+    assert data["schedule"]["schedule_id"] == schedule["schedule_id"]
+    assert data["suite"] is None
+    assert data["last_suite_status"] is None
+    assert data["last_suite_error_count"] == 0
+    assert data["last_suite_errors"] == []
+
+
+def test_suite_schedule_last_run_route_summarizes_last_suite(temp_data_dirs, monkeypatch):
+    data_dir, _ = temp_data_dirs
+    monkeypatch.setenv("LLM_BENCHMARK_SCHEDULER_DISABLED", "1")
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/suites/schedules",
+        json={
+            "name": "nightly-demo",
+            "model_id": "demo-chat",
+            "time_of_day": "02:00",
+            "timezone": "Asia/Shanghai",
+            "stress_parallel": [1],
+            "stress_number": [1],
+        },
+    )
+    assert response.status_code == 200, response.text
+    schedule = response.json()
+    suite = SuiteRun(
+        suite_id="suite_last_run_demo",
+        model_id="demo-chat",
+        title="demo failed run",
+        status="partial",
+        current_step=None,
+        request=SuiteDefaultRunRequest(model_id="demo-chat"),
+        schedule_id=schedule["schedule_id"],
+        errors=[{"step": "stress", "message": "boom"}],
+    )
+    SuiteRunStore(data_dir / "suite_runs").save(suite)
+    schedule["last_suite_id"] = suite.suite_id
+    from app.suites.schemas import SuiteSchedule
+    from app.suites.store import SuiteScheduleStore
+
+    SuiteScheduleStore(data_dir / "suite_schedules").save(SuiteSchedule.model_validate(schedule))
+
+    last_run = client.get(f"/api/suites/schedules/{schedule['schedule_id']}/last-run")
+
+    assert last_run.status_code == 200, last_run.text
+    data = last_run.json()
+    assert data["schedule"]["last_suite_id"] == "suite_last_run_demo"
+    assert data["suite"]["suite_id"] == "suite_last_run_demo"
+    assert data["last_suite_status"] == "partial"
+    assert data["last_suite_current_step"] is None
+    assert data["last_suite_error_count"] == 1
+    assert data["last_suite_errors"] == [{"step": "stress", "message": "boom"}]
 
 
 def test_suite_default_and_report_routes(temp_data_dirs, monkeypatch):
