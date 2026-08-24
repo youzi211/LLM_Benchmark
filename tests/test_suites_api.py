@@ -8,6 +8,128 @@ from app.suites.schemas import SuiteDefaultRunRequest, SuiteRun
 from app.suites.store import SuiteRunStore
 
 
+
+def test_evalscope_profiles_route_lists_builtin_profiles(temp_data_dirs, monkeypatch):
+    monkeypatch.setenv("LLM_BENCHMARK_SCHEDULER_DISABLED", "1")
+    client = TestClient(app)
+
+    response = client.get("/api/evalscope/profiles")
+
+    assert response.status_code == 200, response.text
+    profiles = response.json()
+    profile_ids = {item["profile_id"] for item in profiles}
+    assert "scheduled_light" in profile_ids
+    assert "scheduled_code" in profile_ids
+    scheduled_light = next(item for item in profiles if item["profile_id"] == "scheduled_light")
+    assert scheduled_light["requires_sandbox"] is False
+    assert scheduled_light["run_intelligence"] is True
+    assert scheduled_light["intelligence_datasets"] == ["gsm8k", "math_500", "ceval"]
+    assert scheduled_light["stress_options"]["dataset"] == "openqa"
+
+
+def test_suite_schedule_uses_scheduled_light_profile_by_default(temp_data_dirs, monkeypatch):
+    monkeypatch.setenv("LLM_BENCHMARK_SCHEDULER_DISABLED", "1")
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/suites/schedules",
+        json={
+            "name": "nightly-light",
+            "model_id": "demo-chat",
+            "time_of_day": "02:00",
+            "timezone": "Asia/Shanghai",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    schedule = response.json()
+    assert schedule["profile"] == "scheduled_light"
+    assert schedule["request"]["run_gateway"] is True
+    assert schedule["request"]["run_intelligence"] is True
+    assert schedule["request"]["run_stress"] is True
+    assert schedule["request"]["intelligence_datasets"] == ["gsm8k", "math_500", "ceval"]
+    assert schedule["request"]["intelligence_limit"] == 50
+    assert schedule["request"]["intelligence_eval_batch_size"] == 5
+    assert schedule["request"]["stress_options"]["dataset"] == "openqa"
+    assert schedule["request"]["stress_options"]["parallel"] == [1, 2, 5]
+    assert schedule["request"]["stress_options"]["number"] == [10, 20, 50]
+
+
+def test_suite_schedule_explicit_fields_override_profile_defaults(temp_data_dirs, monkeypatch):
+    monkeypatch.setenv("LLM_BENCHMARK_SCHEDULER_DISABLED", "1")
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/suites/schedules",
+        json={
+            "name": "nightly-custom",
+            "model_id": "demo-chat",
+            "profile": "scheduled_light",
+            "run_stress": False,
+            "intelligence_datasets": ["bbh"],
+            "intelligence_limit": 7,
+            "stress_options": {"dataset": "longalpaca"},
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    schedule = response.json()
+    assert schedule["profile"] == "scheduled_light"
+    assert schedule["request"]["run_stress"] is False
+    assert schedule["request"]["intelligence_datasets"] == ["bbh"]
+    assert schedule["request"]["intelligence_limit"] == 7
+    assert schedule["request"]["stress_options"]["dataset"] == "longalpaca"
+    assert schedule["request"]["stress_options"]["parallel"] == [1, 2, 5]
+
+
+def test_suite_schedule_code_profile_requires_sandbox(temp_data_dirs, monkeypatch):
+    monkeypatch.setenv("LLM_BENCHMARK_SCHEDULER_DISABLED", "1")
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/suites/schedules",
+        json={
+            "name": "nightly-code",
+            "model_id": "demo-chat",
+            "profile": "scheduled_code",
+        },
+    )
+
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["error"]["code"] == "profile_requires_sandbox"
+    assert "scheduled_code" in body["error"]["message"]
+
+
+def test_suite_schedule_code_profile_allowed_when_sandbox_enabled(temp_data_dirs, monkeypatch):
+    data_dir, _ = temp_data_dirs
+    monkeypatch.setenv("LLM_BENCHMARK_SCHEDULER_DISABLED", "1")
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "evalscope.json").write_text(
+        '{"sandbox_enabled": true, "sandbox_type": "docker", "sandbox_manager_config": {"base_url": "http://sandbox.local:1234"}}',
+        encoding="utf-8",
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/suites/schedules",
+        json={
+            "name": "nightly-code",
+            "model_id": "demo-chat",
+            "profile": "scheduled_code",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    schedule = response.json()
+    assert schedule["profile"] == "scheduled_code"
+    assert schedule["request"]["run_gateway"] is False
+    assert schedule["request"]["run_stress"] is False
+    assert schedule["request"]["run_intelligence"] is True
+    assert schedule["request"]["intelligence_datasets"] == ["humaneval", "mbpp"]
+    assert schedule["request"]["intelligence_limit"] == 20
+
+
 def test_suite_schedule_routes_are_not_swallowed_by_suite_id(temp_data_dirs, monkeypatch):
     monkeypatch.setenv("LLM_BENCHMARK_SCHEDULER_DISABLED", "1")
     client = TestClient(app)
@@ -30,7 +152,7 @@ def test_suite_schedule_routes_are_not_swallowed_by_suite_id(temp_data_dirs, mon
     assert schedule["run_once"] is False
     assert schedule["request"]["wait_for_completion"] is False
     assert schedule["request"]["stress_options"]["parallel"] == [1, 5]
-    assert schedule["request"]["intelligence_limit"] == 200
+    assert schedule["request"]["intelligence_limit"] == 50
 
     listed = client.get("/api/suites/schedules")
     assert listed.status_code == 200

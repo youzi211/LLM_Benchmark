@@ -19,7 +19,7 @@
 - `GET /`：浏览器访问时跳转到 `/ui/`。
 - `GET /ui/`：打开评测控制台页面。
 - 控制台主要调用现有 JSON API：`POST /api/suites/quick`、`POST /api/suites/default`、`GET /api/suites`、`GET /api/suites/{suite_id}` 和 `GET /api/suites/{suite_id}/report`。
-- 定时一键评测区域会调用 `GET /api/models`、`POST /api/models`、`PUT /api/models/{model_id}`、`POST /api/suites/schedules`、`GET /api/suites/schedules`、`GET /api/suites/schedules/{schedule_id}/last-run`、`POST /api/suites/schedules/{schedule_id}/trigger` 和 `DELETE /api/suites/schedules/{schedule_id}`。
+- 定时一键评测区域会调用 `GET /api/models`、`GET /api/evalscope/profiles`、`POST /api/models`、`PUT /api/models/{model_id}`、`POST /api/suites/schedules`、`GET /api/suites/schedules`、`GET /api/suites/schedules/{schedule_id}/last-run`、`POST /api/suites/schedules/{schedule_id}/trigger` 和 `DELETE /api/suites/schedules/{schedule_id}`。
 - 指标曲线区域会按 suite 中的 `gateway_task_id`、`intelligence_task_id`、`stress_task_id` 继续读取 `GET /api/tasks/{task_id}`、`GET /api/intelligence/tasks/{task_id}/result` 和 `GET /api/stress/tasks/{task_id}/result`，用于展示 smoke 状态、数据集分数、吞吐、延迟、TTFT/TPOT 和成功率。
 - 控制台不在浏览器 localStorage 中保存 API Key；临时模型一键评测仍遵循 `/api/suites/quick` 的安全边界，即不把传入 Key 写入 `data/models.json`、suite JSON 或报告。定时计划需要持久化模型配置；如果从左侧临时参数创建定时计划，Key 会写入本机 `data/models.json`。
 
@@ -875,6 +875,24 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 
 ## 13. 一键评测套件接口（Suites）
 
+### 13.0 查询 EvalScope 评测 profiles
+
+#### GET `/api/evalscope/profiles`
+
+路由签名：GET `/api/evalscope/profiles`
+
+返回服务内置和本地覆盖的 EvalScope 评测 profile。profile 用于给定时评测提供一组稳定默认值，减少调用方每次手写数据集、压测档位和样本上限。
+
+内置 profile：
+
+| profile | 说明 | 是否需要 sandbox |
+|---|---|---:|
+| `scheduled_light` | 默认定时轻量评测；包含网关 smoke、轻量压测、非代码类能力评测。默认数据集为 `gsm8k`、`math_500`、`ceval`，默认 `intelligence_limit=50`。 | 否 |
+| `scheduled_code` | 代码能力定时评测；默认数据集为 `humaneval`、`mbpp`。 | 是 |
+| `full_offline` | 人工触发的较完整离线 profile，包含代码类和非代码类数据集。 | 是 |
+
+如果需要自定义，可在本地 `data/evalscope_profiles.json` 中增加同名或新 profile。该文件属于运行配置，不应提交 Git。
+
 Suites 是“一键评测模型并出报告”的编排层。它复用已有三类能力，执行顺序为：先执行网关接入验收 smoke，再提交 EvalScope 压测，最后提交 EvalScope 能力评测，全部完成后自动生成统一总览报告（总览章节顺序与之保持一致：网关 → 压测 → 能力评测）。先跑压测是为了在长时能力评测之前先拿到性能数据，避免能力评测卡死整条 suite 时丢失性能结果。Suites 不新增评测指标，也不重造 EvalScope 可视化，只负责串联、等待终态、归档 suite 状态和生成 overview 入口。已有模型配置时使用 `POST /api/suites/default`；临时外部模型可使用 `POST /api/suites/quick` 直接传 `url`、`key`、`model`。
 
 ### 13.1 SuiteDefaultRunRequest
@@ -1029,6 +1047,7 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 {
   "name": "tonight-demo-chat",
   "model_id": "demo-chat",
+  "profile": "scheduled_light",
   "run_once": true,
   "run_date": "2026-08-08",
   "time_of_day": "00:00",
@@ -1044,6 +1063,7 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 {
   "name": "nightly-demo-chat",
   "model_id": "demo-chat",
+  "profile": "scheduled_light",
   "run_once": false,
   "time_of_day": "02:00",
   "timezone": "Asia/Shanghai",
@@ -1059,6 +1079,7 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 |---|---:|---:|---|
 | `name` | string | - | 计划名称。 |
 | `model_id` | string | - | 要评测的模型配置 ID。 |
+| `profile` | string/null | `scheduled_light` | 定时评测 profile。默认 `scheduled_light` 不依赖 sandbox；`scheduled_code` 和 `full_offline` 需要 `data/evalscope.json` 启用 sandbox。传 `null` 可跳过 profile，仅使用请求字段和代码兜底默认值。 |
 | `enabled` | boolean | `true` | 是否启用。 |
 | `time_of_day` | string | `02:00` | 每次触发的本地时间，格式 `HH:MM`。 |
 | `timezone` | string | `Asia/Shanghai` | 计算 `next_run_at` 使用的时区。 |
@@ -1070,7 +1091,9 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 | `stress_options` | object | `{}` | 更完整的压测参数。 |
 | `run_gateway` / `run_intelligence` / `run_stress` | boolean | `true` | 触发时是否执行对应阶段。 |
 | `gateway_plan_id` / `gateway_metric_ids` | string / string[]/null | `gateway_acceptance_v1` / `null` | 网关验收计划与指标。 |
-| `intelligence_limit` | integer/null | `200`（定时默认） | 能力评测每个数据集取前 N 条样本截断。**定时计划未显式传值时默认 `200`**（对应常量 `DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`），防止大体量数据集把定时 suite 卡死；显式传更大值或传一个足够大的数可取消限制。手动 `POST /api/suites/default` 不受此默认值约束。 |
+| `intelligence_datasets` | string[]/null | profile 决定 | 能力评测数据集列表。`scheduled_light` 默认为 `gsm8k`、`math_500`、`ceval`，不包含代码执行类数据集。 |
+| `intelligence_limit` | integer/null | profile 决定 | 能力评测每个数据集取前 N 条样本截断。`scheduled_light` 默认为 `50`；不使用 profile 且未显式传值时回退为 `200`（对应常量 `DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`）。手动 `POST /api/suites/default` 不受此默认值约束。 |
+| `intelligence_eval_batch_size` / `intelligence_generation_config` | integer/null / object/null | profile 决定 | profile 或请求可指定能力评测并发与生成参数，最终透传给 EvalScope。 |
 | `poll_interval_seconds` / `timeout_seconds` | number/null | `null` | suite 内部等待 EvalScope 子任务终态的轮询间隔与超时。定时调度器自身始终异步投递，不会因该字段阻塞。 |
 
 ### 13.9 查询定时计划列表

@@ -151,7 +151,16 @@ class SuiteRunner:
     async def _run_intelligence(self, suite: SuiteRun) -> None:
         self._start_step(suite, "intelligence")
         try:
-            task = await self.intelligence_runner.submit_default(suite.model_id, limit=suite.request.intelligence_limit)
+            if suite.request.intelligence_datasets:
+                task = await self.intelligence_runner.submit_custom(
+                    model_id=suite.model_id,
+                    datasets=suite.request.intelligence_datasets,
+                    limit=suite.request.intelligence_limit,
+                    eval_batch_size=suite.request.intelligence_eval_batch_size,
+                    generation_config=suite.request.intelligence_generation_config,
+                )
+            else:
+                task = await self.intelligence_runner.submit_default(suite.model_id, limit=suite.request.intelligence_limit)
             suite.intelligence_task_id = task.task_id
             self.suite_store.save(suite)
             task = await self._wait_for_intelligence(task.task_id, suite.request)

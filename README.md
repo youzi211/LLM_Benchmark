@@ -231,6 +231,7 @@ curl -fsS -X POST "$API_BASE/api/suites/schedules" \
     "name": "nightly-demo-chat",
     "model_id": "demo-chat",
     "enabled": true,
+    "profile": "scheduled_light",
     "run_once": false,
     "time_of_day": "02:00",
     "timezone": "Asia/Shanghai",
@@ -356,6 +357,8 @@ GET    /api/tasks
 GET    /api/tasks/{task_id}
 
 GET    /api/reports/{task_id}
+
+GET    /api/evalscope/profiles
 
 GET    /api/intelligence/evalscope/health
 GET    /api/intelligence/datasets
@@ -576,6 +579,7 @@ curl -fsS -X POST "$API_BASE/api/suites/schedules" \
     "name": "nightly-demo-chat",
     "model_id": "demo-chat",
     "enabled": true,
+    "profile": "scheduled_light",
     "run_once": false,
     "time_of_day": "02:00",
     "timezone": "Asia/Shanghai",
@@ -589,7 +593,7 @@ curl -fsS -X POST "$API_BASE/api/suites/schedules" \
   }'
 ```
 
-定时计划保存在 `data/suite_schedules/`。主服务启动后会运行轻量轮询器，到 `next_run_at` 后会**异步投递** suite，不阻塞调度循环；最近一次 suite ID 会写回计划的 `last_suite_id`。`last_error` 只表示调度投递阶段错误，不等价于评测执行结果；真实执行状态请查询 `GET /api/suites/schedules/<schedule_id>/last-run` 或继续读取 `GET /api/suites/<last_suite_id>`。`run_once=true` 的计划触发后会自动停用，不会继续按 `interval_days` 重复。定时智力评测默认每个数据集只取前 `200` 条样本（可传 `intelligence_limit` 覆盖），手动调用 default/quick 评测不受此默认值约束。如果需要临时关闭定时器，再设置环境变量 `LLM_BENCHMARK_SCHEDULER_DISABLED=1` 后重启服务。
+定时计划保存在 `data/suite_schedules/`。主服务启动后会运行轻量轮询器，到 `next_run_at` 后会**异步投递** suite，不阻塞调度循环；创建计划时默认使用 `scheduled_light` profile（不包含 HumanEval/MBPP/LiveCodeBench 等代码执行类数据集），可通过 `GET /api/evalscope/profiles` 查看可用 profile；最近一次 suite ID 会写回计划的 `last_suite_id`。`last_error` 只表示调度投递阶段错误，不等价于评测执行结果；真实执行状态请查询 `GET /api/suites/schedules/<schedule_id>/last-run` 或继续读取 `GET /api/suites/<last_suite_id>`。`run_once=true` 的计划触发后会自动停用，不会继续按 `interval_days` 重复。定时智力评测在 `scheduled_light` 中默认每个数据集只取前 `50` 条样本（可传 `intelligence_limit` 覆盖）；不使用 profile 时仍回退到 `200` 条上限，手动调用 default/quick 评测不受此默认值约束。如果需要临时关闭定时器，再设置环境变量 `LLM_BENCHMARK_SCHEDULER_DISABLED=1` 后重启服务。
 
 ## 执行网关 smoke 评测
 

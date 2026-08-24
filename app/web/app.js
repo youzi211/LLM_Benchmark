@@ -32,6 +32,7 @@ const elements = {
   scheduleDateField: $("schedule-date-field"),
   scheduleIntervalField: $("schedule-interval-field"),
   scheduleModeHelp: $("schedule-mode-help"),
+  scheduleProfile: $("schedule-profile"),
   refreshSchedules: $("refresh-schedules"),
   createQuickSchedule: $("create-quick-schedule"),
   createModelSchedule: $("create-model-schedule"),
@@ -279,6 +280,7 @@ function buildSchedulePayload(modelId, fallbackTitle = "一键定时评测") {
   const payload = {
     name: $("schedule-name").value.trim() || scheduleNameFallback(modelId),
     model_id: modelId,
+    profile: elements.scheduleProfile?.value || "scheduled_light",
     enabled: true,
     title: $("schedule-run-title").value.trim() || fallbackTitle,
     time_of_day: timeOfDay,

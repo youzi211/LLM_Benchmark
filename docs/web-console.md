@@ -79,9 +79,15 @@
 | 定时计划列表 | GET | `/api/suites/schedules` |
 | 创建定时计划 | POST | `/api/suites/schedules` |
 | 删除定时计划 | DELETE | `/api/suites/schedules/{id}` |
+| Profile 列表 | GET | `/api/evalscope/profiles` |
 | 立即触发定时计划 | POST | `/api/suites/schedules/{id}/trigger` |
 | 网关任务详情 | GET | `/api/tasks/{task_id}` |
 | 能力评测结果 | GET | `/api/intelligence/tasks/{task_id}/result` |
 | 压测结果 | GET | `/api/stress/tasks/{task_id}/result` |
 
 接口契约详见 [API 接口文档](api.md)；评测口径详见 [指标测试方法文档](metric-test-methods.md)。
+
+
+## 5. 定时评测 profile
+
+Web 控制台创建定时计划时默认传 `profile=scheduled_light`，避免默认执行 HumanEval/MBPP/LiveCodeBench 等依赖 sandbox 的代码类数据集。需要代码能力定时评测时可选择 `scheduled_code`，但服务端必须已在 `data/evalscope.json` 中启用 sandbox。

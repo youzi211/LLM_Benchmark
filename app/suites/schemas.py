@@ -14,6 +14,7 @@ SuiteStepStatus = Literal["pending", "running", "completed", "skipped", "failed"
 # 定时智力评测默认每个数据集只取前 N 条样本，避免 live_code_bench 等大体量数据集磨死整条 suite。
 # 手动/quick 评测默认 intelligence_limit=None 不限制；需精确分数时可手动跑全量。
 DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT = 200
+DEFAULT_SCHEDULE_PROFILE = "scheduled_light"
 
 
 def new_suite_id() -> str:
@@ -82,10 +83,23 @@ class SuiteDefaultRunRequest(BaseModel):
     gateway_plan_id: str = "gateway_acceptance_v1"
     gateway_metric_ids: list[str] | None = None
     stress_options: SuiteStressOptions = Field(default_factory=SuiteStressOptions)
+    intelligence_datasets: list[str] | None = None
     intelligence_limit: int | None = Field(default=None, ge=1)
+    intelligence_eval_batch_size: int | None = Field(default=None, ge=1)
+    intelligence_generation_config: dict[str, Any] | None = None
     wait_for_completion: bool = False
     poll_interval_seconds: float | None = Field(default=None, ge=0, le=3600)
     timeout_seconds: float | None = Field(default=None, ge=1, le=172800)
+
+    @field_validator("intelligence_datasets")
+    @classmethod
+    def validate_intelligence_datasets(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        cleaned = [item.strip() for item in value if item and item.strip()]
+        if not cleaned:
+            raise ValueError("must not be empty")
+        return cleaned
 
     @model_validator(mode="after")
     def require_at_least_one_component(self) -> "SuiteDefaultRunRequest":
@@ -158,10 +172,23 @@ class SuiteQuickRunRequest(SuiteInlineModelRequest):
     gateway_plan_id: str = "gateway_acceptance_v1"
     gateway_metric_ids: list[str] | None = None
     stress_options: SuiteStressOptions = Field(default_factory=SuiteStressOptions)
+    intelligence_datasets: list[str] | None = None
     intelligence_limit: int | None = Field(default=None, ge=1)
+    intelligence_eval_batch_size: int | None = Field(default=None, ge=1)
+    intelligence_generation_config: dict[str, Any] | None = None
     wait_for_completion: bool = False
     poll_interval_seconds: float | None = Field(default=None, ge=0, le=3600)
     timeout_seconds_total: float | None = Field(default=None, ge=1, le=172800)
+
+    @field_validator("intelligence_datasets")
+    @classmethod
+    def validate_intelligence_datasets(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        cleaned = [item.strip() for item in value if item and item.strip()]
+        if not cleaned:
+            raise ValueError("must not be empty")
+        return cleaned
 
     @model_validator(mode="after")
     def require_at_least_one_component(self) -> "SuiteQuickRunRequest":
@@ -182,7 +209,10 @@ class SuiteQuickRunRequest(SuiteInlineModelRequest):
             gateway_plan_id=self.gateway_plan_id,
             gateway_metric_ids=self.gateway_metric_ids,
             stress_options=self.stress_options,
+            intelligence_datasets=self.intelligence_datasets,
             intelligence_limit=self.intelligence_limit,
+            intelligence_eval_batch_size=self.intelligence_eval_batch_size,
+            intelligence_generation_config=self.intelligence_generation_config,
             wait_for_completion=self.wait_for_completion,
             poll_interval_seconds=self.poll_interval_seconds,
             timeout_seconds=self.timeout_seconds_total,
@@ -224,6 +254,7 @@ class SuiteRun(BaseModel):
 class SuiteScheduleCreate(BaseModel):
     name: str
     model_id: str
+    profile: str | None = DEFAULT_SCHEDULE_PROFILE
     enabled: bool = True
     title: str | None = None
     time_of_day: str = Field(default="02:00", pattern=r"^\d{2}:\d{2}$")
@@ -240,7 +271,10 @@ class SuiteScheduleCreate(BaseModel):
     stress_parallel: list[int] | None = None
     stress_number: list[int] | None = None
     stress_options: SuiteStressOptions = Field(default_factory=SuiteStressOptions)
+    intelligence_datasets: list[str] | None = None
     intelligence_limit: int | None = Field(default=None, ge=1)
+    intelligence_eval_batch_size: int | None = Field(default=None, ge=1)
+    intelligence_generation_config: dict[str, Any] | None = None
     poll_interval_seconds: float | None = Field(default=None, ge=0, le=3600)
     timeout_seconds: float | None = Field(default=None, ge=1, le=172800)
 
@@ -254,6 +288,16 @@ class SuiteScheduleCreate(BaseModel):
         if any(item < 1 for item in value):
             raise ValueError("values must be positive")
         return value
+
+    @field_validator("intelligence_datasets")
+    @classmethod
+    def validate_intelligence_datasets(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        cleaned = [item.strip() for item in value if item and item.strip()]
+        if not cleaned:
+            raise ValueError("must not be empty")
+        return cleaned
 
     @model_validator(mode="after")
     def validate_run_once_target(self):
@@ -276,7 +320,10 @@ class SuiteScheduleCreate(BaseModel):
             gateway_plan_id=self.gateway_plan_id,
             gateway_metric_ids=self.gateway_metric_ids,
             stress_options=stress_options,
+            intelligence_datasets=self.intelligence_datasets,
             intelligence_limit=self.intelligence_limit if self.intelligence_limit is not None else DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT,
+            intelligence_eval_batch_size=self.intelligence_eval_batch_size,
+            intelligence_generation_config=self.intelligence_generation_config,
             wait_for_completion=False,
             poll_interval_seconds=self.poll_interval_seconds,
             timeout_seconds=self.timeout_seconds,
@@ -287,6 +334,7 @@ class SuiteSchedule(BaseModel):
     schedule_id: str = Field(default_factory=new_schedule_id)
     name: str
     model_id: str
+    profile: str | None = DEFAULT_SCHEDULE_PROFILE
     enabled: bool = True
     title: str | None = None
     time_of_day: str = "02:00"

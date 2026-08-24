@@ -3,6 +3,7 @@ import pytest
 from app.core.models import ModelConfigCreate
 from app.storage.model_store import ModelStore
 from app.storage.stress_task_store import StressTaskStore
+from app.stress import runner as stress_runner_module
 from app.stress.runner import StressRunner
 
 
@@ -126,3 +127,23 @@ async def test_stress_runner_normalizes_evalscope_perf_raw_mapping(tmp_path):
     assert run.output_throughput == 12.5
     assert run.p95_latency_seconds == 0.4
     assert task.normalized_result.summary["best_output_throughput"] == 12.5
+
+
+
+def test_stress_runner_resolves_local_jsonl_dataset_path(tmp_path, monkeypatch):
+    dataset_root = tmp_path / "stress_datasets"
+    dataset_root.mkdir()
+    dataset_file = dataset_root / "openqa.jsonl"
+    dataset_file.write_text('{"question":"hello"}\n', encoding="utf-8")
+    monkeypatch.setattr(stress_runner_module, "STRESS_DATASETS_DIR", dataset_root)
+    runner = StressRunner(
+        model_store=_model_store(tmp_path / "models.json"),
+        task_store=StressTaskStore(tmp_path / "stress_tasks"),
+        executor=FakeStressExecutor(),
+        reports_dir=tmp_path / "reports",
+        run_in_background=False,
+    )
+
+    resolved = runner._resolve_dataset_path(stress_runner_module.StressDefaultRunRequest(model_id="m1", dataset="openqa"))
+
+    assert resolved == str(dataset_file)

@@ -49,8 +49,11 @@ class FakeGatewayRunner:
 class FakeIntelligenceRunner:
     def __init__(self, store: IntelligenceTaskStore):
         self.store = store
+        self.submitted_custom = None
+        self.submitted_default = None
 
     async def submit_default(self, model_id: str, *, limit: int | None = None) -> IntelligenceTask:
+        self.submitted_default = {"model_id": model_id, "limit": limit}
         task = IntelligenceTask(
             task_id="intel_task_suite",
             evalscope_task_id="eval_intel_suite",
@@ -61,6 +64,19 @@ class FakeIntelligenceRunner:
             datasets=["gsm8k"],
             status="running",
         )
+        self.store.save(task)
+        return task
+
+    async def submit_custom(self, *, model_id: str, datasets: list[str], limit: int | None = None, eval_batch_size: int | None = None, generation_config: dict | None = None) -> IntelligenceTask:
+        self.submitted_custom = {
+            "model_id": model_id,
+            "datasets": datasets,
+            "limit": limit,
+            "eval_batch_size": eval_batch_size,
+            "generation_config": generation_config,
+        }
+        task = await self.submit_default(model_id, limit=limit)
+        task.datasets = datasets
         self.store.save(task)
         return task
 
@@ -153,6 +169,47 @@ async def test_suite_runner_runs_all_components_and_creates_overview(tmp_path: P
     assert Path(suite.overview_report_path).exists()
     assert "一眼看懂" in Path(suite.overview_report_path).read_text(encoding="utf-8")
     assert suite_store.get(suite.suite_id).overview_id == suite.overview_id
+
+
+@pytest.mark.asyncio
+async def test_suite_runner_uses_custom_intelligence_profile_options(tmp_path: Path):
+    data_dir = tmp_path / "data"
+    reports_dir = tmp_path / "reports"
+    intelligence_runner = FakeIntelligenceRunner(IntelligenceTaskStore(data_dir / "intelligence_tasks"))
+    runner = SuiteRunner(
+        suite_store=SuiteRunStore(data_dir / "suite_runs"),
+        gateway_task_store=TaskStore(data_dir / "tasks"),
+        intelligence_task_store=IntelligenceTaskStore(data_dir / "intelligence_tasks"),
+        stress_task_store=StressTaskStore(data_dir / "stress_tasks"),
+        gateway_runner=FakeGatewayRunner(TaskStore(data_dir / "tasks")),
+        intelligence_runner=intelligence_runner,
+        stress_runner=FakeStressRunner(StressTaskStore(data_dir / "stress_tasks")),
+        reports_dir=reports_dir,
+        poll_interval_seconds=0,
+    )
+
+    suite = await runner.start_default(
+        SuiteDefaultRunRequest(
+            model_id="demo-chat",
+            run_gateway=False,
+            run_stress=False,
+            run_intelligence=True,
+            intelligence_datasets=["gsm8k"],
+            intelligence_limit=3,
+            intelligence_eval_batch_size=2,
+            intelligence_generation_config={"temperature": 0.0, "max_tokens": 64},
+            wait_for_completion=True,
+        )
+    )
+
+    assert suite.status == "completed"
+    assert intelligence_runner.submitted_custom == {
+        "model_id": "demo-chat",
+        "datasets": ["gsm8k"],
+        "limit": 3,
+        "eval_batch_size": 2,
+        "generation_config": {"temperature": 0.0, "max_tokens": 64},
+    }
 
 
 class RecordingSuiteRunner:

@@ -170,7 +170,7 @@
             </div>
             <button id="refresh-schedules" class="mini" type="button">刷新计划</button>
           </div>
-          <p class="hint">创建半夜 00:00 等定时任务。默认是“只执行一次”，适合今晚跑一次；需要每天/每 N 天重复时再切换为周期执行。定时任务需要持久化模型配置；如果从左侧 URL/Key 创建计划，Key 会写入本机 <code>data/models.json</code>。</p>
+          <p class="hint">创建半夜 00:00 等定时任务。默认使用 scheduled_light 轻量 profile 且“只执行一次”，适合今晚跑一次；需要每天/每 N 天重复时再切换为周期执行。定时任务需要持久化模型配置；如果从左侧 URL/Key 创建计划，Key 会写入本机 <code>data/models.json</code>。</p>
 
           <div class="schedule-shared">
             <div class="field-grid two compact">
@@ -192,6 +192,14 @@
               <label>
                 <span>时区 timezone</span>
                 <input id="schedule-timezone" value="Asia/Shanghai" autocomplete="off" />
+              </label>
+              <label>
+                <span>评测 profile</span>
+                <select id="schedule-profile">
+                  <option value="scheduled_light" selected>scheduled_light：轻量定时</option>
+                  <option value="scheduled_code">scheduled_code：代码评测，需要 sandbox</option>
+                  <option value="full_offline">full_offline：完整离线，需要 sandbox</option>
+                </select>
               </label>
               <label>
                 <span>计划名称 name</span>

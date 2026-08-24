@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.api.routes_evalscope import router as evalscope_router
 from app.api.routes_intelligence import router as intelligence_router
 from app.api.routes_metrics import router as metrics_router
 from app.api.routes_overview import router as overview_router
@@ -41,6 +42,7 @@ def health():
 app.include_router(models_router, prefix="/api")
 app.include_router(metrics_router, prefix="/api")
 app.include_router(overview_router, prefix="/api")
+app.include_router(evalscope_router, prefix="/api")
 app.include_router(intelligence_router, prefix="/api")
 app.include_router(tasks_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")

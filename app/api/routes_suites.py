@@ -76,7 +76,17 @@ def list_suites(limit: int = 50):
 
 @router.post("/schedules")
 def create_suite_schedule(request: SuiteScheduleCreate):
-    return SuiteScheduleStore().create(request)
+    try:
+        return SuiteScheduleStore().create(request)
+    except ValueError as exc:
+        text = str(exc)
+        if text.startswith("profile_not_found:"):
+            profile_id = text.split(":", 1)[1]
+            raise api_error(400, "profile_not_found", f"EvalScope profile not found: {profile_id}")
+        if text.startswith("profile_requires_sandbox:"):
+            profile_id = text.split(":", 1)[1]
+            raise api_error(400, "profile_requires_sandbox", f"EvalScope profile requires sandbox but sandbox is disabled: {profile_id}")
+        raise api_error(400, "invalid_suite_schedule", text)
 
 
 @router.get("/schedules")

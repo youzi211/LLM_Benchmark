@@ -289,9 +289,10 @@ class StressRunner:
         candidate_dir = STRESS_DATASETS_DIR / dataset
         if candidate_dir.is_dir():
             return str(candidate_dir)
-        candidate_file = STRESS_DATASETS_DIR / f"{dataset}.json"
-        if candidate_file.is_file():
-            return str(candidate_file)
+        for suffix in (".json", ".jsonl"):
+            candidate_file = STRESS_DATASETS_DIR / f"{dataset}{suffix}"
+            if candidate_file.is_file():
+                return str(candidate_file)
         return None
 
     def _public_request_config(self, payload: StressRemoteSubmitPayload) -> dict[str, Any]:

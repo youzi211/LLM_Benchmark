@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from app.core.models import utc_now
 from app.storage.file_utils import read_json_file, write_json_file_atomic
 from app.suites.schemas import SuiteRun, SuiteSchedule, SuiteScheduleCreate
+from app.suites.profiles import apply_profile_to_schedule_request
 
 
 class SuiteRunStore:
@@ -48,6 +49,7 @@ class SuiteScheduleStore:
         return self.directory / f"{schedule_id}.json"
 
     def create(self, request: SuiteScheduleCreate) -> SuiteSchedule:
+        request = apply_profile_to_schedule_request(request)
         if request.next_run_at is not None:
             next_run_at = ensure_aware_utc(request.next_run_at)
         elif request.run_once and request.run_date is not None:
@@ -57,6 +59,7 @@ class SuiteScheduleStore:
         schedule = SuiteSchedule(
             name=request.name,
             model_id=request.model_id,
+            profile=request.profile,
             enabled=request.enabled,
             title=request.title,
             time_of_day=request.time_of_day,

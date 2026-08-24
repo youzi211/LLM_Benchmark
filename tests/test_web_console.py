@@ -32,6 +32,8 @@ def test_web_console_static_assets_are_served(monkeypatch):
     assert "triggerSchedule" in script.text
     assert "run_once" in script.text
     assert "run_date" in script.text
+    assert "scheduled_light" in script.text
+    assert "schedule-profile" in page.text
     assert "buildStressCards" in script.text
     assert "createLineChart" in script.text
     assert "/stress/tasks/" in script.text

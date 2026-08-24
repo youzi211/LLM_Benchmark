@@ -12,7 +12,7 @@
 | 项目做什么 | 给内部模型网关接入前采集工程 smoke、能力评测、压测和统一报告。 |
 | 主入口 | `app/main.py` 注册所有 `/api/*` 路由；启动后访问 `GET /health`。 |
 | 一键评测 | `POST /api/suites/default`，由 `app/suites/runner.py` 串起网关 smoke、EvalScope perf 压测、EvalScope 能力评测和 overview 报告（执行顺序：网关 → 压测 → 智力评测 → 总览）。 |
-| 定时低峰评测 | `POST /api/suites/schedules` 创建计划，`app/suites/scheduler.py` 单机轮询触发；可用 `LLM_BENCHMARK_SCHEDULER_DISABLED=1` 关闭。 |
+| 定时低峰评测 | `POST /api/suites/schedules` 创建计划，默认使用 `scheduled_light` profile；`app/suites/scheduler.py` 单机轮询触发；可用 `LLM_BENCHMARK_SCHEDULER_DISABLED=1` 关闭。 |
 | 正式能力评测 | `app/intelligence/*` 直接 import EvalScope，逐数据集调用 `run_task(TaskConfig)`。 |
 | 正式压测 | `app/stress/*` 直接 import EvalScope perf，输出吞吐、延迟分位数、TTFT/TPOT。 |
 | 旧基础指标定位 | `/api/tasks/run` 是网关接入 smoke；其中 `concurrency` / `rate_limit` 只是兼容 smoke，不是正式压测。 |
@@ -62,7 +62,7 @@
 | 本地存储 | JSON 文件 | `app/storage/*.py`、`data/` |
 | EvalScope 执行 | 主服务内 in-process 调用 | `app/intelligence/evalscope_direct.py`、`app/stress/evalscope_direct.py`、`outputs/evalscope/` |
 | 报告输出 | Markdown | `app/reports/markdown.py`、`app/intelligence/report.py`、`app/stress/report.py`、`app/overview/report.py`、`reports/` |
-| 一键编排/定时 | 本地 suite + 轻量轮询器 | `app/suites/*`、`app/api/routes_suites.py`、`data/suite_runs/`、`data/suite_schedules/` |
+| 一键编排/定时 | 本地 suite + profile + 轻量轮询器 | `app/suites/*`、`app/api/routes_suites.py`、`app/api/routes_evalscope.py`、`data/suite_runs/`、`data/suite_schedules/`、可选 `data/evalscope_profiles.json` |
 | 测试框架 | pytest | `tests/` |
 | 本地假上游 | FastAPI 示例服务 | `examples/fake_openai_server.py` |
 
@@ -291,6 +291,7 @@ sequenceDiagram
 | 统一总览 Markdown | `reports/overview/YYYY-MM-DD/*.md` | `LLM_BENCHMARK_REPORTS_DIR` | 否，运行产物 |
 | 一键评测 suite | `data/suite_runs/*.json` | `LLM_BENCHMARK_DATA_DIR` | 否，运行产物 |
 | 定时评测计划 | `data/suite_schedules/*.json` | `LLM_BENCHMARK_DATA_DIR` | 否，本地运行配置/状态 |
+| EvalScope profile 覆盖 | `data/evalscope_profiles.json` | `LLM_BENCHMARK_DATA_DIR` | 否，本地运行配置 |
 
 ### 4.8 工具层：`app/utils/`
 
@@ -366,7 +367,7 @@ Suite 层解决“一个模型 ID 自动完成整套评测并出最终总览报�
 - `POST /api/suites/default` 创建 suite；后台模式立即返回 `suite_id`，同步模式等待完成后返回。
 - suite 顺序执行：网关接入验收 -> EvalScope 压测 -> EvalScope 能力评测 -> overview 总览报告。
   先跑压测拿到性能数据，再跑智力评测，避免长时智力评测卡死整条 suite 而拿不到性能结果。
-- 智力评测默认每个数据集取前 N 条样本：定时评测（`SuiteScheduleCreate.to_run_request()`）未显式指定 `intelligence_limit` 时默认 `200`（常量 `DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`），避免 `live_code_bench` 等大体量数据集磨死整条 suite；手动 `/api/suites/default` 与 `/api/suites/quick` 默认 `intelligence_limit=None` 不限制，需精确分数时跑全量。`limit` 在数据集加载阶段截断，仍会产出并上报分数，只是统计基数变小。
+- 智力评测默认每个数据集取前 N 条样本：定时评测默认使用 `scheduled_light` profile，能力数据集为 `gsm8k`、`math_500`、`ceval`，默认 `intelligence_limit=50`；不使用 profile 且未显式指定 `intelligence_limit` 时回退到 `200`（常量 `DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`），避免 `live_code_bench` 等大体量数据集磨死整条 suite；手动 `/api/suites/default` 与 `/api/suites/quick` 默认 `intelligence_limit=None` 不限制，需精确分数时跑全量。`limit` 在数据集加载阶段截断，仍会产出并上报分数，只是统计基数变小。
 - 子任务失败时尽量继续生成 overview；suite 可能进入 `partial`，便于报告中展示缺失模块和错误。
 - `POST /api/suites/schedules` 保存本地定时计划，主服务启动后轻量轮询器按 `next_run_at` 自动触发。
 - 定时计划支持 `run_once=true` + `run_date`/`next_run_at` 的“一次性”计划，触发后自动 `enabled=false`；默认为按 `interval_days` 重复。
@@ -376,7 +377,8 @@ Suite 层解决“一个模型 ID 自动完成整套评测并出最终总览报�
 
 | 文件 | 职责 |
 |---|---|
-| `app/suites/schemas.py` | `SuiteDefaultRunRequest`、`SuiteRun`、`SuiteSchedule` 等数据结构；`intelligence_limit` 字段与定时默认上限常量 `DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`。 |
+| `app/suites/schemas.py` | `SuiteDefaultRunRequest`、`SuiteRun`、`SuiteSchedule` 等数据结构；定时 profile 字段、能力评测数据集/并发/生成参数字段与默认上限常量。 |
+| `app/suites/profiles.py` | 内置 `scheduled_light`、`scheduled_code`、`full_offline` profiles，并支持从 `data/evalscope_profiles.json` 覆盖或扩展。 |
 | `app/suites/runner.py` | 串联三类 runner，等待 EvalScope 终态，生成 overview。 |
 | `app/suites/store.py` | 本地 JSON 存储 suite 和 schedule。 |
 | `app/suites/scheduler.py` | 服务内轻量定时轮询器，支持 `LLM_BENCHMARK_SCHEDULER_DISABLED` 关闭。 |
@@ -525,6 +527,7 @@ GET    /health
 
 POST   /api/models
 GET    /api/models
+GET    /api/evalscope/profiles
 GET    /api/models/{model_id}
 PUT    /api/models/{model_id}
 DELETE /api/models/{model_id}
@@ -571,6 +574,7 @@ POST   /api/suites/schedules
 GET    /api/suites/schedules
 GET    /api/suites/schedules/{schedule_id}
 DELETE /api/suites/schedules/{schedule_id}
+GET    /api/suites/schedules/{schedule_id}/last-run
 POST   /api/suites/schedules/{schedule_id}/trigger
 GET    /api/suites/{suite_id}
 GET    /api/suites/{suite_id}/report
@@ -630,7 +634,7 @@ GET    /api/suites/{suite_id}/report
 1. Suite 层只做编排；新增正式评测能力时应优先接入 EvalScope 或已有 runner，再由 suite 引用。
 2. `/api/suites/quick` 只为当前请求构造进程内 `inline_*` 临时模型配置，不能把调用方传入的 `key` 写入 `data/models.json`、suite JSON、报告或日志；后台任务未完成前如果服务进程重启，需要调用方重新提交。
 3. 修改 suite 状态或步骤字段时，更新 `app/suites/schemas.py`、`docs/api.md`、README、架构文档和测试。
-4. 定时计划当前是单机轻量轮询；多实例部署前必须增加锁，避免同一计划被重复触发。
+4. 定时计划当前是单机轻量轮询；多实例部署前必须增加锁，避免同一计划被重复触发。默认定时计划走 `scheduled_light` profile，不包含代码执行类数据集；`scheduled_code` / `full_offline` 创建前需要启用 sandbox。
 5. 定时压测建议配置较小默认档位，避免半夜任务无限排队或打满共享网关。
 6. 调整智力评测样本上限时关注 `intelligence_limit`：改默认值改 `DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`（只影响定时评测）；改字段语义改 `SuiteDefaultRunRequest`/`SuiteQuickRunRequest`/`SuiteScheduleCreate` 三处并同步 `to_run_request()`/`to_suite_request()`；同步更新 `app/intelligence/runner.py` 的 `submit_default(limit=)` 透传与 `docs/api.md` 字段表。`limit` 在 EvalScope 数据集加载阶段截断，截断后仍按已评样本计算并上报分数。
 
