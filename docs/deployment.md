@@ -70,7 +70,7 @@ pip install "evalscope[sandbox]"
 ms-enclave server --host 0.0.0.0 --port 1234
 ```
 
-建议通过内网、防火墙或安全组限制 `1234` 端口只允许主服务访问。主服务启动前可先访问 `http://<sandbox-host>:1234/health` 确认 sandbox 已经独立运行。
+建议通过内网、防火墙或安全组限制 `1234` 端口只允许主服务访问。主服务启动前可先访问 `http://<sandbox-host>:1234/health` 确认 sandbox 已经独立运行。主服务本地配置继续使用 `sandbox_enabled`、`sandbox_type`、`sandbox_manager_config` 以兼容已有部署，运行时会转换为 EvalScope 官方推荐的 `sandbox={"enabled": true, "engine": "docker", "manager_config": {...}}`。
 
 ### Windows 依赖安装提示
 

@@ -61,9 +61,14 @@ def test_intelligence_executor_enables_remote_sandbox_for_mbpp(tmp_path):
         judge_model_args=None,
     )
 
-    assert data["use_sandbox"] is True
-    assert data["sandbox_type"] == "docker"
-    assert data["sandbox_manager_config"] == {"base_url": "http://sandbox.local:1234"}
+    assert data["sandbox"] == {
+        "enabled": True,
+        "engine": "docker",
+        "manager_config": {"base_url": "http://sandbox.local:1234"},
+    }
+    assert "use_sandbox" not in data
+    assert "sandbox_type" not in data
+    assert "sandbox_manager_config" not in data
 
 
 def test_intelligence_executor_requires_sandbox_for_code_execution_datasets(tmp_path):
@@ -110,7 +115,9 @@ def test_intelligence_executor_does_not_enable_sandbox_for_non_code_dataset(tmp_
         judge_model_args=None,
     )
 
+    assert "sandbox" not in data
     assert "use_sandbox" not in data
+    assert "sandbox_type" not in data
     assert "sandbox_manager_config" not in data
 
 

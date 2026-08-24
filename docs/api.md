@@ -571,7 +571,7 @@ GET /api/tasks?limit=20
 }
 ```
 
-`base_url` 指向已经独立运行的 `ms-enclave server --host 0.0.0.0 --port 1234` 内网地址。该配置不保存模型密钥；模型和 Judge 密钥仍只来自 `data/models.json` 的模型配置。
+`base_url` 指向已经独立运行的 `ms-enclave server --host 0.0.0.0 --port 1234` 内网地址。该配置不保存模型密钥；模型和 Judge 密钥仍只来自 `data/models.json` 的模型配置。服务端读取 `sandbox_enabled`、`sandbox_type`、`sandbox_manager_config` 以兼容已有本地配置，构造 EvalScope `TaskConfig` 时会转换为官方推荐的 `sandbox={"enabled": true, "engine": "docker", "manager_config": {...}}`。
 
 ### 10.1 辅助查询接口
 

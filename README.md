@@ -118,7 +118,7 @@ curl -fsS http://<sandbox-host>:1234/health
 }
 ```
 
-安全建议：通过内网、防火墙或安全组限制 `1234` 端口只允许主服务访问。无论 sandbox 是独立启动还是由 `scripts/start_all.*` 显式拉起，都仍然需要在 `data/evalscope.json` 中配置 `sandbox_enabled=true` 和正确的 `sandbox_manager_config.base_url`；启动脚本不会自动改写该配置文件。
+安全建议：通过内网、防火墙或安全组限制 `1234` 端口只允许主服务访问。无论 sandbox 是独立启动还是由 `scripts/start_all.*` 显式拉起，都仍然需要在 `data/evalscope.json` 中配置 `sandbox_enabled=true` 和正确的 `sandbox_manager_config.base_url`；启动脚本不会自动改写该配置文件。服务端保留这些本地配置字段以兼容已有部署，但提交给 EvalScope `TaskConfig` 时会转换为官方推荐的 `sandbox={"enabled": true, "engine": "docker", "manager_config": {...}}` 结构，不再主动透传 legacy 字段。
 
 ### 4. 启动主服务
 

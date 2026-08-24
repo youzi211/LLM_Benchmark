@@ -270,10 +270,11 @@ class EvalScopeIntelligenceExecutor:
                     "EvalScope code-execution benchmarks require sandbox scoring. "
                     "Set sandbox_enabled=true and configure a local or remote sandbox manager."
                 )
-            data["use_sandbox"] = True
-            data["sandbox_type"] = self.config.sandbox_type or "docker"
-            if self.config.sandbox_manager_config:
-                data["sandbox_manager_config"] = dict(self.config.sandbox_manager_config)
+            data["sandbox"] = {
+                "enabled": True,
+                "engine": self.config.sandbox_type or "docker",
+                "manager_config": dict(self.config.sandbox_manager_config or {}),
+            }
         if dataset in LLM_JUDGE_DATASETS and judge_model_args:
             data["judge_strategy"] = "llm"
             data["judge_model_args"] = judge_model_args
