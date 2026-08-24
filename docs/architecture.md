@@ -34,6 +34,7 @@
 
 - 不要把 EvalScope 再包装成独立子服务；当前架构已经收缩为主服务进程内直接调用。
 - 不要把 EvalScope 原始大表硬塞进统一总览；overview 只做摘要和导航。
+- P4 结果边界：`IntelligenceTask` / `StressTask` 的完整 EvalScope 业务结果只归档一次到任务级 `raw_result`，`normalized_result` 只保留页面、总览和摘要所需字段，`raw_output_dir` 只保存原始输出目录指针。
 - 不要把 Judge 密钥放进 `data/evalscope.json`；Judge 的地址和密钥仍来自 `data/models.json` 中的模型配置。
 - 不要在报告中输出自动“上线通过/失败”结论；报告只给事实、风险和建议。
 
@@ -236,14 +237,15 @@ sequenceDiagram
     R->>MS: get(model_id)
     R->>ITS: 保存 pending intel_task_*
     R->>ES: TaskConfig + run_task
-    ES->>R: 数据集 report / report_table
+    ES->>R: 完整业务结果 + outputs_dir
+    R->>R: 任务级归档 raw_result/raw_output_dir
     R->>R: 标准化数据集分数和能力维度汇总
-    R->>IR: 写 Markdown 报告
+    R->>IR: 写摘要 Markdown 和原始结果定位
     R->>ITS: 保存结果和 report_path
     R->>API: 返回 IntelligenceTask
 ```
 
-安全边界：Judge 默认复用 `data/models.json` 顶层 `analysis_model_id` 指向的模型配置，也可用 `judge_model_config_id` 覆盖；`api_key` 仅从模型配置读取并在运行时传给 EvalScope，所有错误、报告、JSON 附录写入前都需要脱敏。
+安全边界：Judge 默认复用 `data/models.json` 顶层 `analysis_model_id` 指向的模型配置，也可用 `judge_model_config_id` 覆盖；`api_key` 仅从模型配置读取并在运行时传给 EvalScope。任务级 `raw_result` 是完整业务归档，不应被当作页面摘要或公共脱敏报告；`normalized_result`、报告和 overview 不嵌入完整原始大表，所有写入 Markdown 的文本仍需脱敏。
 ### 4.6 报告层：`app/reports/`
 
 职责：把任务结果转换为面向人阅读的 Markdown 报告，并可选调用一个报告分析模型生成中文摘要。
@@ -286,8 +288,10 @@ sequenceDiagram
 | EvalScope 可选覆盖配置 | `data/evalscope.json` | `LLM_BENCHMARK_DATA_DIR` | 否，仅覆盖本地目录、Judge 模型配置 ID 或 Judge 运行参数 |
 | 能力评测任务 | `data/intelligence_tasks/*.json` | `LLM_BENCHMARK_DATA_DIR` | 否，运行产物 |
 | 能力评测报告 | `reports/intelligence/YYYY-MM-DD/*.md` | `LLM_BENCHMARK_REPORTS_DIR` | 否，运行产物 |
+| 能力评测 EvalScope 原始输出 | `outputs/evalscope/intelligence/*`（由 `raw_output_dir` 指向） | `data/evalscope.json` 的 `outputs_dir` | 否，运行产物 |
 | 压测任务 | `data/stress_tasks/*.json` | `LLM_BENCHMARK_DATA_DIR` | 否，运行产物 |
 | 压测报告 | `reports/stress/YYYY-MM-DD/*.md` | `LLM_BENCHMARK_REPORTS_DIR` | 否，运行产物 |
+| 压测 EvalScope 原始输出 | `outputs/evalscope/stress/*`（由 `raw_output_dir` 指向） | `data/evalscope.json` 的 `outputs_dir` | 否，运行产物 |
 | 统一总览报告元数据 | `data/overview_reports/*.json` | `LLM_BENCHMARK_DATA_DIR` | 否，运行产物 |
 | 统一总览 Markdown | `reports/overview/YYYY-MM-DD/*.md` | `LLM_BENCHMARK_REPORTS_DIR` | 否，运行产物 |
 | 一键评测 suite | `data/suite_runs/*.json` | `LLM_BENCHMARK_DATA_DIR` | 否，运行产物 |
@@ -345,6 +349,7 @@ EvalScope 原始输出"]
 - 不重新计算 EvalScope 原始指标，不替代 EvalScope 自带表格、日志和可视化。
 - 只读取 `TaskStore`、`IntelligenceTaskStore`、`StressTaskStore` 中已经归档的结果。
 - 只生成“一眼看懂”的状态摘要、关键观测、关注点和三类详情入口。
+- 不把 `raw_result`、完整 `report_table`、原始档位大表或 EvalScope JSON 附录复制进 overview；详情通过各任务结果 API、报告 API 和 `raw_output_dir` 导航。
 - 所有写入 Markdown 的文本仍走脱敏处理。
 
 关键文件：

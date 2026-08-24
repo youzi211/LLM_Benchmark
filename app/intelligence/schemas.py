@@ -59,13 +59,18 @@ class IntelligenceRunRequest(BaseModel):
 
 
 class IntelligenceDatasetResult(BaseModel):
+    """Small dataset-level summary used by the UI and overview reports.
+
+    The complete EvalScope dataset report stays in ``IntelligenceTask.raw_result``
+    and in EvalScope's output directory.  Do not add raw report/metric payloads
+    here: that would make every task persist the same large payload twice.
+    """
+
     dataset: str
     pretty_name: str | None = None
     categories: list[str] = Field(default_factory=list)
     needs_judge: bool | None = None
     score: float | None = None
-    metrics: list[dict[str, Any]] = Field(default_factory=list)
-    raw_report: dict[str, Any] = Field(default_factory=dict)
 
 
 class IntelligenceCategorySummary(BaseModel):
@@ -83,7 +88,6 @@ class IntelligenceNormalizedResult(BaseModel):
     status: str | None = None
     dataset_results: list[IntelligenceDatasetResult] = Field(default_factory=list)
     category_summaries: list[IntelligenceCategorySummary] = Field(default_factory=list)
-    report_table: str | None = None
     error: str | None = None
     created_at: datetime | None = None
     completed_at: datetime | None = None
@@ -108,6 +112,9 @@ class IntelligenceTask(BaseModel):
     report_path: str | None = None
     raw_submit_response: dict[str, Any] | None = None
     raw_status_response: dict[str, Any] | None = None
+    # Complete in-process EvalScope response.  This is the single canonical
+    # business-level archive; normalized_result intentionally remains slim.
     raw_result: dict[str, Any] | None = None
+    raw_output_dir: str | None = None
     normalized_result: IntelligenceNormalizedResult | None = None
     error: dict[str, Any] | None = None

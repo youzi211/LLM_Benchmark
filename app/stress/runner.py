@@ -238,6 +238,7 @@ class StressRunner:
         try:
             raw_result = self.executor.run(task_id=task.task_id, payload=payload)
             task.raw_result = raw_result
+            task.raw_output_dir = raw_result.get("outputs_dir") if isinstance(raw_result.get("outputs_dir"), str) else None
             task.normalized_result = self._normalize(task, raw_result)
             task.status = _coerce_status(raw_result.get("status"), "completed")
             task.completed_at = _parse_dt(raw_result.get("completed_at")) or utc_now()
@@ -367,7 +368,6 @@ class StressRunner:
             summary=raw_result.get("summary") if isinstance(raw_result.get("summary"), dict) else self._summary_from_runs(runs),
             runs=runs,
             errors=[item for item in errors if isinstance(item, dict)],
-            raw_result=raw_result,
         )
 
     def _normalize_run(self, row: dict[str, Any]) -> StressRunResult:
@@ -402,7 +402,6 @@ class StressRunner:
             avg_tpot_ms=first("avg_tpot_ms", "avg_tpot", "tpot_avg"),
             p95_tpot_ms=first("p95_tpot_ms", "p95_tpot", "tpot_p95"),
             p99_tpot_ms=first("p99_tpot_ms", "p99_tpot", "tpot_p99"),
-            raw=row,
         )
 
     def _summary_from_runs(self, runs: list[StressRunResult]) -> dict[str, Any]:

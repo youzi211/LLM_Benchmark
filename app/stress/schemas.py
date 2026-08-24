@@ -86,7 +86,6 @@ class StressRunResult(BaseModel):
     avg_tpot_ms: float | None = None
     p95_tpot_ms: float | None = None
     p99_tpot_ms: float | None = None
-    raw: dict[str, Any] = Field(default_factory=dict)
 
 
 class StressNormalizedResult(BaseModel):
@@ -97,7 +96,6 @@ class StressNormalizedResult(BaseModel):
     summary: dict[str, Any] = Field(default_factory=dict)
     runs: list[StressRunResult] = Field(default_factory=list)
     errors: list[dict[str, Any]] = Field(default_factory=list)
-    raw_result: dict[str, Any] = Field(default_factory=dict)
 
 
 class StressTask(BaseModel):
@@ -120,6 +118,9 @@ class StressTask(BaseModel):
     report_path: str | None = None
     raw_submit_response: dict[str, Any] | None = None
     raw_status_response: dict[str, Any] | None = None
+    # Complete in-process EvalScope response.  This is the single canonical
+    # business-level archive; normalized_result contains only UI summaries.
     raw_result: dict[str, Any] | None = None
+    raw_output_dir: str | None = None
     normalized_result: StressNormalizedResult | None = None
     error: dict[str, Any] | None = None

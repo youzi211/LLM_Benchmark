@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from typing import Any
@@ -19,10 +18,6 @@ def _fmt(value: Any, suffix: str = "") -> str:
     if isinstance(value, float):
         return f"{value:.4f}{suffix}"
     return f"{value}{suffix}"
-
-
-def _json_block(data: Any) -> str:
-    return redact_text(json.dumps(data, ensure_ascii=False, indent=2, default=str))
 
 
 def write_stress_report(task: StressTask, reports_dir: Path | None = None) -> Path:
@@ -49,7 +44,7 @@ def write_stress_report(task: StressTask, reports_dir: Path | None = None) -> Pa
         elif result.runs:
             lines.append("- 未在标准化结果中发现异常记录。")
         else:
-            lines.append("- 未提取到并发档位结果，请查看原始结果附录。")
+            lines.append("- 未提取到并发档位结果，请查看原始结果定位。")
     elif task.status in {"pending", "running"}:
         lines.append("- 任务仍在执行中，暂未生成压测结果。")
     elif task.error:
@@ -123,11 +118,17 @@ def write_stress_report(task: StressTask, reports_dir: Path | None = None) -> Pa
         lines.append("- 未发现标准化异常。")
 
     lines.append("")
-    lines.append("## 5. 原始结果附录（已脱敏）")
+    lines.append("## 5. 原始结果定位")
     lines.append("")
-    lines.append("```json")
-    lines.append(_json_block(result.raw_result if result else (task.raw_result or task.raw_status_response or task.raw_submit_response or {})))
-    lines.append("```")
+    raw_output_dir = task.raw_output_dir
+    if not raw_output_dir and isinstance(task.raw_result, dict):
+        candidate = task.raw_result.get("outputs_dir")
+        if isinstance(candidate, str):
+            raw_output_dir = candidate
+    lines.append("- `normalized_result` 只保留压测摘要、并发档位指标和异常摘要；完整 EvalScope 返回不会重复嵌入本报告。")
+    lines.append(f"- EvalScope 原始输出目录：`{_cell(raw_output_dir or '-')}`")
+    lines.append(f"- 完整任务结果 API：`/api/stress/tasks/{_cell(task.task_id)}/result`（返回任务级 `raw_result` 与 `raw_output_dir`）。")
+    lines.append(f"- 本 Markdown 报告 API：`/api/stress/reports/{_cell(task.task_id)}`。")
     lines.append("")
 
     path.write_text(redact_text("\n".join(lines)), encoding="utf-8")

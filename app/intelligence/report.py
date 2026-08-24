@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 
@@ -10,10 +9,6 @@ from app.reports.markdown import redact_text
 
 def _cell(value) -> str:
     return redact_text(str(value if value is not None else "")).replace("|", r"\|").replace("\r\n", " ").replace("\n", " ")
-
-
-def _json_block(data) -> str:
-    return redact_text(json.dumps(data, ensure_ascii=False, indent=2, default=str))
 
 
 def _score(value: float | None) -> str:
@@ -114,28 +109,17 @@ def write_intelligence_report(task: IntelligenceTask, reports_dir: Path | None =
         lines.append("| - | 0 | 0 | - |")
     lines.append("")
 
-    lines.append("## 5. EvalScope 原始汇总表")
+    lines.append("## 5. 原始结果定位")
     lines.append("")
-    if result and result.report_table:
-        lines.append("```text")
-        lines.append(redact_text(result.report_table))
-        lines.append("```")
-    else:
-        lines.append("暂无。")
-    lines.append("")
-
-    lines.append("## 6. 附录：标准化结果 JSON")
-    lines.append("")
-    lines.append("```json")
-    lines.append(_json_block(result.model_dump(mode="json") if result else {}))
-    lines.append("```")
-    lines.append("")
-
-    lines.append("## 7. 附录：脱敏后的原始结果摘要")
-    lines.append("")
-    lines.append("```json")
-    lines.append(_json_block(task.raw_result or task.raw_status_response or task.raw_submit_response or {}))
-    lines.append("```")
+    raw_output_dir = task.raw_output_dir
+    if not raw_output_dir and isinstance(task.raw_result, dict):
+        candidate = task.raw_result.get("outputs_dir")
+        if isinstance(candidate, str):
+            raw_output_dir = candidate
+    lines.append("- `normalized_result` 只保留页面、总览和摘要报告所需的分数与分类汇总；完整 EvalScope 返回不会重复嵌入本报告。")
+    lines.append(f"- EvalScope 原始输出目录：`{_cell(raw_output_dir or '-')}`")
+    lines.append(f"- 完整任务结果 API：`/api/intelligence/tasks/{_cell(task.task_id)}/result`（返回任务级 `raw_result` 与 `raw_output_dir`）。")
+    lines.append(f"- 本 Markdown 报告 API：`/api/intelligence/reports/{_cell(task.task_id)}`。")
     lines.append("")
 
     path.write_text(redact_text("\n".join(lines)), encoding="utf-8")

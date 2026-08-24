@@ -34,6 +34,10 @@ class EvalScopeStressExecutor:
         # runs 为空、报告档位表和"一眼看懂"全部显示 "-"。这里先递归扁平化为
         # 纯 dict/list，保证持久化与解析一致。
         raw = _to_plain(raw)
+        # EvalScope perf does not include the configured output directory in its
+        # returned summary. Preserve the task-scoped root explicitly so the task
+        # boundary exposes a stable locator without duplicating the full result.
+        raw.setdefault("outputs_dir", data["outputs_dir"])
         raw.setdefault("task_id", task_id)
         raw.setdefault("model", payload.model)
         raw.setdefault("status", "completed")

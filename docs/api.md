@@ -635,7 +635,9 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 | `status` | string | `pending`、`running`、`completed`、`failed`。 |
 | `progress` | string/null | 本地进度文本，例如正在执行哪个数据集。 |
 | `report_path` | string/null | 本地 Markdown 报告路径。 |
-| `normalized_result` | object/null | 标准化后的数据集分数、分类汇总、原始 `report_table` 等。 |
+| `normalized_result` | object/null | 精简标准化结果，只包含数据集分数、能力维度汇总、状态和错误摘要；不嵌入完整 `report_table`、metrics 或原始报告。 |
+| `raw_result` | object/null | 任务级完整 EvalScope 业务结果归档；大字段只保留这一份，详情通过结果 API 获取。 |
+| `raw_output_dir` | string/null | EvalScope 原始输出目录定位；用于排查和获取原始产物。 |
 | `error` | object/null | 脱敏后的任务错误。 |
 
 ### 10.5 提交默认智力评测
@@ -700,13 +702,13 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 
 #### GET `/api/intelligence/tasks/{task_id}/result`
 
-读取本地任务结果。若任务已结束但报告尚未生成，服务会补写 Markdown 报告并返回更新后的 `IntelligenceTask`。
+读取本地任务结果。若任务已结束但报告尚未生成，服务会补写 Markdown 报告并返回更新后的 `IntelligenceTask`。终态任务的完整 EvalScope 业务结果位于任务级 `raw_result`，`raw_output_dir` 提供原始输出目录定位；`normalized_result` 只用于页面、总览和摘要展示。
 
 ### 10.8 下载智力评测报告
 
 #### GET `/api/intelligence/reports/{task_id}`
 
-下载智力评测 Markdown 报告。报告包含“一眼看懂”、任务概览、Judge 状态提示、数据集分数表、能力维度汇总、EvalScope 原始 `report_table` 和脱敏 JSON 附录。
+下载智力评测 Markdown 报告。报告包含“一眼看懂”、任务概览、Judge 状态提示、数据集分数表、能力维度汇总和“原始结果定位”章节；报告不再嵌入完整 `report_table` 或 JSON 附录，详情请通过任务结果 API 和 `raw_output_dir` 获取。
 
 错误：
 
@@ -753,7 +755,9 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 | `evalscope_base_url` | string | 兼容字段；当前固定为 `in-process`。 |
 | `status` | string | `pending`、`running`、`completed`、`failed`。 |
 | `request_config` | object | 已脱敏的压测请求配置，不包含 `api_key`。 |
-| `normalized_result` | object/null | 标准化后的并发档位结果、吞吐、延迟、TTFT/TPOT 和异常摘要。 |
+| `normalized_result` | object/null | 精简标准化结果，只包含并发档位指标、吞吐、延迟、TTFT/TPOT、汇总和异常摘要；不嵌入完整原始结果。 |
+| `raw_result` | object/null | 任务级完整 EvalScope perf 业务结果归档；大字段只保留这一份，详情通过结果 API 获取。 |
+| `raw_output_dir` | string/null | EvalScope 原始输出目录定位；用于排查和获取原始产物。 |
 | `report_path` | string/null | 本地 Markdown 压测报告路径。 |
 | `error` | object/null | 脱敏后的错误。 |
 
@@ -804,11 +808,11 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 
 #### GET `/api/stress/tasks/{task_id}/result`
 
-获取压测结果。若任务已结束但报告尚未生成，服务会补写 Markdown 报告并返回更新后的 `StressTask`。
+获取压测结果。若任务已结束但报告尚未生成，服务会补写 Markdown 报告并返回更新后的 `StressTask`。终态任务的完整 EvalScope perf 业务结果位于任务级 `raw_result`，`raw_output_dir` 提供原始输出目录定位；`normalized_result` 只用于页面、总览和摘要展示。
 
 #### GET `/api/stress/reports/{task_id}`
 
-下载本地 Markdown 压测报告。报告尚未生成或文件不存在时返回 `404 stress_report_not_found`。
+下载本地 Markdown 压测报告。报告包含并发档位摘要、异常摘要和“原始结果定位”章节，不再嵌入完整 EvalScope 原始 JSON；报告尚未生成或文件不存在时返回 `404 stress_report_not_found`。
 
 ## 12. 统一总览报告接口（Overview）
 

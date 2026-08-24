@@ -257,6 +257,7 @@ class IntelligenceRunner:
                 judge_model_args=judge_model_args,
             )
             task.raw_result = raw_result
+            task.raw_output_dir = raw_result.get("outputs_dir") if isinstance(raw_result.get("outputs_dir"), str) else None
             metadata = self._local_dataset_metadata()
             task.normalized_result = self._normalize(task, raw_result, metadata)
             task.status = _coerce_status(raw_result.get("status"), "completed")
@@ -339,8 +340,6 @@ class IntelligenceRunner:
                     categories=[str(item) for item in categories],
                     needs_judge=meta.get("needs_judge"),
                     score=report.get("score") if isinstance(report.get("score"), (int, float)) else None,
-                    metrics=report.get("metrics") if isinstance(report.get("metrics"), list) else [],
-                    raw_report=report,
                 )
             )
         return IntelligenceNormalizedResult(
@@ -351,7 +350,6 @@ class IntelligenceRunner:
             status=raw_result.get("status") or task.status,
             dataset_results=dataset_results,
             category_summaries=self._category_summaries(dataset_results),
-            report_table=raw_result.get("report_table"),
             error=redact_text(str(raw_result.get("error") or raw_result.get("errors"))) if (raw_result.get("error") or raw_result.get("errors")) else None,
             created_at=_parse_dt(raw_result.get("created_at")),
             completed_at=_parse_dt(raw_result.get("completed_at")),
