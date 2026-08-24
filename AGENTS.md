@@ -1,6 +1,8 @@
 # Repository Guidelines
 
-## Codex Fast Context
+> Shared repository policy for coding agents. `AGENTS.md` and `CLAUDE.md` are intentionally kept synchronized; do not maintain divergent project rules in either file.
+
+## Shared Agent Context
 
 This repository is an internal FastAPI service for pre-release LLM gateway benchmarking. It has three evaluation lanes and one orchestration layer:
 

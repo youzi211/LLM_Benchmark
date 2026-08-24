@@ -1,52 +1,93 @@
-# LLM_Benchmark — Claude Instructions
+# Repository Guidelines
 
-This repository is an internal FastAPI service for pre-release LLM gateway benchmarking. `AGENTS.md` is the repository source of truth; follow it in addition to these focused rules.
+> Shared repository policy for coding agents. `AGENTS.md` and `CLAUDE.md` are intentionally kept synchronized; do not maintain divergent project rules in either file.
 
-## Scope and architecture
+## Shared Agent Context
 
-- Gateway smoke checks live under `app/core/` and `app/metrics/`.
-- EvalScope intelligence evaluation lives in `app/intelligence/` and must run in-process.
-- EvalScope throughput/performance evaluation lives in `app/stress/` and must run in-process.
-- One-click and scheduled orchestration lives in `app/suites/`, with overview reports in `app/overview/`.
-- The service collects evidence and reports. It must not automatically decide whether a model is approved for production.
+This repository is an internal FastAPI service for pre-release LLM gateway benchmarking. It has three evaluation lanes and one orchestration layer:
 
-## EvalScope defaults
+1. **Gateway smoke / engineering checks**: `/api/tasks/run`, implemented by `app/core/runner.py` + `app/metrics/probes.py`. These are lightweight OpenAI-compatible API checks and Markdown reports.
+2. **EvalScope intelligence evaluation**: `/api/intelligence/*`, implemented by `app/intelligence/*`. The service imports EvalScope directly in-process; do not reintroduce an EvalScope sidecar service wrapper.
+3. **EvalScope stress/perf testing**: `/api/stress/*`, implemented by `app/stress/*`. This is the formal throughput/latency pressure-test path; `concurrency` and `rate_limit` in `/api/tasks/run` are only compatibility smoke metrics.
+4. **One-click and scheduled evaluation**: `/api/suites/*`, implemented by `app/suites/*`, orchestrates the three lanes and writes an overview report via `app/overview/*`.
 
-- General intelligence evaluation defaults to: `humaneval`, `mbpp`, `humaneval_plus`, `mbpp_plus`, `live_code_bench`, `gsm8k`, `math_500`, `mmlu_pro`, `ceval`, and `bbh`.
-- Scheduled tasks default to `scheduled_light`: `gsm8k`, `math_500`, and `ceval`, with 50 samples per dataset.
-- `scheduled_code` and `full_offline` contain code-execution datasets and require a configured EvalScope sandbox.
-- For reliable comparisons, pass `intelligence_datasets`, `intelligence_limit`, `intelligence_eval_batch_size`, and `intelligence_generation_config` explicitly instead of relying on implicit defaults.
-- A BBH stability run can take about ten minutes even at one sample per subset; use a suite timeout of at least 1200 seconds and inspect the underlying task status before diagnosing a hang.
+Current product boundary: the system collects evidence and reports; it does **not** automatically decide whether a model can go live. Prefer small, direct integrations over extra services or heavy abstractions.
 
-## Result and report boundaries
+## Project Structure & Module Organization
 
-- Keep `normalized_result` limited to UI/overview summaries: status, scores, categories, and safe error summaries.
-- Preserve complete EvalScope output only in the task-level `raw_result` and task-scoped `raw_output_dir`.
-- Markdown and overview reports should provide raw-result location/API pointers, not duplicate full `report_table`, metrics, or JSON payloads.
-- Preserve backward compatibility when reading older task JSON files that contain removed normalized-result fields.
+Source code lives in `app/`:
 
-## Development workflow
+- `app/main.py` and `app/api/`: FastAPI app and public routes.
+- `app/core/`: Pydantic models, plans, registry, and `TaskRunner` orchestration for gateway smoke tasks.
+- `app/adapters/`: OpenAI-compatible protocol adapters for `chat_completions` and `responses`.
+- `app/metrics/`: gateway smoke probe implementations.
+- `app/reports/`: fact pack extraction, LLM report analysis, and Markdown rendering for gateway smoke tasks.
+- `app/intelligence/`: in-process EvalScope model-capability evaluation and reports.
+- `app/stress/`: in-process EvalScope `perf` pressure testing and reports.
+- `app/overview/`: unified overview reports that link gateway, intelligence, and stress outputs.
+- `app/suites/`: one-click suite runs and lightweight scheduled execution.
+- `app/storage/`: local JSON persistence.
+- `app/utils/`: IDs, masking, SSE, timing, and token estimation helpers.
 
-Use `uv` for Python operations:
+Tests are in `tests/`. Local fake upstream assets are in `examples/`. Project documentation is in `docs/`, especially `docs/architecture.md`, `docs/api.md`, and `docs/metric-test-methods.md`.
+
+## P4 EvalScope and Scheduled-Suite Operating Rules
+
+- Keep EvalScope execution **in-process**. Do not add an HTTP sidecar or duplicate the raw EvalScope result into normalized UI/report models.
+- The general intelligence default in `app/intelligence/evalscope_direct.py` is ten datasets: `humaneval`, `mbpp`, `humaneval_plus`, `mbpp_plus`, `live_code_bench`, `gsm8k`, `math_500`, `mmlu_pro`, `ceval`, and `bbh`.
+- Scheduled evaluations default to the `scheduled_light` profile in `app/suites/profiles.py`: `gsm8k`, `math_500`, and `ceval`, with a default limit of 50 samples per dataset. `scheduled_code` and `full_offline` require EvalScope sandbox support.
+- If a scheduled request uses `profile: null` without explicit datasets, the fallback limit is 200; manual quick/default suites use the general default datasets and no sample limit unless one is supplied. Set datasets and limits explicitly when reproducibility matters.
+- Real BBH runs can span roughly ten minutes even with one sample per subset. Use a suite timeout of at least 1200 seconds for that validation, and verify the terminal task status instead of treating an orchestration timeout alone as proof of a hang.
+- Normalized results are intentionally small summaries. Full EvalScope payloads remain at task level (`raw_result`) and point to the task-scoped `raw_output_dir`; reports should link to those locations rather than embed large tables or JSON blobs.
+- Scheduled tasks require a persisted model configuration. Treat `data/models.json` as secret-bearing local state; never commit, paste, or log its API keys.
+## Build, Test, and Development Commands
+
+Use `uv` for all Python environment and dependency operations.
 
 ```powershell
 uv sync
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8020
+uv run uvicorn examples.fake_openai_server:app --host 127.0.0.1 --port 9001
+uv run pytest -q
+```
+
+`uv sync` installs dependencies. The first `uvicorn` command starts the benchmark API and the suite scheduler unless `LLM_BENCHMARK_SCHEDULER_DISABLED=1` is set. The fake upstream server helps verify end-to-end flows without real model credentials. `pytest` runs the full test suite.
+
+For test runs in development, prefer:
+
+```powershell
 $env:LLM_BENCHMARK_SCHEDULER_DISABLED='1'
 uv run pytest -q
 ```
 
-Run the service with the scheduler enabled when validating schedules:
+## Configuration and Runtime Files
+
+- `data/models.json` stores model configs and may contain plaintext upstream API keys. Never commit or paste it.
+- `analysis_model_id` in `data/models.json` is reused as the default built-in EvalScope Judge model.
+- Optional `data/evalscope.json` is intentionally small: use it only for EvalScope dataset/output directories and optional Judge override knobs such as `judge_model_config_id`, `judge_generation_config`, and `judge_worker_num`. Do not store Judge URLs or keys there.
+- Runtime output directories include `data/tasks/`, `data/jobs/`, `data/intelligence_tasks/`, `data/stress_tasks/`, `data/overview_reports/`, `data/suite_runs/`, `data/suite_schedules/`, `reports/`, and `outputs/`.
+
+## Coding Style & Naming Conventions
+
+Use Python 3.11+, 4-space indentation, type hints, and Pydantic models for request/response structures. Keep metric IDs stable and English-like, for example `context_length`; user-facing names and explanations should be Chinese-friendly. Prefer small functions with clear return models such as `MetricResult`, `AdapterResponse`, and `ReportAnalysis`.
+
+When changing EvalScope integration, keep the main service in-process and direct. Validate EvalScope API changes against the installed package or official docs before changing runner code.
+
+## Testing Guidelines
+
+Tests use `pytest` and `pytest-asyncio`. Name files `test_*.py` and keep tests close to the behavior being protected: adapters, registry, probes, reports, API routes, EvalScope direct execution wrappers, suite orchestration, and docs coverage. When changing routes, metrics, report structure, suite behavior, or EvalScope config semantics, update tests and run:
 
 ```powershell
-Remove-Item Env:LLM_BENCHMARK_SCHEDULER_DISABLED -ErrorAction SilentlyContinue
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8020
+$env:LLM_BENCHMARK_SCHEDULER_DISABLED='1'
+uv run pytest -q
 ```
 
-A scheduled task requires a persisted model configuration. The model key is stored in local `data/models.json`; never commit, print, or include it in fixtures, reports, documentation, or chat output.
+## Commit & Pull Request Guidelines
 
-## Git and review rules
+Follow Conventional Commits as used in history, for example `fix: ...`, `docs: ...`, `test: ...`, `refactor: ...`. Stage explicit files only; avoid `git add .` because runtime directories may contain sensitive data. PRs should describe the change, list verification commands, and mention documentation updates when APIs, metrics, architecture, or reports change.
 
-- Use Conventional Commits.
-- Stage explicit paths; never use `git add .` because runtime files may contain credentials or large outputs.
-- Before committing, inspect `git status`, staged paths, `git diff --cached --check`, and scan staged content for secrets.
-- For route, schema, report, EvalScope, or schedule changes, run the full pytest suite with the scheduler disabled and document the command/result.
+## Security & Configuration Tips
+
+Do not commit `data/models.json`, `data/evalscope.json`, `data/tasks/`, `data/jobs/`, `data/intelligence_tasks/`, `data/stress_tasks/`, `data/overview_reports/`, `data/suite_runs/`, `data/suite_schedules/`, `reports/`, `outputs/`, `.env`, or `.venv/`. API responses and reports should remain redacted; never paste secrets into commits, reports, logs, or documentation examples.
+
+Before committing, explicitly inspect staged paths and check for secrets. Dummy test strings are fine, but real `sk-...` or `ark-...` keys are not.
