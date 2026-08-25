@@ -7,14 +7,10 @@ from uuid import uuid4
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
 from app.core.models import ModelConfig, Protocol, utc_now
+from app.evalscope_defaults import DEFAULT_SCHEDULE_PROFILE, DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT
 
 SuiteRunStatus = Literal["queued", "running", "completed", "partial", "failed"]
 SuiteStepStatus = Literal["pending", "running", "completed", "skipped", "failed"]
-
-# 定时智力评测默认每个数据集只取前 N 条样本，避免 live_code_bench 等大体量数据集磨死整条 suite。
-# 手动/quick 评测默认 intelligence_limit=None 不限制；需精确分数时可手动跑全量。
-DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT = 200
-DEFAULT_SCHEDULE_PROFILE = "scheduled_light"
 
 
 def new_suite_id() -> str:

@@ -727,11 +727,11 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |---|---:|---:|---:|---|
 | `model_id` | string | 是 | - | 本系统模型配置 ID。 |
-| `parallel` | integer[]/null | 否 | `[1, 5, 10]` | EvalScope 并发档位。 |
-| `number` | integer[]/null | 否 | `[10, 50, 100]` | 每个并发档位请求数。 |
+| `parallel` | integer[]/null | 否 | `null` | EvalScope 并发档位；为空时采用 `app/evalscope_defaults.py` 中的 `DEFAULT_STRESS_PARALLEL`（当前 `[1, 5, 10, 20]`）。 |
+| `number` | integer[]/null | 否 | `null` | 每个并发档位请求数；为空时采用 `app/evalscope_defaults.py` 中的 `DEFAULT_STRESS_NUMBER`（当前 `[10, 50, 100, 200]`）。 |
 | `rate` | number[]/null | 否 | `null` | 限速档位，传给 EvalScope。 |
-| `dataset` | string/null | 否 | `null` | EvalScope perf 数据集。为空时走 `StressRemoteSubmitPayload` 默认 `longalpaca`。 |
-| `dataset_path` | string/null | 否 | `null` | EvalScope perf 数据集路径。命中 `longalpaca` 等会从 ModelScope 下载的数据集、且 `data/stress_datasets/` 下有同名目录或 `<name>.json` 时自动补齐，使 EvalScope 改为本地加载，避免每次评测联网下载。 |
+| `dataset` | string/null | 否 | `null` | EvalScope perf 数据集；为空时采用 `app/evalscope_defaults.py` 中的 `DEFAULT_STRESS_DATASET`（当前 `longalpaca`）。 |
+| `dataset_path` | string/null | 否 | `null` | EvalScope perf 数据集路径。命中 `longalpaca` 等会从 ModelScope 下载的数据集、且 `data/stress_datasets/` 下有同名目录、`<name>.json` 或 `<name>.jsonl` 时自动补齐，使 EvalScope 改为本地加载，避免每次评测联网下载。 |
 | `dataset_args` | object/null | 否 | `{}` | 数据集参数，例如自定义 prompt 文件。 |
 | `min_prompt_length` / `max_prompt_length` | integer/null | 否 | `0` / `131072` | prompt 长度过滤范围，对齐 EvalScope 官方默认。`tokenizer_path` 为空时按字符长度过滤；`max_prompt_length=131072` 超出即丢弃。 |
 | `min_tokens` / `max_tokens` | integer/null | 否 | `512` | 输出 token 范围。 |
@@ -790,7 +790,7 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 }
 ```
 
-> 不传 `dataset` 时默认使用 `longalpaca`（已离线落盘到 `data/stress_datasets/longalpaca.json`，runner 自动补齐 `dataset_path` 指向本地文件），并采用 EvalScope 官方默认的长度过滤（`min_prompt_length=0`、`max_prompt_length=131072`、`tokenizer_path=null`）。如需按 token 长度随机生成 prompt，显式传 `"dataset": "random"` 并设置 `min_prompt_length` / `max_prompt_length` / `tokenizer_path`。
+> 不传 `dataset` 时使用 `app/evalscope_defaults.py` 中的 `DEFAULT_STRESS_DATASET`（当前为 `longalpaca`；若已离线落盘到 `data/stress_datasets/longalpaca.json` 或 `.jsonl`，runner 自动补齐 `dataset_path` 指向本地文件），并采用 EvalScope 官方默认的长度过滤（`min_prompt_length=0`、`max_prompt_length=131072`、`tokenizer_path=null`）。如需按 token 长度随机生成 prompt，显式传 `"dataset": "random"` 并设置 `min_prompt_length` / `max_prompt_length` / `tokenizer_path`。
 
 成功响应：`200 OK`，返回 `StressTask`。模型不存在返回 `404 model_not_found`；模型禁用返回 `400 model_disabled`；参数错误返回 `400 invalid_stress_task_request`。
 
@@ -907,7 +907,7 @@ Job 状态包括 `queued`、`running`、`completed`、`failed`、`interrupted`�
 | `scheduled_code` | 代码能力定时评测；默认数据集为 `humaneval`、`mbpp`。 | 是 |
 | `full_offline` | 人工触发的较完整离线 profile，包含代码类和非代码类数据集。 | 是 |
 
-如果需要自定义，可在本地 `data/evalscope_profiles.json` 中增加同名或新 profile。该文件属于运行配置，不应提交 Git。
+如果需要自定义，可在本地 `data/evalscope_profiles.json` 中增加同名或新 profile。该文件属于运行配置，不应提交 Git。内置 profile 的数据集组合和压测默认值统一维护在 `app/evalscope_defaults.py`，避免修改默认数据集时散落到 runner、profile 和测试中。
 
 Suites 是“一键评测模型并出报告”的编排层。它复用已有三类能力，执行顺序为：先执行网关接入验收 smoke，再提交 EvalScope 压测，最后提交 EvalScope 能力评测，全部完成后自动生成统一总览报告（总览章节顺序与之保持一致：网关 → 压测 → 能力评测）。先跑压测是为了在长时能力评测之前先拿到性能数据，避免能力评测卡死整条 suite 时丢失性能结果。Suites 不新增评测指标，也不重造 EvalScope 可视化，只负责串联、等待终态、归档 suite 状态和生成 overview 入口。已有模型配置时使用 `POST /api/suites/default`；临时外部模型可使用 `POST /api/suites/quick` 直接传 `url`、`key`、`model`。
 
@@ -1107,7 +1107,7 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 | `stress_options` | object | `{}` | 更完整的压测参数。 |
 | `run_gateway` / `run_intelligence` / `run_stress` | boolean | `true` | 触发时是否执行对应阶段。 |
 | `gateway_plan_id` / `gateway_metric_ids` | string / string[]/null | `gateway_acceptance_v1` / `null` | 网关验收计划与指标。 |
-| `intelligence_datasets` | string[]/null | profile 决定 | 能力评测数据集列表。`scheduled_light` 默认为 `gsm8k`、`math_500`、`ceval`，不包含代码执行类数据集。 |
+| `intelligence_datasets` | string[]/null | profile 决定 | 能力评测数据集列表。默认由 profile 决定，内置组合维护在 `app/evalscope_defaults.py`；`scheduled_light` 不包含代码执行类数据集。 |
 | `intelligence_limit` | integer/null | profile 决定 | 能力评测每个数据集取前 N 条样本截断。`scheduled_light` 默认为 `50`；不使用 profile 且未显式传值时回退为 `200`（对应常量 `DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`）。手动 `POST /api/suites/default` 不受此默认值约束。 |
 | `intelligence_eval_batch_size` / `intelligence_generation_config` | integer/null / object/null | profile 决定 | profile 或请求可指定能力评测并发与生成参数，最终透传给 EvalScope。 |
 | `poll_interval_seconds` / `timeout_seconds` | number/null | `null` | suite 内部等待 EvalScope 子任务终态的轮询间隔与超时。定时调度器自身始终异步投递，不会因该字段阻塞。 |

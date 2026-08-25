@@ -1,3 +1,8 @@
+from app.evalscope_defaults import (
+    DEFAULT_STRESS_DATASET,
+    DEFAULT_STRESS_MAX_PROMPT_LENGTH,
+    DEFAULT_STRESS_MIN_PROMPT_LENGTH,
+)
 from app.stress.runner import StressRunner
 from app.stress.schemas import StressRemoteSubmitPayload, StressTask
 
@@ -37,11 +42,11 @@ def test_stress_payload_schema_remains_evalscope_arguments_friendly():
     # 默认数据集已切到 longalpaca（本地离线复用），并按 EvalScope 官方默认放宽长度过滤：
     # min_prompt_length=0、max_prompt_length=131072、tokenizer_path=None，避免 1024 token
     # 过滤把长文本语料全部丢弃。
-    assert data["dataset"] == "longalpaca"
+    assert data["dataset"] == DEFAULT_STRESS_DATASET
     assert "dataset_path" in data
     assert data["dataset_path"] is None
-    assert data["min_prompt_length"] == 0
-    assert data["max_prompt_length"] == 131072
+    assert data["min_prompt_length"] == DEFAULT_STRESS_MIN_PROMPT_LENGTH
+    assert data["max_prompt_length"] == DEFAULT_STRESS_MAX_PROMPT_LENGTH
     assert data["tokenizer_path"] is None
     assert data["parallel"]
     assert data["number"]

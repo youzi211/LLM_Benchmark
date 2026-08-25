@@ -6,6 +6,18 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.models import utc_now
+from app.evalscope_defaults import (
+    DEFAULT_STRESS_DATASET,
+    DEFAULT_STRESS_MAX_PROMPT_LENGTH,
+    DEFAULT_STRESS_MAX_TOKENS,
+    DEFAULT_STRESS_MIN_PROMPT_LENGTH,
+    DEFAULT_STRESS_MIN_TOKENS,
+    DEFAULT_STRESS_NUMBER,
+    DEFAULT_STRESS_PARALLEL,
+    DEFAULT_STRESS_PREFIX_LENGTH,
+    DEFAULT_STRESS_RATE,
+    DEFAULT_STRESS_STREAM,
+)
 
 StressTaskStatus = Literal["pending", "running", "completed", "failed"]
 
@@ -37,22 +49,22 @@ class StressRemoteSubmitPayload(BaseModel):
     url: str
     api_key: str = "EMPTY"
     api: str = "openai"
-    parallel: list[int] = Field(default_factory=lambda: [1, 5, 10, 20])
-    number: list[int] = Field(default_factory=lambda: [10, 50, 100, 200])
-    dataset: str = "longalpaca"
+    parallel: list[int] = Field(default_factory=lambda: list(DEFAULT_STRESS_PARALLEL))
+    number: list[int] = Field(default_factory=lambda: list(DEFAULT_STRESS_NUMBER))
+    dataset: str = DEFAULT_STRESS_DATASET
     dataset_path: str | None = None
-    stream: bool = True
+    stream: bool = DEFAULT_STRESS_STREAM
     # 长度与 tokenizer 默认值对齐 EvalScope 官方默认（见 parameters 文档 Prompt 设置）：
     # min_prompt_length=0、max_prompt_length=131072、tokenizer_path=None。
     # tokenizer_path=None 时 EvalScope 按字符长度过滤，正好适配 longalpaca 这类
     # 真实长文本语料；原先 1024 token + Qwen tokenizer 的过滤会把长文本几乎全部丢弃。
-    min_prompt_length: int = Field(default=0, ge=0)
-    max_prompt_length: int = Field(default=131072, ge=1)
-    min_tokens: int = Field(default=512, ge=1)
-    max_tokens: int = Field(default=512, ge=1)
-    rate: float = -1
+    min_prompt_length: int = Field(default=DEFAULT_STRESS_MIN_PROMPT_LENGTH, ge=0)
+    max_prompt_length: int = Field(default=DEFAULT_STRESS_MAX_PROMPT_LENGTH, ge=1)
+    min_tokens: int = Field(default=DEFAULT_STRESS_MIN_TOKENS, ge=1)
+    max_tokens: int = Field(default=DEFAULT_STRESS_MAX_TOKENS, ge=1)
+    rate: float = DEFAULT_STRESS_RATE
     tokenizer_path: str | None = None
-    prefix_length: int = Field(default=0, ge=0)
+    prefix_length: int = Field(default=DEFAULT_STRESS_PREFIX_LENGTH, ge=0)
     dataset_args: dict[str, Any] = Field(default_factory=dict)
     extra_args: dict[str, Any] = Field(default_factory=dict)
 

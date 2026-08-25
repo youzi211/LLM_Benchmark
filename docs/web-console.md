@@ -90,4 +90,4 @@
 
 ## 5. 定时评测 profile
 
-Web 控制台创建定时计划时默认传 `profile=scheduled_light`，避免默认执行 HumanEval/MBPP/LiveCodeBench 等依赖 sandbox 的代码类数据集。需要代码能力定时评测时可选择 `scheduled_code`，但服务端必须已在 `data/evalscope.json` 中启用 sandbox。
+Web 控制台创建定时计划时默认传 `profile=scheduled_light`，避免默认执行 HumanEval/MBPP/LiveCodeBench 等依赖 sandbox 的代码类数据集；内置 profile 数据集组合统一维护在 `app/evalscope_defaults.py`。需要代码能力定时评测时可选择 `scheduled_code`，但服务端必须已在 `data/evalscope.json` 中启用 sandbox。

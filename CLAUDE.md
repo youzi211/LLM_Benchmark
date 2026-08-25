@@ -34,8 +34,8 @@ Tests are in `tests/`. Local fake upstream assets are in `examples/`. Project do
 ## P4 EvalScope and Scheduled-Suite Operating Rules
 
 - Keep EvalScope execution **in-process**. Do not add an HTTP sidecar or duplicate the raw EvalScope result into normalized UI/report models.
-- The general intelligence default in `app/intelligence/evalscope_direct.py` is ten datasets: `humaneval`, `mbpp`, `humaneval_plus`, `mbpp_plus`, `live_code_bench`, `gsm8k`, `math_500`, `mmlu_pro`, `ceval`, and `bbh`.
-- Scheduled evaluations default to the `scheduled_light` profile in `app/suites/profiles.py`: `gsm8k`, `math_500`, and `ceval`, with a default limit of 50 samples per dataset. `scheduled_code` and `full_offline` require EvalScope sandbox support.
+- EvalScope dataset defaults, groups, metadata, and stress defaults are centralized in `app/evalscope_defaults.py`; use that file as the source of truth for exact current built-in dataset choices, profile limits, and stress defaults. Change built-in dataset choices there first, then update docs only when user-facing behavior changes.
+- Scheduled evaluations default to the `scheduled_light` profile. `scheduled_code` and `full_offline` require EvalScope sandbox support.
 - If a scheduled request uses `profile: null` without explicit datasets, the fallback limit is 200; manual quick/default suites use the general default datasets and no sample limit unless one is supplied. Set datasets and limits explicitly when reproducibility matters.
 - Real BBH runs can span roughly ten minutes even with one sample per subset. Use a suite timeout of at least 1200 seconds for that validation, and verify the terminal task status instead of treating an orchestration timeout alone as proof of a hang.
 - Normalized results are intentionally small summaries. Full EvalScope payloads remain at task level (`raw_result`) and point to the task-scoped `raw_output_dir`; reports should link to those locations rather than embed large tables or JSON blobs.

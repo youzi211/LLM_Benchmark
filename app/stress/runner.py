@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from app.core.models import ModelConfig, utc_now
+from app.evalscope_defaults import DEFAULT_STRESS_DATASET, LOCAL_RESOLVABLE_STRESS_DATASETS
 from app.intelligence.config_store import EvalScopeConfigStore
 from app.jobs.executor import get_job_executor
 from app.reports.markdown import redact_text
@@ -47,22 +48,10 @@ ALLOWED_OPTION_KEYS: tuple[str, ...] = (
 )
 
 # 已知会从 ModelScope 下载的真实语料数据集。当 dataset 命中且 data/stress_datasets
-# 下存在同名顶层目录或 .json 文件时，自动补 dataset_path，EvalScope 的 load_hub_dataset
+# 下存在同名顶层目录、.json 或 .jsonl 文件时，自动补 dataset_path，EvalScope 的 load_hub_dataset
 # 会据此改为 local 加载（"from local" 而非 "from modelscope"），实现一次下载、永久离线复用。
 # random / speed_benchmark 等不下载的内置数据集不在其中。
-LOCAL_RESOLVABLE_DATASETS = frozenset(
-    {
-        "longalpaca",
-        "openqa",
-        "share_gpt_zh",
-        "share_gpt_en",
-        "share_gpt_zh_multi_turn",
-        "share_gpt_en_multi_turn",
-        "flickr8k",
-        "kontext_bench",
-        "swe_smith",
-    }
-)
+LOCAL_RESOLVABLE_DATASETS = LOCAL_RESOLVABLE_STRESS_DATASETS
 
 TERMINAL_STATUSES = {"completed", "failed"}
 ALLOWED_STATUSES = {"pending", "running", "completed", "failed"}
@@ -286,7 +275,7 @@ class StressRunner:
         if user_path:
             return user_path
 
-        dataset = getattr(options, "dataset", None)
+        dataset = getattr(options, "dataset", None) or DEFAULT_STRESS_DATASET
         if dataset not in LOCAL_RESOLVABLE_DATASETS:
             return None
         if not STRESS_DATASETS_DIR.exists():

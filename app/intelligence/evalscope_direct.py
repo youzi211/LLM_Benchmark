@@ -5,66 +5,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from app.evalscope_defaults import (
+    CODE_EXECUTION_DATASETS,
+    DATASET_METADATA,
+    DEFAULT_EVAL_BATCH_SIZE,
+    DEFAULT_GENERATION_CONFIG,
+    DEFAULT_INTELLIGENCE_DATASETS,
+    LLM_JUDGE_DATASETS,
+)
 from app.intelligence.schemas import EvalScopeConfig
 from app.reports.markdown import redact_text
 
-DEFAULT_DATASETS = [
-    "humaneval",
-    "mbpp",
-    "humaneval_plus",
-    "mbpp_plus",
-    "live_code_bench",
-    "gsm8k",
-    "math_500",
-    "mmlu_pro",
-    "ceval",
-    "bbh",
-]
-DEFAULT_EVAL_BATCH_SIZE = 10
-DEFAULT_GENERATION_CONFIG = {"temperature": 0.0, "max_tokens": 8192}
-
-LLM_JUDGE_DATASETS = {
-    "simple_qa",
-    "chinese_simpleqa",
-    "truthful_qa",
-    "alpaca_eval",
-    "arena_hard",
-    "general_qa",
-    "general_vqa",
-    "halu_eval",
-    "halueval",
-    "longbench_v2",
-}
-
-CODE_EXECUTION_DATASETS = {
-    "humaneval",
-    "humaneval_plus",
-    "mbpp",
-    "mbpp_plus",
-    "live_code_bench",
-}
-
-_DATASET_META: dict[str, dict[str, Any]] = {
-    "humaneval": {"pretty_name": "HumanEval", "description": "代码生成评测", "categories": ["Code"], "needs_judge": False},
-    "humaneval_plus": {"pretty_name": "HumanEval+", "description": "HumanEval 增强版", "categories": ["Code"], "needs_judge": False},
-    "mbpp": {"pretty_name": "MBPP", "description": "基础编程题评测", "categories": ["Code"], "needs_judge": False},
-    "mbpp_plus": {"pretty_name": "MBPP+", "description": "MBPP 增强版", "categories": ["Code"], "needs_judge": False},
-    "live_code_bench": {"pretty_name": "LiveCodeBench", "description": "实时代码评测", "categories": ["Code"], "needs_judge": False},
-    "gsm8k": {"pretty_name": "GSM8K", "description": "小学数学多步推理", "categories": ["Math", "Reasoning"], "needs_judge": False},
-    "math_500": {"pretty_name": "MATH-500", "description": "数学竞赛题", "categories": ["Math", "Reasoning"], "needs_judge": False},
-    "mmlu_pro": {"pretty_name": "MMLU-Pro", "description": "综合知识增强评测", "categories": ["Knowledge"], "needs_judge": False},
-    "ceval": {"pretty_name": "C-Eval", "description": "中文综合能力评测", "categories": ["Knowledge", "Chinese"], "needs_judge": False},
-    "bbh": {"pretty_name": "BBH", "description": "Big-Bench Hard 复杂推理", "categories": ["Reasoning"], "needs_judge": False},
-    "mmlu": {"pretty_name": "MMLU", "description": "大规模多任务语言理解", "categories": ["Knowledge"], "needs_judge": False},
-    "cmmlu": {"pretty_name": "CMMLU", "description": "中文多任务理解", "categories": ["Knowledge", "Chinese"], "needs_judge": False},
-    "ifeval": {"pretty_name": "IFEval", "description": "指令遵循评测", "categories": ["Instruction"], "needs_judge": False},
-    "simple_qa": {"pretty_name": "SimpleQA", "description": "事实问答，需要 LLM Judge", "categories": ["QA", "Knowledge"], "needs_judge": True},
-    "chinese_simpleqa": {"pretty_name": "Chinese SimpleQA", "description": "中文事实问答，需要 LLM Judge", "categories": ["QA", "Knowledge", "Chinese"], "needs_judge": True},
-    "truthful_qa": {"pretty_name": "TruthfulQA", "description": "真实性评测", "categories": ["QA", "Truthfulness"], "needs_judge": True},
-    "alpaca_eval": {"pretty_name": "AlpacaEval", "description": "指令遵循，需要 LLM Judge", "categories": ["Instruction"], "needs_judge": True},
-    "arena_hard": {"pretty_name": "Arena-Hard", "description": "对话质量，需要 LLM Judge", "categories": ["Instruction"], "needs_judge": True},
-    "longbench_v2": {"pretty_name": "LongBench v2", "description": "长上下文评测", "categories": ["Long Context"], "needs_judge": True},
-}
+DEFAULT_DATASETS = list(DEFAULT_INTELLIGENCE_DATASETS)
+_DATASET_META: dict[str, dict[str, Any]] = {name: dict(meta) for name, meta in DATASET_METADATA.items()}
 
 
 class EvalScopeDirectError(RuntimeError):

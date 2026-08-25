@@ -373,7 +373,7 @@ Suite 层解决“一个模型 ID 自动完成整套评测并出最终总览报�
 - `POST /api/suites/default` 创建 suite；后台模式立即返回 `suite_id`，同步模式等待完成后返回。
 - suite 顺序执行：网关接入验收 -> EvalScope 压测 -> EvalScope 能力评测 -> overview 总览报告。
   先跑压测拿到性能数据，再跑智力评测，避免长时智力评测卡死整条 suite 而拿不到性能结果。
-- 智力评测默认每个数据集取前 N 条样本：定时评测默认使用 `scheduled_light` profile，能力数据集为 `gsm8k`、`math_500`、`ceval`，默认 `intelligence_limit=50`；不使用 profile 且未显式指定 `intelligence_limit` 时回退到 `200`（常量 `DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`），避免 `live_code_bench` 等大体量数据集磨死整条 suite；手动 `/api/suites/default` 与 `/api/suites/quick` 默认 `intelligence_limit=None` 不限制，需精确分数时跑全量。`limit` 在数据集加载阶段截断，仍会产出并上报分数，只是统计基数变小。
+- 智力评测默认每个数据集取前 N 条样本：定时评测默认使用 `scheduled_light` profile；不使用 profile 且未显式指定 `intelligence_limit` 时回退到 `DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`，避免 `live_code_bench` 等大体量数据集磨死整条 suite；手动 `/api/suites/default` 与 `/api/suites/quick` 默认 `intelligence_limit=None` 不限制，需精确分数时跑全量。`limit` 在数据集加载阶段截断，仍会产出并上报分数，只是统计基数变小。内置数据集组合与压测默认值统一维护在 `app/evalscope_defaults.py`，避免改默认数据集时同时改 runner、profile 和多处测试。
 - 子任务失败时尽量继续生成 overview；suite 可能进入 `partial`，便于报告中展示缺失模块和错误。
 - `POST /api/suites/schedules` 保存本地定时计划，主服务启动后轻量轮询器按 `next_run_at` 自动触发。
 - 定时计划支持 `run_once=true` + `run_date`/`next_run_at` 的“一次性”计划，触发后自动 `enabled=false`；默认为按 `interval_days` 重复。
@@ -383,7 +383,8 @@ Suite 层解决“一个模型 ID 自动完成整套评测并出最终总览报�
 
 | 文件 | 职责 |
 |---|---|
-| `app/suites/schemas.py` | `SuiteDefaultRunRequest`、`SuiteRun`、`SuiteSchedule` 等数据结构；定时 profile 字段、能力评测数据集/并发/生成参数字段与默认上限常量。 |
+| `app/evalscope_defaults.py` | EvalScope 数据集、数据集分组、默认能力评测组合、默认压测数据集/档位等单一配置源。 |
+| `app/suites/schemas.py` | `SuiteDefaultRunRequest`、`SuiteRun`、`SuiteSchedule` 等数据结构；定时 profile 字段、能力评测数据集/并发/生成参数字段。 |
 | `app/suites/profiles.py` | 内置 `scheduled_light`、`scheduled_code`、`full_offline` profiles，并支持从 `data/evalscope_profiles.json` 覆盖或扩展。 |
 | `app/suites/runner.py` | 串联三类 runner，等待 EvalScope 终态，生成 overview。 |
 | `app/suites/store.py` | 本地 JSON 存储 suite 和 schedule。 |

@@ -6,12 +6,33 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.evalscope_defaults import (
+    CODE_EXECUTION_DATASETS,
+    DEFAULT_SCHEDULE_PROFILE,
+    DEFAULT_STRESS_DATASET,
+    DEFAULT_STRESS_MAX_PROMPT_LENGTH,
+    DEFAULT_STRESS_MIN_PROMPT_LENGTH,
+    DEFAULT_STRESS_PREFIX_LENGTH,
+    DEFAULT_STRESS_STREAM,
+    FULL_OFFLINE_INTELLIGENCE_DATASETS,
+    FULL_OFFLINE_INTELLIGENCE_EVAL_BATCH_SIZE,
+    FULL_OFFLINE_STRESS_NUMBER,
+    FULL_OFFLINE_STRESS_PARALLEL,
+    SCHEDULED_CODE_INTELLIGENCE_DATASETS,
+    SCHEDULED_CODE_INTELLIGENCE_EVAL_BATCH_SIZE,
+    SCHEDULED_CODE_INTELLIGENCE_LIMIT,
+    SCHEDULED_LIGHT_INTELLIGENCE_DATASETS,
+    SCHEDULED_LIGHT_INTELLIGENCE_EVAL_BATCH_SIZE,
+    SCHEDULED_LIGHT_INTELLIGENCE_LIMIT,
+    SCHEDULED_LIGHT_STRESS_EXTRA_ARGS,
+    SCHEDULED_LIGHT_STRESS_MAX_TOKENS,
+    SCHEDULED_LIGHT_STRESS_MIN_TOKENS,
+    SCHEDULED_LIGHT_STRESS_NUMBER,
+    SCHEDULED_LIGHT_STRESS_PARALLEL,
+)
 from app.intelligence.config_store import EvalScopeConfigStore
 from app.storage.file_utils import read_json_file
 from app.suites.schemas import SuiteScheduleCreate, SuiteStressOptions
-
-DEFAULT_SCHEDULE_PROFILE = "scheduled_light"
-CODE_EXECUTION_DATASETS = {"humaneval", "humaneval_plus", "mbpp", "mbpp_plus", "live_code_bench"}
 
 
 class EvalScopeProfile(BaseModel):
@@ -49,20 +70,20 @@ BUILTIN_PROFILES: dict[str, EvalScopeProfile] = {
         run_gateway=True,
         run_intelligence=True,
         run_stress=True,
-        intelligence_datasets=["gsm8k", "math_500", "ceval"],
-        intelligence_limit=50,
-        intelligence_eval_batch_size=5,
+        intelligence_datasets=list(SCHEDULED_LIGHT_INTELLIGENCE_DATASETS),
+        intelligence_limit=SCHEDULED_LIGHT_INTELLIGENCE_LIMIT,
+        intelligence_eval_batch_size=SCHEDULED_LIGHT_INTELLIGENCE_EVAL_BATCH_SIZE,
         stress_options=SuiteStressOptions(
-            dataset="longalpaca",
-            parallel=[1, 2, 5],
-            number=[10, 20, 50],
-            stream=True,
-            min_prompt_length=0,
-            max_prompt_length=131072,
-            min_tokens=128,
-            max_tokens=128,
-            prefix_length=0,
-            extra_args={"ignore_eos": True},
+            dataset=DEFAULT_STRESS_DATASET,
+            parallel=list(SCHEDULED_LIGHT_STRESS_PARALLEL),
+            number=list(SCHEDULED_LIGHT_STRESS_NUMBER),
+            stream=DEFAULT_STRESS_STREAM,
+            min_prompt_length=DEFAULT_STRESS_MIN_PROMPT_LENGTH,
+            max_prompt_length=DEFAULT_STRESS_MAX_PROMPT_LENGTH,
+            min_tokens=SCHEDULED_LIGHT_STRESS_MIN_TOKENS,
+            max_tokens=SCHEDULED_LIGHT_STRESS_MAX_TOKENS,
+            prefix_length=DEFAULT_STRESS_PREFIX_LENGTH,
+            extra_args=dict(SCHEDULED_LIGHT_STRESS_EXTRA_ARGS),
         ),
     ),
     "scheduled_code": EvalScopeProfile(
@@ -73,9 +94,9 @@ BUILTIN_PROFILES: dict[str, EvalScopeProfile] = {
         run_gateway=False,
         run_intelligence=True,
         run_stress=False,
-        intelligence_datasets=["humaneval", "mbpp"],
-        intelligence_limit=20,
-        intelligence_eval_batch_size=2,
+        intelligence_datasets=list(SCHEDULED_CODE_INTELLIGENCE_DATASETS),
+        intelligence_limit=SCHEDULED_CODE_INTELLIGENCE_LIMIT,
+        intelligence_eval_batch_size=SCHEDULED_CODE_INTELLIGENCE_EVAL_BATCH_SIZE,
     ),
     "full_offline": EvalScopeProfile(
         profile_id="full_offline",
@@ -85,21 +106,15 @@ BUILTIN_PROFILES: dict[str, EvalScopeProfile] = {
         run_gateway=True,
         run_intelligence=True,
         run_stress=True,
-        intelligence_datasets=[
-            "humaneval",
-            "mbpp",
-            "humaneval_plus",
-            "mbpp_plus",
-            "live_code_bench",
-            "gsm8k",
-            "math_500",
-            "mmlu_pro",
-            "ceval",
-            "bbh",
-        ],
+        intelligence_datasets=list(FULL_OFFLINE_INTELLIGENCE_DATASETS),
         intelligence_limit=None,
-        intelligence_eval_batch_size=5,
-        stress_options=SuiteStressOptions(dataset="longalpaca", parallel=[1, 5], number=[10, 50], stream=True),
+        intelligence_eval_batch_size=FULL_OFFLINE_INTELLIGENCE_EVAL_BATCH_SIZE,
+        stress_options=SuiteStressOptions(
+            dataset=DEFAULT_STRESS_DATASET,
+            parallel=list(FULL_OFFLINE_STRESS_PARALLEL),
+            number=list(FULL_OFFLINE_STRESS_NUMBER),
+            stream=DEFAULT_STRESS_STREAM,
+        ),
     ),
 }
 

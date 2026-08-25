@@ -3,6 +3,17 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from app.api import routes_suites
+from app.evalscope_defaults import (
+    DEFAULT_SCHEDULE_PROFILE,
+    DEFAULT_STRESS_DATASET,
+    SCHEDULED_CODE_INTELLIGENCE_DATASETS,
+    SCHEDULED_CODE_INTELLIGENCE_LIMIT,
+    SCHEDULED_LIGHT_INTELLIGENCE_DATASETS,
+    SCHEDULED_LIGHT_INTELLIGENCE_EVAL_BATCH_SIZE,
+    SCHEDULED_LIGHT_INTELLIGENCE_LIMIT,
+    SCHEDULED_LIGHT_STRESS_NUMBER,
+    SCHEDULED_LIGHT_STRESS_PARALLEL,
+)
 from app.main import app
 from app.suites.schemas import SuiteDefaultRunRequest, SuiteRun
 from app.suites.store import SuiteRunStore
@@ -23,8 +34,8 @@ def test_evalscope_profiles_route_lists_builtin_profiles(temp_data_dirs, monkeyp
     scheduled_light = next(item for item in profiles if item["profile_id"] == "scheduled_light")
     assert scheduled_light["requires_sandbox"] is False
     assert scheduled_light["run_intelligence"] is True
-    assert scheduled_light["intelligence_datasets"] == ["gsm8k", "math_500", "ceval"]
-    assert scheduled_light["stress_options"]["dataset"] == "longalpaca"
+    assert scheduled_light["intelligence_datasets"] == list(SCHEDULED_LIGHT_INTELLIGENCE_DATASETS)
+    assert scheduled_light["stress_options"]["dataset"] == DEFAULT_STRESS_DATASET
 
 
 def test_suite_schedule_uses_scheduled_light_profile_by_default(temp_data_dirs, monkeypatch):
@@ -43,16 +54,16 @@ def test_suite_schedule_uses_scheduled_light_profile_by_default(temp_data_dirs, 
 
     assert response.status_code == 200, response.text
     schedule = response.json()
-    assert schedule["profile"] == "scheduled_light"
+    assert schedule["profile"] == DEFAULT_SCHEDULE_PROFILE
     assert schedule["request"]["run_gateway"] is True
     assert schedule["request"]["run_intelligence"] is True
     assert schedule["request"]["run_stress"] is True
-    assert schedule["request"]["intelligence_datasets"] == ["gsm8k", "math_500", "ceval"]
-    assert schedule["request"]["intelligence_limit"] == 50
-    assert schedule["request"]["intelligence_eval_batch_size"] == 5
-    assert schedule["request"]["stress_options"]["dataset"] == "longalpaca"
-    assert schedule["request"]["stress_options"]["parallel"] == [1, 2, 5]
-    assert schedule["request"]["stress_options"]["number"] == [10, 20, 50]
+    assert schedule["request"]["intelligence_datasets"] == list(SCHEDULED_LIGHT_INTELLIGENCE_DATASETS)
+    assert schedule["request"]["intelligence_limit"] == SCHEDULED_LIGHT_INTELLIGENCE_LIMIT
+    assert schedule["request"]["intelligence_eval_batch_size"] == SCHEDULED_LIGHT_INTELLIGENCE_EVAL_BATCH_SIZE
+    assert schedule["request"]["stress_options"]["dataset"] == DEFAULT_STRESS_DATASET
+    assert schedule["request"]["stress_options"]["parallel"] == list(SCHEDULED_LIGHT_STRESS_PARALLEL)
+    assert schedule["request"]["stress_options"]["number"] == list(SCHEDULED_LIGHT_STRESS_NUMBER)
 
 
 def test_suite_schedule_explicit_fields_override_profile_defaults(temp_data_dirs, monkeypatch):
@@ -68,18 +79,18 @@ def test_suite_schedule_explicit_fields_override_profile_defaults(temp_data_dirs
             "run_stress": False,
             "intelligence_datasets": ["bbh"],
             "intelligence_limit": 7,
-            "stress_options": {"dataset": "longalpaca"},
+            "stress_options": {"dataset": "random"},
         },
     )
 
     assert response.status_code == 200, response.text
     schedule = response.json()
-    assert schedule["profile"] == "scheduled_light"
+    assert schedule["profile"] == DEFAULT_SCHEDULE_PROFILE
     assert schedule["request"]["run_stress"] is False
     assert schedule["request"]["intelligence_datasets"] == ["bbh"]
     assert schedule["request"]["intelligence_limit"] == 7
-    assert schedule["request"]["stress_options"]["dataset"] == "longalpaca"
-    assert schedule["request"]["stress_options"]["parallel"] == [1, 2, 5]
+    assert schedule["request"]["stress_options"]["dataset"] == "random"
+    assert schedule["request"]["stress_options"]["parallel"] == list(SCHEDULED_LIGHT_STRESS_PARALLEL)
 
 
 def test_suite_schedule_code_profile_requires_sandbox(temp_data_dirs, monkeypatch):
@@ -126,8 +137,8 @@ def test_suite_schedule_code_profile_allowed_when_sandbox_enabled(temp_data_dirs
     assert schedule["request"]["run_gateway"] is False
     assert schedule["request"]["run_stress"] is False
     assert schedule["request"]["run_intelligence"] is True
-    assert schedule["request"]["intelligence_datasets"] == ["humaneval", "mbpp"]
-    assert schedule["request"]["intelligence_limit"] == 20
+    assert schedule["request"]["intelligence_datasets"] == list(SCHEDULED_CODE_INTELLIGENCE_DATASETS)
+    assert schedule["request"]["intelligence_limit"] == SCHEDULED_CODE_INTELLIGENCE_LIMIT
 
 
 def test_suite_schedule_routes_are_not_swallowed_by_suite_id(temp_data_dirs, monkeypatch):
@@ -152,7 +163,7 @@ def test_suite_schedule_routes_are_not_swallowed_by_suite_id(temp_data_dirs, mon
     assert schedule["run_once"] is False
     assert schedule["request"]["wait_for_completion"] is False
     assert schedule["request"]["stress_options"]["parallel"] == [1, 5]
-    assert schedule["request"]["intelligence_limit"] == 50
+    assert schedule["request"]["intelligence_limit"] == SCHEDULED_LIGHT_INTELLIGENCE_LIMIT
 
     listed = client.get("/api/suites/schedules")
     assert listed.status_code == 200
@@ -182,7 +193,7 @@ def test_suite_schedule_accepts_one_shot_run_date(temp_data_dirs, monkeypatch):
             "run_date": "2099-01-02",
             "stress_parallel": [1],
             "stress_number": [1],
-            "intelligence_limit": 50,
+            "intelligence_limit": SCHEDULED_LIGHT_INTELLIGENCE_LIMIT,
         },
     )
 
@@ -192,7 +203,7 @@ def test_suite_schedule_accepts_one_shot_run_date(temp_data_dirs, monkeypatch):
     assert schedule["run_date"] == "2099-01-02"
     assert schedule["enabled"] is True
     assert schedule["next_run_at"].startswith("2099-01-01T16:00:00")
-    assert schedule["request"]["intelligence_limit"] == 50
+    assert schedule["request"]["intelligence_limit"] == SCHEDULED_LIGHT_INTELLIGENCE_LIMIT
 
 
 
