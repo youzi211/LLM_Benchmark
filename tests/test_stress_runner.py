@@ -133,7 +133,7 @@ async def test_stress_runner_normalizes_evalscope_perf_raw_mapping(tmp_path):
 def test_stress_runner_resolves_local_jsonl_dataset_path(tmp_path, monkeypatch):
     dataset_root = tmp_path / "stress_datasets"
     dataset_root.mkdir()
-    dataset_file = dataset_root / "openqa.jsonl"
+    dataset_file = dataset_root / "longalpaca.jsonl"
     dataset_file.write_text('{"question":"hello"}\n', encoding="utf-8")
     monkeypatch.setattr(stress_runner_module, "STRESS_DATASETS_DIR", dataset_root)
     runner = StressRunner(
@@ -144,7 +144,7 @@ def test_stress_runner_resolves_local_jsonl_dataset_path(tmp_path, monkeypatch):
         run_in_background=False,
     )
 
-    resolved = runner._resolve_dataset_path(stress_runner_module.StressDefaultRunRequest(model_id="m1", dataset="openqa"))
+    resolved = runner._resolve_dataset_path(stress_runner_module.StressDefaultRunRequest(model_id="m1", dataset="longalpaca"))
 
     assert resolved == str(dataset_file)
 

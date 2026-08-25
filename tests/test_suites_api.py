@@ -24,7 +24,7 @@ def test_evalscope_profiles_route_lists_builtin_profiles(temp_data_dirs, monkeyp
     assert scheduled_light["requires_sandbox"] is False
     assert scheduled_light["run_intelligence"] is True
     assert scheduled_light["intelligence_datasets"] == ["gsm8k", "math_500", "ceval"]
-    assert scheduled_light["stress_options"]["dataset"] == "openqa"
+    assert scheduled_light["stress_options"]["dataset"] == "longalpaca"
 
 
 def test_suite_schedule_uses_scheduled_light_profile_by_default(temp_data_dirs, monkeypatch):
@@ -50,7 +50,7 @@ def test_suite_schedule_uses_scheduled_light_profile_by_default(temp_data_dirs, 
     assert schedule["request"]["intelligence_datasets"] == ["gsm8k", "math_500", "ceval"]
     assert schedule["request"]["intelligence_limit"] == 50
     assert schedule["request"]["intelligence_eval_batch_size"] == 5
-    assert schedule["request"]["stress_options"]["dataset"] == "openqa"
+    assert schedule["request"]["stress_options"]["dataset"] == "longalpaca"
     assert schedule["request"]["stress_options"]["parallel"] == [1, 2, 5]
     assert schedule["request"]["stress_options"]["number"] == [10, 20, 50]
 

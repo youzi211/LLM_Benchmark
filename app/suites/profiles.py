@@ -53,7 +53,7 @@ BUILTIN_PROFILES: dict[str, EvalScopeProfile] = {
         intelligence_limit=50,
         intelligence_eval_batch_size=5,
         stress_options=SuiteStressOptions(
-            dataset="openqa",
+            dataset="longalpaca",
             parallel=[1, 2, 5],
             number=[10, 20, 50],
             stream=True,
@@ -99,7 +99,7 @@ BUILTIN_PROFILES: dict[str, EvalScopeProfile] = {
         ],
         intelligence_limit=None,
         intelligence_eval_batch_size=5,
-        stress_options=SuiteStressOptions(dataset="openqa", parallel=[1, 5], number=[10, 50], stream=True),
+        stress_options=SuiteStressOptions(dataset="longalpaca", parallel=[1, 5], number=[10, 50], stream=True),
     ),
 }
 
