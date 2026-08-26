@@ -94,6 +94,14 @@ def list_intelligence_tasks(limit: int = 50):
     return IntelligenceTaskStore().list(limit=limit)
 
 
+@router.post("/tasks/{task_id}/cancel")
+async def cancel_intelligence_task(task_id: str):
+    task = await _runner().cancel(task_id)
+    if task is None:
+        raise api_error(404, "intelligence_task_not_found", f"Intelligence task not found: {task_id}")
+    return task
+
+
 @router.get("/tasks/{task_id}")
 async def get_intelligence_task(task_id: str):
     task = await _runner().refresh_status(task_id)

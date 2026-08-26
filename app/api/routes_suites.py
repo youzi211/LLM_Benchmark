@@ -42,7 +42,7 @@ async def _run_suite_job(runner: SuiteRunner, suite_id: str):
 
 
 async def _submit_suite_job(runner: SuiteRunner, suite, *, wait_for_completion: bool):
-    if suite.status in {"completed", "partial", "failed"}:
+    if suite.status in {"completed", "partial", "failed", "interrupted"}:
         return suite
     job = _job_executor().submit_async(
         job_type="suite",
@@ -179,6 +179,14 @@ async def trigger_suite_schedule(schedule_id: str, wait_for_completion: bool = F
     if wait_for_completion:
         await _job_executor().wait(job.job_id)
         return runner.suite_store.get(suite.suite_id) or suite
+    return suite
+
+
+@router.post("/{suite_id}/cancel")
+async def cancel_suite(suite_id: str):
+    suite = await _runner().cancel(suite_id)
+    if suite is None:
+        raise api_error(404, "suite_not_found", f"Suite not found: {suite_id}")
     return suite
 
 

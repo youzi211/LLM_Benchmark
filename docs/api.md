@@ -632,7 +632,7 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 | `upstream_model_name` | string/null | 传给 EvalScope 的被测模型名，来自 `ModelConfig.model`。 |
 | `evalscope_base_url` | string | 兼容字段；当前固定为 `in-process`，表示主服务内直接调用 EvalScope。 |
 | `datasets` | string[] | 本次评测数据集。 |
-| `status` | string | `pending`、`running`、`completed`、`failed`。 |
+| `status` | string | `pending`、`running`、`completed`、`failed`、`interrupted`。 |
 | `progress` | string/null | 本地进度文本，例如正在执行哪个数据集。 |
 | `report_path` | string/null | 本地 Markdown 报告路径。 |
 | `normalized_result` | object/null | 精简标准化结果，只包含数据集分数、能力维度汇总、状态和错误摘要；不嵌入完整 `report_table`、metrics 或原始报告。 |
@@ -700,6 +700,10 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 
 读取本地任务。任务不存在返回 `404 intelligence_task_not_found`。
 
+#### POST `/api/intelligence/tasks/{task_id}/cancel`
+
+请求取消单个智力评测任务。接口会立即把非终态任务标记为 `interrupted` 并取消后台 Job 的等待；由于 EvalScope 以 in-process 同步函数在线程池内运行，底层执行线程会 best-effort 放弃等待但可能继续自然结束，服务不会重启，也不会删除正在写入的输出目录。任务不存在返回 `404 intelligence_task_not_found`。
+
 #### GET `/api/intelligence/tasks/{task_id}/result`
 
 读取本地任务结果。若任务已结束但报告尚未生成，服务会补写 Markdown 报告并返回更新后的 `IntelligenceTask`。终态任务的完整 EvalScope 业务结果位于任务级 `raw_result`，`raw_output_dir` 提供原始输出目录定位；`normalized_result` 只用于页面、总览和摘要展示。
@@ -753,7 +757,7 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 | `upstream_model_name` | string/null | 传给上游模型服务的 `model` 名称。 |
 | `protocol` | string/null | `chat_completions` 或 `responses`。 |
 | `evalscope_base_url` | string | 兼容字段；当前固定为 `in-process`。 |
-| `status` | string | `pending`、`running`、`completed`、`failed`。 |
+| `status` | string | `pending`、`running`、`completed`、`failed`、`interrupted`。 |
 | `request_config` | object | 已脱敏的压测请求配置，不包含 `api_key`。 |
 | `normalized_result` | object/null | 精简标准化结果，只包含并发档位指标、吞吐、延迟、TTFT/TPOT、汇总和异常摘要；不嵌入完整原始结果。 |
 | `raw_result` | object/null | 任务级完整 EvalScope perf 业务结果归档；大字段只保留这一份，详情通过结果 API 获取。 |
@@ -805,6 +809,10 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 #### GET `/api/stress/tasks/{task_id}`
 
 读取本地任务。任务不存在返回 `404 stress_task_not_found`。
+
+#### POST `/api/stress/tasks/{task_id}/cancel`
+
+请求取消单个 EvalScope 压测任务。非终态任务会立即变为 `interrupted`，对应后台 Job 也会标为 `interrupted`；底层同步 perf 线程不会被强杀，会自然结束且不得覆盖已取消状态。任务不存在返回 `404 stress_task_not_found`。
 
 #### GET `/api/stress/tasks/{task_id}/result`
 
@@ -936,7 +944,7 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 |---|---:|---|
 | `suite_id` | string | 一键评测套件 ID，例如 `suite_yyyymmddhhmmss_xxxxxxxx`。 |
 | `model_id` | string | 模型配置 ID。 |
-| `status` | string | `queued`、`running`、`completed`、`partial`、`failed`。 |
+| `status` | string | `queued`、`running`、`completed`、`partial`、`failed`、`interrupted`。 |
 | `current_step` | string/null | 当前执行步骤，按执行顺序为：`gateway`、`stress`、`intelligence`、`overview`。 |
 | `gateway_task_id` / `intelligence_task_id` / `stress_task_id` | string/null | 三类子任务 ID。 |
 | `overview_id` | string/null | 自动生成的统一总览报告 ID。 |
@@ -1045,6 +1053,10 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 
 返回 suite 元数据、步骤状态、三类子任务 ID 和 overview ID。不存在时返回 `404 suite_not_found`。
 
+#### POST `/api/suites/{suite_id}/cancel`
+
+请求取消单个 suite。非终态 suite 会立即标记为 `interrupted`，当前运行步骤标记为 `interrupted`，尚未开始的步骤标记为 `skipped`，并级联取消已提交的 intelligence/stress 子任务。不存在时返回 `404 suite_not_found`。
+
 ### 13.7 下载 suite 总览报告
 
 #### GET `/api/suites/{suite_id}/report`
@@ -1136,7 +1148,7 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 |---|---|---|
 | `schedule` | object | `SuiteSchedule` 原始计划。 |
 | `suite` | object/null | `last_suite_id` 对应的 `SuiteRun`；尚未触发时为 `null`。 |
-| `last_suite_status` | string/null | 最近 suite 的状态：`queued`、`running`、`completed`、`partial`、`failed`。 |
+| `last_suite_status` | string/null | 最近 suite 的状态：`queued`、`running`、`completed`、`partial`、`failed`、`interrupted`。 |
 | `last_suite_current_step` | string/null | 最近 suite 当前步骤。 |
 | `last_suite_error_count` | integer | 最近 suite 的错误数量；尚未触发时为 `0`。 |
 | `last_suite_errors` | object[] | 最近 suite 的错误摘要。 |

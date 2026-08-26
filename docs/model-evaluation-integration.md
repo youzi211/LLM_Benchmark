@@ -155,7 +155,7 @@ curl -X POST "$API_BASE/suites/quick" \
 | 字段 | 说明 |
 |---|---|
 | `suite_id` | 本次综合评测任务 ID。后续查询进度、下载报告都用它。 |
-| `status` | 当前状态：`queued`、`running`、`completed`、`partial`、`failed`。 |
+| `status` | 当前状态：`queued`、`running`、`completed`、`partial`、`failed`、`interrupted`。 |
 | `current_step` | 当前执行阶段。 |
 | `gateway_task_id` | 网关 smoke 子任务 ID，完成后会有值。 |
 | `intelligence_task_id` | 智力评测子任务 ID，完成后会有值。 |
@@ -540,7 +540,7 @@ curl -X DELETE "$API_BASE/suites/schedules/<schedule_id>"
 POST /api/suites/quick
   -> 得到 suite_id
 GET /api/suites/{suite_id}
-  -> 轮询直到 status 是 completed / partial / failed
+  -> 轮询直到 status 是 completed / partial / failed / interrupted
 GET /api/suites/{suite_id}/report
   -> 下载 Markdown 报告
 ```

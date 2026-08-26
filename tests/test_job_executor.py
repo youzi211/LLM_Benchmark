@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import threading
+import time
 
 import pytest
 
@@ -67,3 +69,64 @@ async def test_job_executor_limits_concurrency(tmp_path):
     await executor.wait(second.job_id, timeout=5)
 
     assert events == ["start:one", "end:one", "start:two", "end:two"]
+
+
+@pytest.mark.asyncio
+async def test_job_executor_cancel_running_sync_job_marks_interrupted(tmp_path):
+    store = JobStore(tmp_path / "jobs")
+    executor = JobExecutor(store=store, max_concurrency=1)
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_job():
+        started.set()
+        release.wait(timeout=1)
+
+    job = executor.submit_sync(job_type="intelligence", target_id="intel_demo", payload={}, func=slow_job)
+    assert await asyncio.to_thread(started.wait, 1)
+
+    cancelled = await executor.cancel(job.job_id)
+
+    assert cancelled is not None
+    assert cancelled.status == "interrupted"
+    assert store.get(job.job_id).status == "interrupted"
+    release.set()
+    finished = await executor.wait(job.job_id, timeout=1)
+    assert finished is not None
+    assert finished.status == "interrupted"
+
+
+@pytest.mark.asyncio
+async def test_job_executor_cancel_queued_job_is_idempotent(tmp_path):
+    store = JobStore(tmp_path / "jobs")
+    executor = JobExecutor(store=store, max_concurrency=1)
+    started = asyncio.Event()
+    release = asyncio.Event()
+    ran_second = False
+
+    async def blocking_job():
+        started.set()
+        await release.wait()
+
+    async def second_job():
+        nonlocal ran_second
+        ran_second = True
+
+    first = executor.submit_async(job_type="suite", target_id="suite_one", payload={}, func=blocking_job)
+    await started.wait()
+    second = executor.submit_async(job_type="suite", target_id="suite_two", payload={}, func=second_job)
+    assert store.get(second.job_id).status == "queued"
+
+    cancelled = await executor.cancel(second.job_id)
+    cancelled_again = await executor.cancel(second.job_id)
+
+    assert cancelled is not None
+    assert cancelled.status == "interrupted"
+    assert cancelled_again is not None
+    assert cancelled_again.status == "interrupted"
+    release.set()
+    await executor.wait(first.job_id, timeout=1)
+    second_record = await executor.wait(second.job_id, timeout=1)
+    assert second_record is not None
+    assert second_record.status == "interrupted"
+    assert ran_second is False

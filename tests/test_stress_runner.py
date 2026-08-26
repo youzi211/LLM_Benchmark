@@ -1,7 +1,12 @@
+import asyncio
+import threading
+
 import pytest
 
 from app.core.models import ModelConfigCreate
 from app.evalscope_defaults import DEFAULT_STRESS_DATASET
+from app.jobs.executor import JobExecutor
+from app.jobs.store import JobStore
 from app.storage.model_store import ModelStore
 from app.storage.stress_task_store import StressTaskStore
 from app.stress import runner as stress_runner_module
@@ -196,3 +201,48 @@ async def test_stress_runner_background_uses_job_executor(tmp_path, monkeypatch)
     assert task.status == "pending"
     assert submissions == [{"job_type": "stress", "target_id": task.task_id, "payload": {"task_id": task.task_id}, "func": submissions[0]["func"]}]
     assert executor.submitted_payload is None
+
+
+class SlowStressExecutor:
+    def __init__(self):
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def run(self, *, task_id, payload):
+        self.started.set()
+        self.release.wait(timeout=1)
+        return {
+            "task_id": task_id,
+            "status": "completed",
+            "summary": {"best_req_throughput": 1.0},
+            "runs": [],
+            "errors": [],
+        }
+
+
+@pytest.mark.asyncio
+async def test_stress_runner_cancel_marks_task_and_prevents_late_overwrite(tmp_path, monkeypatch):
+    job_executor = JobExecutor(store=JobStore(tmp_path / "jobs"), max_concurrency=1)
+    monkeypatch.setattr("app.stress.runner.get_job_executor", lambda: job_executor)
+    executor = SlowStressExecutor()
+    task_store = StressTaskStore(tmp_path / "stress_tasks")
+    runner = StressRunner(
+        model_store=_model_store(tmp_path / "models.json"),
+        task_store=task_store,
+        executor=executor,
+        reports_dir=tmp_path / "reports",
+        run_in_background=True,
+    )
+
+    task = await runner.submit_default("m1")
+    assert await asyncio.to_thread(executor.started.wait, 1)
+
+    cancelled = await runner.cancel(task.task_id)
+
+    assert cancelled.status == "interrupted"
+    assert cancelled.progress == "任务已取消"
+    job = next(item for item in job_executor.store.list(limit=10) if item.target_id == task.task_id)
+    assert job.status == "interrupted"
+    executor.release.set()
+    await job_executor.wait(job.job_id, timeout=1)
+    assert task_store.get(task.task_id).status == "interrupted"

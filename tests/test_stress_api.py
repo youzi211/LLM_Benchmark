@@ -20,6 +20,12 @@ class FakeRunner:
             return None
         return StressTask(task_id=task_id, model_id="m1", protocol="chat_completions", evalscope_base_url="in-process", status="running")
 
+
+    async def cancel(self, task_id: str):
+        if task_id == "missing":
+            return None
+        return StressTask(task_id=task_id, model_id="m1", protocol="chat_completions", evalscope_base_url="in-process", status="interrupted", progress="任务已取消")
+
     async def fetch_result(self, task_id: str):
         if task_id == "missing":
             return None
@@ -79,3 +85,16 @@ def test_stress_report_route_returns_markdown(tmp_path, monkeypatch):
     response = client.get(f"/api/stress/reports/{task.task_id}")
     assert response.status_code == 200
     assert "# report" in response.text
+
+
+def test_stress_cancel_route(monkeypatch):
+    from app.api import routes_stress
+
+    monkeypatch.setattr(routes_stress, "_runner", lambda: FakeRunner())
+    client = TestClient(app)
+
+    response = client.post("/api/stress/tasks/some/cancel")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "interrupted"
+    assert client.post("/api/stress/tasks/missing/cancel").status_code == 404

@@ -8,6 +8,7 @@ from typing import Any
 from app.core.models import utc_now
 from app.core.runner import TaskRunner
 from app.intelligence.runner import IntelligenceRunner
+from app.jobs.executor import get_job_executor
 from app.overview.report import build_overview_report, write_overview_markdown
 from app.overview.schemas import OverviewReportRequest
 from app.storage.intelligence_task_store import IntelligenceTaskStore
@@ -19,7 +20,8 @@ from app.stress.schemas import StressDefaultRunRequest
 from app.suites.schemas import SuiteDefaultRunRequest, SuiteRun, SuiteStep
 from app.suites.store import SuiteRunStore
 
-TERMINAL_EVALSCOPE_STATUSES = {"completed", "failed"}
+TERMINAL_EVALSCOPE_STATUSES = {"completed", "failed", "interrupted"}
+TERMINAL_SUITE_STATUSES = {"completed", "partial", "failed", "interrupted"}
 
 
 class SuiteRunner:
@@ -77,9 +79,22 @@ class SuiteRunner:
                 await self._run_stress(suite)
             if suite.request.run_intelligence:
                 await self._run_intelligence(suite)
+            latest = self.suite_store.get(suite_id)
+            if latest is not None and latest.status == "interrupted":
+                suite = latest
+                return suite
             self._write_overview(suite)
             suite.status = "partial" if suite.errors else "completed"
+        except asyncio.CancelledError:
+            suite = self.suite_store.get(suite_id) or suite
+            await self._cancel_child_tasks(suite)
+            self._mark_interrupted(suite)
+            raise
         except Exception as exc:
+            latest = self.suite_store.get(suite_id)
+            if latest is not None and latest.status == "interrupted":
+                suite = latest
+                return suite
             self._append_error(suite, "suite", exc)
             if any([suite.gateway_task_id, suite.intelligence_task_id, suite.stress_task_id]):
                 try:
@@ -91,11 +106,63 @@ class SuiteRunner:
             else:
                 suite.status = "failed"
         finally:
+            latest = self.suite_store.get(suite_id)
+            if latest is not None and latest.status == "interrupted":
+                suite = latest
             suite.current_step = None
-            suite.completed_at = utc_now()
+            suite.completed_at = suite.completed_at or utc_now()
             suite.updated_at = utc_now()
             self.suite_store.save(suite)
         return suite
+
+
+    async def cancel(self, suite_id: str) -> SuiteRun | None:
+        suite = self.suite_store.get(suite_id)
+        if suite is None:
+            return None
+        if suite.status in TERMINAL_SUITE_STATUSES:
+            return suite
+
+        if suite.job_id:
+            await get_job_executor().cancel(suite.job_id)
+        await self._cancel_child_tasks(suite)
+        self._mark_interrupted(suite)
+        return self.suite_store.get(suite_id) or suite
+
+    async def _cancel_child_tasks(self, suite: SuiteRun) -> None:
+        if suite.intelligence_task_id is not None:
+            try:
+                await self.intelligence_runner.cancel(suite.intelligence_task_id)
+            except AttributeError:
+                pass
+        if suite.stress_task_id is not None:
+            try:
+                await self.stress_runner.cancel(suite.stress_task_id)
+            except AttributeError:
+                pass
+
+    def _mark_interrupted(self, suite: SuiteRun) -> None:
+        now = utc_now()
+        suite.status = "interrupted"
+        child_task_ids = {
+            "intelligence": suite.intelligence_task_id,
+            "stress": suite.stress_task_id,
+        }
+        for step in suite.steps:
+            has_started_child = step.task_id is not None or child_task_ids.get(step.name) is not None
+            if step.status == "running" or (step.status == "pending" and has_started_child):
+                step.status = "interrupted"
+                step.task_id = step.task_id or child_task_ids.get(step.name)
+                step.completed_at = step.completed_at or now
+                step.message = step.message or "任务已取消"
+            elif step.status == "pending":
+                step.status = "skipped"
+                step.completed_at = step.completed_at or now
+                step.message = step.message or "任务取消，未执行"
+        suite.current_step = None
+        suite.completed_at = suite.completed_at or now
+        suite.updated_at = now
+        self.suite_store.save(suite)
 
     def _initial_steps(self, request: SuiteDefaultRunRequest) -> list[SuiteStep]:
         return [
@@ -125,6 +192,16 @@ class SuiteRunner:
     def _finish_step(self, suite: SuiteRun, name: str, *, task_id: str | None = None, failed: bool = False, message: str | None = None) -> None:
         step = self._step(suite, name)
         step.status = "failed" if failed else "completed"
+        step.task_id = task_id or step.task_id
+        step.message = message
+        step.completed_at = utc_now()
+        suite.updated_at = utc_now()
+        self.suite_store.save(suite)
+
+
+    def _interrupt_step(self, suite: SuiteRun, name: str, *, task_id: str | None = None, message: str | None = None) -> None:
+        step = self._step(suite, name)
+        step.status = "interrupted"
         step.task_id = task_id or step.task_id
         step.message = message
         step.completed_at = utc_now()
@@ -164,6 +241,9 @@ class SuiteRunner:
             suite.intelligence_task_id = task.task_id
             self.suite_store.save(suite)
             task = await self._wait_for_intelligence(task.task_id, suite.request)
+            if task is not None and task.status == "interrupted":
+                self._interrupt_step(suite, "intelligence", task_id=suite.intelligence_task_id, message="任务已取消")
+                raise asyncio.CancelledError
             failed = task is None or task.status != "completed"
             if failed:
                 suite.errors.append({"step": "intelligence", "message": getattr(task, "error", None) or "intelligence task failed"})
@@ -180,6 +260,9 @@ class SuiteRunner:
             suite.stress_task_id = task.task_id
             self.suite_store.save(suite)
             task = await self._wait_for_stress(task.task_id, suite.request)
+            if task is not None and task.status == "interrupted":
+                self._interrupt_step(suite, "stress", task_id=suite.stress_task_id, message="任务已取消")
+                raise asyncio.CancelledError
             failed = task is None or task.status != "completed"
             if failed:
                 suite.errors.append({"step": "stress", "message": getattr(task, "error", None) or "stress task failed"})

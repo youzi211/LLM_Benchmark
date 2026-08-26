@@ -53,8 +53,8 @@ ALLOWED_OPTION_KEYS: tuple[str, ...] = (
 # random / speed_benchmark 等不下载的内置数据集不在其中。
 LOCAL_RESOLVABLE_DATASETS = LOCAL_RESOLVABLE_STRESS_DATASETS
 
-TERMINAL_STATUSES = {"completed", "failed"}
-ALLOWED_STATUSES = {"pending", "running", "completed", "failed"}
+TERMINAL_STATUSES = {"completed", "failed", "interrupted"}
+ALLOWED_STATUSES = {"pending", "running", "completed", "failed", "interrupted"}
 IN_PROCESS_EVALSCOPE = "in-process"
 
 
@@ -220,12 +220,20 @@ class StressRunner:
         task = self.task_store.get(task_id)
         if task is None:
             return
+        if task.status == "interrupted":
+            return
         task.status = "running"
         task.progress = "正在通过 Python 包直接执行 EvalScope 压测"
         task.updated_at = utc_now()
         self.task_store.save(task)
+        should_save = True
         try:
             raw_result = self.executor.run(task_id=task.task_id, payload=payload)
+            latest = self.task_store.get(task_id)
+            if latest is not None and latest.status == "interrupted":
+                should_save = False
+                return
+            task = latest or task
             task.raw_result = raw_result
             task.raw_output_dir = raw_result.get("outputs_dir") if isinstance(raw_result.get("outputs_dir"), str) else None
             task.normalized_result = self._normalize(task, raw_result)
@@ -235,6 +243,11 @@ class StressRunner:
             report_path = write_stress_report(task, self.reports_dir)
             task.report_path = str(report_path)
         except Exception as exc:
+            latest = self.task_store.get(task_id)
+            if latest is not None and latest.status == "interrupted":
+                should_save = False
+                return
+            task = latest or task
             task.status = "failed"
             task.error = _safe_error(exc)
             task.progress = f"压测失败：{task.error['message']}"
@@ -242,8 +255,12 @@ class StressRunner:
             report_path = write_stress_report(task, self.reports_dir)
             task.report_path = str(report_path)
         finally:
-            task.updated_at = utc_now()
-            self.task_store.save(task)
+            latest = self.task_store.get(task_id)
+            if latest is not None and latest.status == "interrupted":
+                should_save = False
+            if should_save:
+                task.updated_at = utc_now()
+                self.task_store.save(task)
 
     def _build_payload(self, model: ModelConfig, options: StressDefaultRunRequest) -> StressRemoteSubmitPayload:
         data: dict[str, Any] = {
@@ -293,6 +310,36 @@ class StressRunner:
         data = payload.model_dump(mode="json")
         data.pop("api_key", None)
         return data
+
+
+    async def cancel(self, task_id: str) -> StressTask | None:
+        task = self.task_store.get(task_id)
+        if task is None:
+            return None
+        if task.status in TERMINAL_STATUSES:
+            return task
+
+        job_executor = get_job_executor()
+        active_job = next(
+            (
+                job
+                for job in job_executor.store.list(limit=10000)
+                if job.job_type == "stress" and job.target_id == task_id and job.status not in {"completed", "failed", "interrupted"}
+            ),
+            None,
+        )
+        if active_job is not None:
+            await job_executor.cancel(active_job.job_id)
+
+        task = self.task_store.get(task_id) or task
+        if task.status not in TERMINAL_STATUSES:
+            task.status = "interrupted"
+            task.progress = "任务已取消"
+            task.error = {"message": "任务已取消", "type": "CancelledError"}
+            task.completed_at = utc_now()
+            task.updated_at = utc_now()
+            self.task_store.save(task)
+        return self.task_store.get(task_id) or task
 
     async def refresh_status(self, task_id: str) -> StressTask | None:
         return self._maybe_renormalize(self.task_store.get(task_id))

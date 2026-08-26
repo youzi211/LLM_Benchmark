@@ -1,5 +1,5 @@
 const API_ROOT = "/api";
-const FINAL_STATUSES = new Set(["completed", "partial", "failed"]);
+const FINAL_STATUSES = new Set(["completed", "partial", "failed", "interrupted"]);
 
 let pollTimer = null;
 let activeSuiteId = "";

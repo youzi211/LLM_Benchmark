@@ -444,7 +444,8 @@ button:disabled,
 }
 
 .status-badge.failed,
-.status-badge.partial {
+.status-badge.partial,
+.status-badge.interrupted {
   background: rgba(255, 107, 122, 0.13);
   color: #ff9aa5;
 }
@@ -510,7 +511,8 @@ button:disabled,
   box-shadow: 0 0 0 4px rgba(98, 214, 255, 0.12), 0 0 24px rgba(98, 214, 255, 0.6);
 }
 
-.step-item.failed .step-dot {
+.step-item.failed .step-dot,
+.step-item.interrupted .step-dot {
   background: var(--red);
   box-shadow: 0 0 0 4px rgba(255, 107, 122, 0.12);
 }

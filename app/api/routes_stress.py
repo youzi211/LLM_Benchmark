@@ -51,6 +51,14 @@ def list_stress_tasks(limit: int = 50):
     return StressTaskStore().list(limit=limit)
 
 
+@router.post("/tasks/{task_id}/cancel")
+async def cancel_stress_task(task_id: str):
+    task = await _runner().cancel(task_id)
+    if task is None:
+        raise api_error(404, "stress_task_not_found", f"Stress task not found: {task_id}")
+    return task
+
+
 @router.get("/tasks/{task_id}")
 async def get_stress_task(task_id: str):
     task = await _runner().refresh_status(task_id)

@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.models import utc_now
 
-IntelligenceTaskStatus = Literal["pending", "running", "completed", "failed"]
+IntelligenceTaskStatus = Literal["pending", "running", "completed", "failed", "interrupted"]
 
 
 class EvalScopeConfig(BaseModel):

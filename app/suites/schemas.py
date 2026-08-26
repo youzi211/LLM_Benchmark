@@ -9,8 +9,8 @@ from pydantic import AliasChoices, BaseModel, Field, field_validator, model_vali
 from app.core.models import ModelConfig, Protocol, utc_now
 from app.evalscope_defaults import DEFAULT_SCHEDULE_PROFILE, DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT
 
-SuiteRunStatus = Literal["queued", "running", "completed", "partial", "failed"]
-SuiteStepStatus = Literal["pending", "running", "completed", "skipped", "failed"]
+SuiteRunStatus = Literal["queued", "running", "completed", "partial", "failed", "interrupted"]
+SuiteStepStatus = Literal["pending", "running", "completed", "skipped", "failed", "interrupted"]
 
 
 def new_suite_id() -> str:

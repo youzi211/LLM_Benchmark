@@ -19,6 +19,12 @@ class FakeRunner:
             return None
         return IntelligenceTask(task_id=task_id, evalscope_task_id=task_id, model_id="m1", evalscope_base_url="in-process", status="running")
 
+
+    async def cancel(self, task_id: str):
+        if task_id == "missing":
+            return None
+        return IntelligenceTask(task_id=task_id, evalscope_task_id=task_id, model_id="m1", evalscope_base_url="in-process", status="interrupted", progress="任务已取消")
+
     async def fetch_result(self, task_id: str):
         if task_id == "missing":
             return None
@@ -86,3 +92,16 @@ def test_intelligence_report_route_returns_markdown(tmp_path, monkeypatch):
     response = client.get(f"/api/intelligence/reports/{task.task_id}")
     assert response.status_code == 200
     assert "# report" in response.text
+
+
+def test_intelligence_cancel_route(monkeypatch):
+    from app.api import routes_intelligence
+
+    monkeypatch.setattr(routes_intelligence, "_runner", lambda: FakeRunner())
+    client = TestClient(app)
+
+    response = client.post("/api/intelligence/tasks/some/cancel")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "interrupted"
+    assert client.post("/api/intelligence/tasks/missing/cancel").status_code == 404

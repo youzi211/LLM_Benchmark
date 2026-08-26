@@ -1,7 +1,12 @@
+import asyncio
+import threading
+
 import pytest
 
 from app.core.models import ModelConfigCreate
 from app.intelligence.runner import IntelligenceRunner
+from app.jobs.executor import JobExecutor
+from app.jobs.store import JobStore
 from app.storage.intelligence_task_store import IntelligenceTaskStore
 from app.storage.model_store import ModelStore
 
@@ -191,3 +196,68 @@ async def test_intelligence_runner_background_uses_job_executor(tmp_path, monkey
     assert task.status == "pending"
     assert submissions == [{"job_type": "intelligence", "target_id": task.task_id, "payload": {"task_id": task.task_id}, "func": submissions[0]["func"]}]
     assert fake_executor.called is False
+
+
+class SlowIntelligenceExecutor:
+    def __init__(self):
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def run(self, **kwargs):
+        self.started.set()
+        self.release.wait(timeout=1)
+        return {
+            "task_id": kwargs["task_id"],
+            "model": kwargs["model"],
+            "datasets": kwargs["datasets"],
+            "status": "completed",
+            "results": [],
+            "completed_at": "2026-08-06T12:00:00+00:00",
+        }
+
+
+@pytest.mark.asyncio
+async def test_intelligence_runner_cancel_marks_task_and_prevents_late_overwrite(tmp_path, monkeypatch):
+    job_executor = JobExecutor(store=JobStore(tmp_path / "jobs"), max_concurrency=1)
+    monkeypatch.setattr("app.intelligence.runner.get_job_executor", lambda: job_executor)
+    executor = SlowIntelligenceExecutor()
+    task_store = IntelligenceTaskStore(tmp_path / "intelligence_tasks")
+    runner = IntelligenceRunner(
+        model_store=_model_store(tmp_path / "models.json"),
+        task_store=task_store,
+        executor=executor,
+        reports_dir=tmp_path / "reports",
+        run_in_background=True,
+    )
+
+    task = await runner.submit_custom(model_id="m1", datasets=["gsm8k"], limit=1)
+    assert await asyncio.to_thread(executor.started.wait, 1)
+
+    cancelled = await runner.cancel(task.task_id)
+
+    assert cancelled.status == "interrupted"
+    assert cancelled.progress == "任务已取消"
+    job = next(item for item in job_executor.store.list(limit=10) if item.target_id == task.task_id)
+    assert job.status == "interrupted"
+    executor.release.set()
+    await job_executor.wait(job.job_id, timeout=1)
+    assert task_store.get(task.task_id).status == "interrupted"
+
+
+@pytest.mark.asyncio
+async def test_intelligence_runner_cancel_completed_is_noop(tmp_path):
+    executor = FakeIntelligenceExecutor()
+    task_store = IntelligenceTaskStore(tmp_path / "intelligence_tasks")
+    runner = IntelligenceRunner(
+        model_store=_model_store(tmp_path / "models.json"),
+        task_store=task_store,
+        executor=executor,
+        reports_dir=tmp_path / "reports",
+        run_in_background=False,
+    )
+    task = await runner.submit_custom(model_id="m1", datasets=["gsm8k"], limit=1)
+
+    cancelled = await runner.cancel(task.task_id)
+
+    assert cancelled.status == "completed"
+    assert task_store.get(task.task_id).status == "completed"

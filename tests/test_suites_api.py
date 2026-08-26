@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from app.api import routes_suites
+from app.core.models import utc_now
 from app.evalscope_defaults import (
     DEFAULT_SCHEDULE_PROFILE,
     DEFAULT_STRESS_DATASET,
@@ -467,3 +468,31 @@ def test_suite_quick_request_builds_transient_model_from_url_key_model(temp_data
     assert suite_request.model_id == model_config.id
     assert suite_request.title == "demo-model 一键评测"
     assert suite_request.run_stress is False
+
+
+def test_suite_cancel_route(temp_data_dirs, monkeypatch):
+    data_dir, _ = temp_data_dirs
+    monkeypatch.setenv("LLM_BENCHMARK_SCHEDULER_DISABLED", "1")
+
+    class FakeRunner:
+        async def cancel(self, suite_id: str):
+            if suite_id == "missing":
+                return None
+            suite = SuiteRun(
+                suite_id=suite_id,
+                model_id="demo-chat",
+                status="interrupted",
+                request=SuiteDefaultRunRequest(model_id="demo-chat"),
+                completed_at=utc_now(),
+            )
+            SuiteRunStore(data_dir / "suite_runs").save(suite)
+            return suite
+
+    monkeypatch.setattr(routes_suites, "_runner", lambda: FakeRunner())
+    client = TestClient(app)
+
+    response = client.post("/api/suites/suite_route_demo/cancel")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "interrupted"
+    assert client.post("/api/suites/missing/cancel").status_code == 404

@@ -67,6 +67,8 @@ class JobExecutor:
             job = self.store.get(job_id)
             if job is None:
                 return
+            if job.status == "interrupted":
+                return
             job.status = "running"
             job.started_at = job.started_at or utc_now()
             job.error = None
@@ -76,6 +78,8 @@ class JobExecutor:
                 if asyncio.iscoroutine(result) or isinstance(result, asyncio.Future):
                     await result
                 job = self.store.get(job_id) or job
+                if job.status == "interrupted":
+                    return
                 job.status = "completed"
                 job.completed_at = utc_now()
                 job.error = None
@@ -96,6 +100,26 @@ class JobExecutor:
                 self.store.save(job)
                 logger.exception("Job failed: job_id=%s job_type=%s target_id=%s", job.job_id, job.job_type, job.target_id)
 
+
+    async def cancel(self, job_id: str) -> JobRecord | None:
+        job = self.store.get(job_id)
+        if job is None:
+            return None
+        if job.status in {"completed", "failed", "interrupted"}:
+            return job
+
+        job.status = "interrupted"
+        job.completed_at = utc_now()
+        job.error = {"message": "job cancelled by user", "type": "CancelledError"}
+        self.store.save(job)
+
+        task = self._tasks.get(job_id)
+        if task is not None and not task.done():
+            task.cancel()
+            # Give the task one event-loop turn to run its cancellation handler.
+            await asyncio.sleep(0)
+        return self.store.get(job_id) or job
+
     async def wait(self, job_id: str, timeout: float | None = None) -> JobRecord | None:
         task = self._tasks.get(job_id)
         if task is not None:
@@ -103,6 +127,10 @@ class JobExecutor:
                 await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
             except asyncio.TimeoutError:
                 return self.store.get(job_id)
+            except asyncio.CancelledError:
+                if task.cancelled():
+                    return self.store.get(job_id)
+                raise
         return self.store.get(job_id)
 
     async def shutdown(self, timeout: float = 5.0) -> None:
@@ -113,6 +141,8 @@ class JobExecutor:
         for task in done:
             try:
                 task.result()
+            except asyncio.CancelledError:
+                pass
             except Exception:  # noqa: BLE001 - already captured by _run_job when possible
                 pass
         for task in still_pending:

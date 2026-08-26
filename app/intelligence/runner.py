@@ -30,8 +30,8 @@ from app.reports.markdown import redact_text
 from app.storage.intelligence_task_store import IntelligenceTaskStore
 from app.storage.model_store import ModelStore
 
-TERMINAL_STATUSES = {"completed", "failed"}
-ALLOWED_STATUSES = {"pending", "running", "completed", "failed"}
+TERMINAL_STATUSES = {"completed", "failed", "interrupted"}
+ALLOWED_STATUSES = {"pending", "running", "completed", "failed", "interrupted"}
 IN_PROCESS_EVALSCOPE = "in-process"
 JUDGE_MODEL_CONFIG_ID_ENV = "LLM_BENCHMARK_EVALSCOPE_JUDGE_MODEL_CONFIG_ID"
 
@@ -240,10 +240,13 @@ class IntelligenceRunner:
         task = self.task_store.get(task_id)
         if task is None:
             return
+        if task.status == "interrupted":
+            return
         task.status = "running"
         task.progress = "正在通过 Python 包直接执行 EvalScope 能力评测"
         task.updated_at = utc_now()
         self.task_store.save(task)
+        should_save = True
         try:
             raw_result = self.executor.run(
                 task_id=task.task_id,
@@ -256,6 +259,11 @@ class IntelligenceRunner:
                 generation_config=generation_config,
                 judge_model_args=judge_model_args,
             )
+            latest = self.task_store.get(task_id)
+            if latest is not None and latest.status == "interrupted":
+                should_save = False
+                return
+            task = latest or task
             task.raw_result = raw_result
             task.raw_output_dir = raw_result.get("outputs_dir") if isinstance(raw_result.get("outputs_dir"), str) else None
             metadata = self._local_dataset_metadata()
@@ -269,6 +277,11 @@ class IntelligenceRunner:
             report_path = write_intelligence_report(task, self.reports_dir, judge_status=self._judge_status(task.datasets))
             task.report_path = str(report_path)
         except Exception as exc:
+            latest = self.task_store.get(task_id)
+            if latest is not None and latest.status == "interrupted":
+                should_save = False
+                return
+            task = latest or task
             task.status = "failed"
             task.error = _safe_error(exc)
             task.progress = f"能力评测失败：{task.error['message']}"
@@ -276,8 +289,42 @@ class IntelligenceRunner:
             report_path = write_intelligence_report(task, self.reports_dir, judge_status=self._judge_status(task.datasets))
             task.report_path = str(report_path)
         finally:
+            latest = self.task_store.get(task_id)
+            if latest is not None and latest.status == "interrupted":
+                should_save = False
+            if should_save:
+                task.updated_at = utc_now()
+                self.task_store.save(task)
+
+
+    async def cancel(self, task_id: str) -> IntelligenceTask | None:
+        task = self.task_store.get(task_id)
+        if task is None:
+            return None
+        if task.status in TERMINAL_STATUSES:
+            return task
+
+        job_executor = get_job_executor()
+        active_job = next(
+            (
+                job
+                for job in job_executor.store.list(limit=10000)
+                if job.job_type == "intelligence" and job.target_id == task_id and job.status not in {"completed", "failed", "interrupted"}
+            ),
+            None,
+        )
+        if active_job is not None:
+            await job_executor.cancel(active_job.job_id)
+
+        task = self.task_store.get(task_id) or task
+        if task.status not in TERMINAL_STATUSES:
+            task.status = "interrupted"
+            task.progress = "任务已取消"
+            task.error = {"message": "任务已取消", "type": "CancelledError"}
+            task.completed_at = utc_now()
             task.updated_at = utc_now()
             self.task_store.save(task)
+        return self.task_store.get(task_id) or task
 
     async def refresh_status(self, task_id: str) -> IntelligenceTask | None:
         return self.task_store.get(task_id)

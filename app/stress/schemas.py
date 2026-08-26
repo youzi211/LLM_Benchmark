@@ -19,7 +19,7 @@ from app.evalscope_defaults import (
     DEFAULT_STRESS_STREAM,
 )
 
-StressTaskStatus = Literal["pending", "running", "completed", "failed"]
+StressTaskStatus = Literal["pending", "running", "completed", "failed", "interrupted"]
 
 
 class StressDefaultRunRequest(BaseModel):

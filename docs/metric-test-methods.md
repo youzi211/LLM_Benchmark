@@ -870,7 +870,7 @@ EvalScope 智力评测不是 `gateway_acceptance_v1` 的接入验收指标，因
 |---|---|---|
 | 1 | 调用 `GET /api/intelligence/datasets/local` 查看本地可用数据集。 | 数据集 `pretty_name`、`needs_judge`、`categories`。 |
 | 2 | 调用 `POST /api/intelligence/tasks/default` 或 `POST /api/intelligence/tasks` 提交评测。 | 本系统 `task_id` 与 EvalScope `evalscope_task_id`。 |
-| 3 | 调用 `GET /api/intelligence/tasks/{task_id}` 刷新状态。 | `pending`、`running`、`completed`、`failed` 和 `progress`。 |
+| 3 | 调用 `GET /api/intelligence/tasks/{task_id}` 刷新状态。 | `pending`、`running`、`completed`、`failed`、`interrupted` 和 `progress`。 |
 | 4 | 调用 `GET /api/intelligence/tasks/{task_id}/result` 获取终态结果。 | 精简标准化数据集分数、能力维度汇总、报告路径，以及任务级 `raw_result` / `raw_output_dir` 定位。 |
 | 5 | 调用 `GET /api/intelligence/reports/{task_id}` 下载报告。 | 人可读 Markdown 报告。 |
 

@@ -21,7 +21,7 @@ from app.storage.task_store import TaskStore
 from app.stress.schemas import StressNormalizedResult, StressRunResult, StressTask
 from app.suites.runner import SuiteRunner
 from app.suites.scheduler import SuiteScheduler
-from app.suites.schemas import SuiteDefaultRunRequest, SuiteScheduleCreate
+from app.suites.schemas import SuiteDefaultRunRequest, SuiteRun, SuiteScheduleCreate
 from app.suites.store import SuiteScheduleStore, SuiteRunStore
 
 
@@ -53,6 +53,7 @@ class FakeIntelligenceRunner:
         self.store = store
         self.submitted_custom = None
         self.submitted_default = None
+        self.cancelled_task_ids: list[str] = []
 
     async def submit_default(self, model_id: str, *, limit: int | None = None) -> IntelligenceTask:
         self.submitted_default = {"model_id": model_id, "limit": limit}
@@ -82,6 +83,16 @@ class FakeIntelligenceRunner:
         self.store.save(task)
         return task
 
+    async def cancel(self, task_id: str) -> IntelligenceTask | None:
+        self.cancelled_task_ids.append(task_id)
+        task = self.store.get(task_id)
+        if task is not None and task.status not in {"completed", "failed", "interrupted"}:
+            task.status = "interrupted"
+            task.progress = "任务已取消"
+            task.completed_at = utc_now()
+            self.store.save(task)
+        return task
+
     async def fetch_result(self, task_id: str) -> IntelligenceTask | None:
         task = self.store.get(task_id)
         assert task is not None
@@ -106,6 +117,7 @@ class FakeIntelligenceRunner:
 class FakeStressRunner:
     def __init__(self, store: StressTaskStore):
         self.store = store
+        self.cancelled_task_ids: list[str] = []
 
     async def submit_default(self, model_id: str, options=None) -> StressTask:
         task = StressTask(
@@ -119,6 +131,16 @@ class FakeStressRunner:
             status="running",
         )
         self.store.save(task)
+        return task
+
+    async def cancel(self, task_id: str) -> StressTask | None:
+        self.cancelled_task_ids.append(task_id)
+        task = self.store.get(task_id)
+        if task is not None and task.status not in {"completed", "failed", "interrupted"}:
+            task.status = "interrupted"
+            task.progress = "任务已取消"
+            task.completed_at = utc_now()
+            self.store.save(task)
         return task
 
     async def fetch_result(self, task_id: str) -> StressTask | None:
@@ -381,3 +403,76 @@ async def test_suite_runner_uses_custom_intelligence_profile_options(tmp_path: P
         "eval_batch_size": 2,
         "generation_config": {"temperature": 0.0, "max_tokens": 64},
     }
+
+
+@pytest.mark.asyncio
+async def test_suite_runner_cancel_marks_current_step_and_cascades_child_tasks(tmp_path: Path):
+    data_dir = tmp_path / "data"
+    reports_dir = tmp_path / "reports"
+    suite_store = SuiteRunStore(data_dir / "suite_runs")
+    stress_store = StressTaskStore(data_dir / "stress_tasks")
+    intelligence_store = IntelligenceTaskStore(data_dir / "intelligence_tasks")
+    stress_runner = FakeStressRunner(stress_store)
+    intelligence_runner = FakeIntelligenceRunner(intelligence_store)
+    runner = SuiteRunner(
+        suite_store=suite_store,
+        gateway_task_store=TaskStore(data_dir / "tasks"),
+        intelligence_task_store=intelligence_store,
+        stress_task_store=stress_store,
+        gateway_runner=FakeGatewayRunner(TaskStore(data_dir / "tasks")),
+        intelligence_runner=intelligence_runner,
+        stress_runner=stress_runner,
+        reports_dir=reports_dir,
+        poll_interval_seconds=0,
+    )
+    suite = await runner.start_default(
+        SuiteDefaultRunRequest(model_id="demo-chat", run_gateway=False, run_stress=True, run_intelligence=True)
+    )
+    suite.status = "running"
+    suite.current_step = "stress"
+    suite.stress_task_id = "stress_task_suite"
+    suite.intelligence_task_id = "intel_task_suite"
+    suite.steps[1].status = "running"
+    suite.steps[1].task_id = "stress_task_suite"
+    suite_store.save(suite)
+    stress_store.save(StressTask(task_id="stress_task_suite", model_id="demo-chat", protocol="chat_completions", evalscope_base_url="in-process", status="running"))
+    intelligence_store.save(IntelligenceTask(task_id="intel_task_suite", model_id="demo-chat", evalscope_base_url="in-process", status="running"))
+
+    cancelled = await runner.cancel(suite.suite_id)
+
+    assert cancelled.status == "interrupted"
+    assert cancelled.current_step is None
+    assert cancelled.completed_at is not None
+    assert stress_runner.cancelled_task_ids == ["stress_task_suite"]
+    assert intelligence_runner.cancelled_task_ids == ["intel_task_suite"]
+    steps = {step.name: step for step in cancelled.steps}
+    assert steps["stress"].status == "interrupted"
+    assert steps["intelligence"].status == "interrupted"
+    assert steps["overview"].status == "skipped"
+
+
+@pytest.mark.asyncio
+async def test_suite_runner_cancel_completed_is_noop(tmp_path: Path):
+    data_dir = tmp_path / "data"
+    runner = SuiteRunner(
+        suite_store=SuiteRunStore(data_dir / "suite_runs"),
+        gateway_task_store=TaskStore(data_dir / "tasks"),
+        intelligence_task_store=IntelligenceTaskStore(data_dir / "intelligence_tasks"),
+        stress_task_store=StressTaskStore(data_dir / "stress_tasks"),
+        gateway_runner=FakeGatewayRunner(TaskStore(data_dir / "tasks")),
+        intelligence_runner=FakeIntelligenceRunner(IntelligenceTaskStore(data_dir / "intelligence_tasks")),
+        stress_runner=FakeStressRunner(StressTaskStore(data_dir / "stress_tasks")),
+        reports_dir=tmp_path / "reports",
+    )
+    suite = SuiteRun(
+        suite_id="suite_completed",
+        model_id="demo-chat",
+        status="completed",
+        request=SuiteDefaultRunRequest(model_id="demo-chat", run_gateway=False, run_stress=False, run_intelligence=True),
+        completed_at=utc_now(),
+    )
+    runner.suite_store.save(suite)
+
+    cancelled = await runner.cancel(suite.suite_id)
+
+    assert cancelled.status == "completed"
