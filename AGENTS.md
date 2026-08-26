@@ -34,7 +34,7 @@ Tests are in `tests/`. Local fake upstream assets are in `examples/`. Project do
 ## P4 EvalScope and Scheduled-Suite Operating Rules
 
 - Keep EvalScope execution **in-process**. Do not add an HTTP sidecar or duplicate the raw EvalScope result into normalized UI/report models.
-- EvalScope dataset defaults, groups, metadata, and stress defaults are centralized in `app/evalscope_defaults.py`; use that file as the source of truth for exact current built-in dataset choices, profile limits, and stress defaults. Change built-in dataset choices there first, then update docs only when user-facing behavior changes.
+- EvalScope dataset defaults, groups, metadata, per-dataset args, and stress defaults are centralized in `app/evalscope_defaults.py`; use that file as the source of truth for exact current built-in dataset choices, profile limits, built-in subset limits, and stress defaults. Change built-in dataset choices there first, then update docs only when user-facing behavior changes.
 - Scheduled evaluations default to the `scheduled_light` profile. `scheduled_code` and `full_offline` require EvalScope sandbox support.
 - If a scheduled request uses `profile: null` without explicit datasets, the fallback limit is 200; manual quick/default suites use the general default datasets and no sample limit unless one is supplied. Set datasets and limits explicitly when reproducibility matters.
 - Real BBH runs can span roughly ten minutes even with one sample per subset. Use a suite timeout of at least 1200 seconds for that validation, and verify the terminal task status instead of treating an orchestration timeout alone as proof of a hang.
@@ -64,7 +64,7 @@ uv run pytest -q
 
 - `data/models.json` stores model configs and may contain plaintext upstream API keys. Never commit or paste it.
 - `analysis_model_id` in `data/models.json` is reused as the default built-in EvalScope Judge model.
-- Optional `data/evalscope.json` is intentionally small: use it only for EvalScope dataset/output directories and optional Judge override knobs such as `judge_model_config_id`, `judge_generation_config`, and `judge_worker_num`. Do not store Judge URLs or keys there.
+- Optional `data/evalscope.json` is intentionally small: use it only for EvalScope dataset/output directories, per-dataset EvalScope `dataset_args` overrides such as `subset_list`, and optional Judge override knobs such as `judge_model_config_id`, `judge_generation_config`, and `judge_worker_num`. Do not store Judge URLs or keys there.
 - Runtime output directories include `data/tasks/`, `data/jobs/`, `data/intelligence_tasks/`, `data/stress_tasks/`, `data/overview_reports/`, `data/suite_runs/`, `data/suite_schedules/`, `reports/`, and `outputs/`.
 
 ## Coding Style & Naming Conventions

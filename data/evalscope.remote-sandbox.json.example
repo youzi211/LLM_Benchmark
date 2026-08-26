@@ -5,5 +5,12 @@
   "sandbox_type": "docker",
   "sandbox_manager_config": {
     "base_url": "http://sandbox-host:1234"
+  },
+  "dataset_args": {
+    "live_code_bench": {
+      "subset_list": [
+        "release_latest"
+      ]
+    }
   }
 }

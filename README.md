@@ -477,7 +477,7 @@ curl -fsS -X POST "$API_BASE/api/models" \
 | 统一总览 | `POST /api/overview/reports` | 汇总三类任务，给出统一中文摘要和详情入口（章节顺序与执行顺序一致：网关 → 压测 → 能力评测）。 | `data/overview_reports/` 与 `reports/overview/` 总览报告。 |
 | 后台执行 | `GET /api/jobs` / `GET /api/jobs/{job_id}` | suite、能力评测、压测的后台执行统一由进程内 JobExecutor 记录状态、异常和目标任务 ID。 | `data/jobs/`。 |
 
-> 能力评测样本上限 `intelligence_limit`：可选字段，控制能力评测每个数据集只取前 N 条样本（在数据集加载阶段截断，分数仍按已评测样本的平均准确率计算）。`null` 表示不限制、全量评测。**定时计划未显式传值时默认 `200`**（常量 `DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`），防止 `live_code_bench` 等大体量数据集把半夜的定时评测卡死；手动 `POST /api/suites/default` 和 `POST /api/suites/quick` 默认不限。需要精确分数时手动调用且不传该字段即可跑全量。
+> 能力评测样本上限 `intelligence_limit`：可选字段，传给 EvalScope 的 `limit`，实际在 EvalScope 数据集加载阶段按 subset 截断，分数仍按已评测样本的平均准确率计算。`null` 表示不限制所选 subset 的样本数。**定时计划未显式传值时默认 `200`**（常量 `DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`）；手动 `POST /api/suites/default` 和 `POST /api/suites/quick` 默认不限。为避免多 subset 数据集把样本量放大，内置默认对 `live_code_bench` 注入 `dataset_args.live_code_bench.subset_list=["release_latest"]`，因此 `intelligence_limit=200` 时只评测该 subset 的前 200 条。需要覆盖到固定版本或多个 subset 时，请在 `data/evalscope.json` 的 `dataset_args` 中显式配置 `subset_list`。
 
 默认模型能力数据集如下；完整元数据可通过 `GET /api/intelligence/datasets` 查询，本机已准备的数据集可通过 `GET /api/intelligence/datasets/local` 查询。
 
@@ -496,7 +496,7 @@ curl -fsS -X POST "$API_BASE/api/models" \
 
 默认能力测试数据集当前不需要 LLM Judge；如果调用 `POST /api/intelligence/tasks` 自定义加入 `simple_qa`、`chinese_simpleqa`、`truthful_qa`、`alpaca_eval`、`arena_hard`、`longbench_v2` 等 Judge 数据集，则会使用内置 Judge 配置，缺少 Judge 时提交阶段返回 `400 judge_required`。
 
-> 能力评测支持本地数据集复用，避免每次评测都从 ModelScope 下载。把数据集放到 `data/evalscope_datasets/` 下，使每个数据集成为一个与数据集同名的顶层目录（例如 `data/evalscope_datasets/gsm8k/`、`data/evalscope_datasets/humaneval/`）。后端会扫描该目录，对名字匹配的子目录注入 `local_path`，EvalScope 改为 `Loading dataset ... from local` 而非 `from modelscope`。通过 `GET /api/intelligence/datasets/local` 可查看本机已就绪的数据集（`available_local=true`）。符号链接同样生效——若同机已有另一份完整数据集目录，可对其逐个 `ln -s` 而不必复制（`live_code_bench` 等大体量数据集尤其推荐此法）。
+> 能力评测支持本地数据集复用，避免每次评测都从 ModelScope 下载。把数据集放到 `data/evalscope_datasets/` 下，使每个数据集成为一个与数据集同名的顶层目录（例如 `data/evalscope_datasets/gsm8k/`、`data/evalscope_datasets/humaneval/`）。后端会扫描该目录，对名字匹配的子目录注入 `local_path`，EvalScope 改为 `Loading dataset ... from local` 而非 `from modelscope`。通过 `GET /api/intelligence/datasets/local` 可查看本机已就绪的数据集（`available_local=true`）。符号链接同样生效——若同机已有另一份完整数据集目录，可对其逐个 `ln -s` 而不必复制（`live_code_bench` 等大体量数据集尤其推荐此法）。如需覆盖 EvalScope 原生参数，可在 `data/evalscope.json` 写入 `dataset_args`，例如把 `live_code_bench` 改为 `{"subset_list": ["release_v6"]}`。
 
 > 代码类数据集虽然默认不需要 LLM Judge，但需要 EvalScope sandbox 才能评分。FastAPI 主服务本身不会自动启动 sandbox；运行 MBPP/MBPP+/HumanEval 等数据集前，请先独立启动 `ms-enclave server`，或用 `scripts/start_all.*` 的显式 sandbox 选项在同机拉起，并在 `data/evalscope.json` 中配置 `sandbox_enabled=true` 和 `sandbox_manager_config.base_url`。
 
@@ -631,7 +631,7 @@ head -80 report.md
 }
 ```
 
-能力评测默认把 `data/models.json` 顶层 `analysis_model_id` 指向的模型作为内置 Judge 使用；只有要覆盖 Judge 选择时，才在可选文件中额外加入 `judge_model_config_id`、`judge_generation_config` 和 `judge_worker_num`。Judge 的地址和密钥仍只存放在 `data/models.json` 的模型配置里，不放在 `data/evalscope.json`。
+能力评测默认把 `data/models.json` 顶层 `analysis_model_id` 指向的模型作为内置 Judge 使用；只有要覆盖 Judge 选择时，才在可选文件中额外加入 `judge_model_config_id`、`judge_generation_config` 和 `judge_worker_num`。如需覆盖 EvalScope 原生数据集参数（例如多 subset 数据集的 `subset_list`），也可以在同一文件加入 `dataset_args`。Judge 的地址和密钥仍只存放在 `data/models.json` 的模型配置里，不放在 `data/evalscope.json`。
 
 提交默认压测：
 

@@ -28,6 +28,9 @@ class EvalScopeConfig(BaseModel):
     judge_generation_config: dict[str, Any] = Field(default_factory=lambda: {"temperature": 0.0, "max_tokens": 4096})
     judge_worker_num: int = Field(default=5, ge=1, le=128)
     ignore_dataset_errors: bool = True
+    # Per-dataset EvalScope overrides, passed through as TaskConfig.dataset_args.
+    # Useful for subset_list, few_shot_num, filters, extra_params, or local_path.
+    dataset_args: dict[str, dict[str, Any]] = Field(default_factory=dict)
     # EvalScope code-execution benchmarks such as MBPP/MBPP+ require a
     # sandbox during scoring. Keep it disabled by default so non-code
     # evaluations retain the previous minimal zero-config behavior.

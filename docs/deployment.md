@@ -31,7 +31,7 @@ LLM_Benchmark/
 }
 ```
 
-需要运行依赖 LLM Judge 的数据集时，系统默认使用 `data/models.json` 顶层 `analysis_model_id` 指向的模型作为内置 Judge。若要覆盖 Judge，可在同一个可选文件额外加入 `judge_model_config_id`、`judge_generation_config`、`judge_worker_num`；Judge 地址和密钥仍只存放在 `data/models.json` 的模型配置里，不能提交。旧运行文件中的 `base_url`、超时、轮询以及旧 Judge 直连字段会被忽略。
+需要运行依赖 LLM Judge 的数据集时，系统默认使用 `data/models.json` 顶层 `analysis_model_id` 指向的模型作为内置 Judge。若要覆盖 Judge，可在同一个可选文件额外加入 `judge_model_config_id`、`judge_generation_config`、`judge_worker_num`；若要覆盖 EvalScope 原生数据集参数（例如 `live_code_bench` 的 `subset_list`），可加入 `dataset_args`。Judge 地址和密钥仍只存放在 `data/models.json` 的模型配置里，不能提交。旧运行文件中的 `base_url`、超时、轮询以及旧 Judge 直连字段会被忽略。
 
 代码执行类能力评测（当前包括 `humaneval`、`humaneval_plus`、`mbpp`、`mbpp_plus`、`live_code_bench`）需要 EvalScope sandbox 才能执行评分。生产环境推荐使用远程 sandbox server：主服务仍保持单 FastAPI 进程，sandbox 只承担隔离代码执行，不是 EvalScope HTTP 包装服务，也**不会由 FastAPI 主服务自动拉起**。`scripts/start_all.*` 默认不启动 sandbox；如果 sandbox 与主服务同机，可显式开启脚本选项作为便捷模式。远程部署时可复制 `data/evalscope.remote-sandbox.json.example` 为 `data/evalscope.json` 并修改内网地址：
 

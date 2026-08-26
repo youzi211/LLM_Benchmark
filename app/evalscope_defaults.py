@@ -33,6 +33,15 @@ SCHEDULED_CODE_INTELLIGENCE_EVAL_BATCH_SIZE = 2
 FULL_OFFLINE_INTELLIGENCE_DATASETS: tuple[str, ...] = DEFAULT_INTELLIGENCE_DATASETS
 FULL_OFFLINE_INTELLIGENCE_EVAL_BATCH_SIZE = 5
 
+# EvalScope 的 limit 对多 subset 数据集是“每个 subset 各截断一次”。
+# live_code_bench 默认包含多个 release/vX 组合子集；若不显式限制 subset，
+# intelligence_limit=200 会放大为数千条样本。默认只评测最新 release，
+# 如需固定版本或多子集覆盖，可在 data/evalscope.json 的 dataset_args 中覆盖。
+LIVE_CODE_BENCH_DEFAULT_SUBSETS: tuple[str, ...] = ("release_latest",)
+DEFAULT_INTELLIGENCE_DATASET_ARGS: dict[str, dict[str, Any]] = {
+    "live_code_bench": {"subset_list": list(LIVE_CODE_BENCH_DEFAULT_SUBSETS)},
+}
+
 DEFAULT_EVAL_BATCH_SIZE = 10
 DEFAULT_GENERATION_CONFIG: dict[str, Any] = {"temperature": 0.0, "max_tokens": 8192}
 

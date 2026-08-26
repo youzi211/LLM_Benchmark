@@ -71,6 +71,59 @@ def test_intelligence_executor_enables_remote_sandbox_for_mbpp(tmp_path):
     assert "sandbox_manager_config" not in data
 
 
+def test_intelligence_executor_defaults_live_code_bench_to_single_subset(tmp_path):
+    executor = EvalScopeIntelligenceExecutor(
+        EvalScopeConfig(
+            outputs_dir=str(tmp_path / "outputs"),
+            sandbox_enabled=True,
+            sandbox_manager_config={"base_url": "http://sandbox.local:1234"},
+        )
+    )
+
+    data = executor._task_config_data(
+        model="demo",
+        api_url="http://model/v1/chat/completions",
+        api_key="dummy",
+        dataset="live_code_bench",
+        local_paths={"live_code_bench": str(tmp_path / "datasets" / "live_code_bench")},
+        limit=200,
+        eval_batch_size=5,
+        generation_config=None,
+        work_dir=str(tmp_path / "work"),
+        judge_model_args=None,
+    )
+
+    assert data["limit"] == 200
+    assert data["dataset_args"]["live_code_bench"]["subset_list"] == ["release_latest"]
+    assert data["dataset_args"]["live_code_bench"]["local_path"].endswith("live_code_bench")
+
+
+def test_intelligence_executor_allows_configured_dataset_args_to_override_builtin_subset(tmp_path):
+    executor = EvalScopeIntelligenceExecutor(
+        EvalScopeConfig(
+            outputs_dir=str(tmp_path / "outputs"),
+            sandbox_enabled=True,
+            dataset_args={"live_code_bench": {"subset_list": ["release_v6"], "extra_params": {"debug": True}}},
+        )
+    )
+
+    data = executor._task_config_data(
+        model="demo",
+        api_url="http://model/v1/chat/completions",
+        api_key="dummy",
+        dataset="live_code_bench",
+        local_paths={},
+        limit=200,
+        eval_batch_size=5,
+        generation_config=None,
+        work_dir=str(tmp_path / "work"),
+        judge_model_args=None,
+    )
+
+    assert data["dataset_args"]["live_code_bench"]["subset_list"] == ["release_v6"]
+    assert data["dataset_args"]["live_code_bench"]["extra_params"] == {"debug": True}
+
+
 def test_intelligence_executor_requires_sandbox_for_code_execution_datasets(tmp_path):
     executor = EvalScopeIntelligenceExecutor(EvalScopeConfig(outputs_dir=str(tmp_path / "outputs")))
 

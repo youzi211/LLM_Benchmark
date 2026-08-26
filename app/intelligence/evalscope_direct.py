@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import os
 from datetime import datetime
 from pathlib import Path
@@ -10,6 +11,7 @@ from app.evalscope_defaults import (
     DATASET_METADATA,
     DEFAULT_EVAL_BATCH_SIZE,
     DEFAULT_GENERATION_CONFIG,
+    DEFAULT_INTELLIGENCE_DATASET_ARGS,
     DEFAULT_INTELLIGENCE_DATASETS,
     LLM_JUDGE_DATASETS,
 )
@@ -195,9 +197,7 @@ class EvalScopeIntelligenceExecutor:
         work_dir: str,
         judge_model_args: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        dataset_args: dict[str, dict[str, Any]] = {}
-        if dataset in local_paths:
-            dataset_args[dataset] = {"local_path": local_paths[dataset]}
+        dataset_args = self._dataset_args(dataset=dataset, local_paths=local_paths)
         data: dict[str, Any] = {
             "model": model,
             "api_url": api_url,
@@ -233,6 +233,13 @@ class EvalScopeIntelligenceExecutor:
             data["judge_model_args"] = judge_model_args
             data["judge_worker_num"] = self.config.judge_worker_num
         return data
+
+    def _dataset_args(self, *, dataset: str, local_paths: dict[str, str]) -> dict[str, dict[str, Any]]:
+        args = copy.deepcopy(DEFAULT_INTELLIGENCE_DATASET_ARGS.get(dataset, {}))
+        args.update(copy.deepcopy(self.config.dataset_args.get(dataset, {})))
+        if dataset in local_paths and not args.get("local_path"):
+            args["local_path"] = local_paths[dataset]
+        return {dataset: args} if args else {}
 
     def _local_paths(self) -> dict[str, str]:
         root = datasets_root(self.config)

@@ -876,7 +876,7 @@ EvalScope 智力评测不是 `gateway_acceptance_v1` 的接入验收指标，因
 
 关注点：
 
-- 默认评测的数据集组合由本系统在 `app/intelligence/evalscope_direct.py` 中维护，并逐个传给 EvalScope 执行。
+- 默认评测的数据集组合、内置 `dataset_args` 由 `app/evalscope_defaults.py` 集中维护，并逐个传给 EvalScope 执行。EvalScope 的 `limit` 对多 subset 数据集按 subset 截断；内置默认对 `live_code_bench` 只选择 `release_latest`，避免 `intelligence_limit=200` 被 28 个 subset 放大成数千条。
 - 代码执行类数据集（`humaneval`、`humaneval_plus`、`mbpp`、`mbpp_plus`、`live_code_bench`）必须配置 EvalScope sandbox 才能评分；推荐在 `data/evalscope.json` 中设置 `sandbox_enabled=true` 和远程 `sandbox_manager_config.base_url`。FastAPI 主服务启动时不会在 `app.main` 中自动启动 sandbox；运行这类数据集前必须先独立启动 `ms-enclave server` 并确认 `/health` 可访问，或在同机验证时使用 `scripts/start_all.*` 的显式 sandbox 选项。运行时适配层会把本地兼容字段转换为 EvalScope 官方 `sandbox={"enabled": true, "engine": "docker", "manager_config": {...}}`。
 - 需要 Judge 的数据集默认使用 `data/models.json` 顶层 `analysis_model_id` 指向的内置 Judge；可用 `data/evalscope.json` 的 `judge_model_config_id` 覆盖。没有可用 Judge 时，包含 Judge 数据集的任务会在提交阶段被拒绝，避免跑到 EvalScope 内部才失败。
 - `score` 只做展示和后续人工分析，不设置上线阈值，不输出自动准入结论。

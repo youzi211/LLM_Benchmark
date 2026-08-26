@@ -553,7 +553,7 @@ GET /api/tasks?limit=20
 
 ## 10. 智力评测接口（EvalScope）
 
-智力评测用于调用 EvalScope Python package 执行公开数据集能力测试。当前执行模式为 `in_process`：主服务直接 `import evalscope` 并调用 `evalscope.run_task(TaskConfig)`，不再代理到外部 EvalScope HTTP 包装服务。`data/evalscope.json` 是可选覆盖文件；默认不创建也会使用 `data/evalscope_datasets` 和 `outputs/evalscope`。代码执行类数据集（`humaneval`、`humaneval_plus`、`mbpp`、`mbpp_plus`、`live_code_bench`）需要配置 EvalScope sandbox 才能评分；未配置时会在任务执行阶段返回 `sandbox_required:<dataset>`，避免只生成预测却没有分数。FastAPI 主服务启动时不会在 `app.main` 中自动启动 sandbox；必须提前独立启动 `ms-enclave server` 或其他 EvalScope sandbox manager，或在同机验证时使用 `scripts/start_all.*` 的显式 sandbox 选项。
+智力评测用于调用 EvalScope Python package 执行公开数据集能力测试。当前执行模式为 `in_process`：主服务直接 `import evalscope` 并调用 `evalscope.run_task(TaskConfig)`，不再代理到外部 EvalScope HTTP 包装服务。`data/evalscope.json` 是可选覆盖文件；默认不创建也会使用 `data/evalscope_datasets` 和 `outputs/evalscope`。代码执行类数据集（`humaneval`、`humaneval_plus`、`mbpp`、`mbpp_plus`、`live_code_bench`）需要配置 EvalScope sandbox 才能评分；未配置时会在任务执行阶段返回 `sandbox_required:<dataset>`，避免只生成预测却没有分数。FastAPI 主服务启动时不会在 `app.main` 中自动启动 sandbox；必须提前独立启动 `ms-enclave server` 或其他 EvalScope sandbox manager，或在同机验证时使用 `scripts/start_all.*` 的显式 sandbox 选项。EvalScope 的 `limit` 对多 subset 数据集按 subset 生效，本系统默认对 `live_code_bench` 注入 `dataset_args.live_code_bench.subset_list=["release_latest"]`，避免定时任务的 `intelligence_limit` 被多 subset 放大。
 
 ### 10.0 可选 sandbox 配置
 

@@ -111,7 +111,7 @@ curl -X POST "$API_BASE/suites/quick" \
 | `wait_for_completion` | 否 | boolean | 是否阻塞等待评测完成。对接口对接建议填 `false`，然后轮询查询。 |
 | `poll_interval_seconds` | 否 | number | 服务内部等待子任务完成的轮询间隔。 |
 | `timeout_seconds_total` | 否 | number | 整个 suite 最长等待时间，例如 `7200` 秒。 |
-| `intelligence_limit` | 否 | integer | 智力评测每个数据集取前 N 条样本截断。`null`（不传）表示全量评测。定时评测会默认取前 `200` 条（见第五节），quick 评测默认不限。 |
+| `intelligence_limit` | 否 | integer | 智力评测样本上限，传给 EvalScope 的 `limit`。注意 EvalScope 对多 subset 数据集是按 subset 截断；本系统已对 `live_code_bench` 默认限制为 `release_latest` 单一 subset，避免 `200 × 多个 subset` 放大。`null`（不传）表示不限制所选 subset 的样本数。定时评测会默认取前 `200` 条（见第五节），quick 评测默认不限。 |
 
 > 至少要有一个评测通道为 `true`：`run_gateway`、`run_intelligence`、`run_stress` 不能全是 `false`。
 
@@ -382,7 +382,7 @@ curl -X POST "$API_BASE/suites/schedules" \
 | `poll_interval_seconds` | 否 | number | suite 内部轮询间隔。 |
 | `timeout_seconds` | 否 | number | 定时 suite 总等待超时时间，和 quick 接口的 `timeout_seconds_total` 含义一致。 |
 | `intelligence_datasets` | 否 | string[] | 能力评测数据集列表。默认由 profile 决定；当前 `scheduled_light` 为 `gsm8k`、`math_500`、`ceval`，维护位置为 `app/evalscope_defaults.py`。 |
-| `intelligence_limit` | 否 | integer | 智力评测每个数据集取前 N 条样本截断。`scheduled_light` 默认 `50`；不使用 profile 时默认 `200`。需要全量精确分数时显式传一个足够大的数或在手动 suite 中不传。 |
+| `intelligence_limit` | 否 | integer | 智力评测样本上限，传给 EvalScope 的 `limit`。`scheduled_light` 默认 `50`；不使用 profile 时默认 `200`。EvalScope 原生语义是按 subset 截断，因此内置默认对 `live_code_bench` 注入 `subset_list=["release_latest"]`，让该数据集在 `limit=200` 时实际只跑 200 条。需要覆盖到固定版本、更多 subset 或不限制所选 subset 样本数时，请显式传足够大的 `intelligence_limit`/不传该字段，并在 `data/evalscope.json` 覆盖 `dataset_args`。 |
 
 > 执行顺序说明：suite 内部按 网关 smoke → EvalScope 压测 → EvalScope 智力评测 → 总览报告 的顺序执行（先跑压测拿到性能数据，再跑智力评测，避免长时智力评测卡死整条 suite 时丢掉性能结果）。返回示例里的 `steps` 和 `current_step` 也按这个顺序推进。
 
@@ -606,5 +606,5 @@ POST /api/suites/schedules，run_once=false，interval_days=1，time_of_day=00:0
 4. `next_run_at` 返回 UTC 时间；如果 `timezone` 是 `Asia/Shanghai`，北京时间 `00:00` 会显示为前一天 UTC `16:00`。
 5. 代码执行类智力评测，例如 MBPP/MBPP+、HumanEval/HumanEval+，需要 sandbox 服务保持运行；使用 `scheduled_code` 或 `full_offline` profile 时，如果未启用 sandbox，创建计划会返回 `400 profile_requires_sandbox`。
 6. 建议对接方保存 `suite_id` 和 `schedule_id`，并优先用 `GET /api/suites/schedules/{schedule_id}/last-run` 排查定时任务执行结果。
-7. 能力评测默认数据集组合维护在 `app/evalscope_defaults.py`，未命中本地目录时会从 ModelScope 下载（例如 `humaneval`、`gsm8k` 等）。若希望评测时不依赖外网、不重复下载，可提前在 `data/evalscope_datasets/` 下按数据集名准备本地目录（例如 `data/evalscope_datasets/gsm8k/`、`data/evalscope_datasets/humaneval/`），后端会自动识别并改为本地加载（日志显示 `Loading dataset ... from local` 而非 `from modelscope`）。通过 `GET /api/intelligence/datasets/local` 可确认本机已就绪的数据集（`available_local=true`）。同机已有另一份完整数据集时，对每个数据集目录建立符号链接即可复用，无需复制，尤其推荐用于 `live_code_bench` 等大体量数据集。
+7. 能力评测默认数据集组合、内置 `dataset_args` 和 profile 维护在 `app/evalscope_defaults.py`，未命中本地目录时会从 ModelScope 下载（例如 `humaneval`、`gsm8k` 等）。若希望评测时不依赖外网、不重复下载，可提前在 `data/evalscope_datasets/` 下按数据集名准备本地目录（例如 `data/evalscope_datasets/gsm8k/`、`data/evalscope_datasets/humaneval/`），后端会自动识别并改为本地加载（日志显示 `Loading dataset ... from local` 而非 `from modelscope`）。通过 `GET /api/intelligence/datasets/local` 可确认本机已就绪的数据集（`available_local=true`）。同机已有另一份完整数据集时，对每个数据集目录建立符号链接即可复用，无需复制，尤其推荐用于 `live_code_bench` 等大体量数据集。`live_code_bench` 内置只跑 `release_latest`；如需固定版本，可在 `data/evalscope.json` 设置 `"dataset_args": {"live_code_bench": {"subset_list": ["release_v6"]}}`。
 8. `data/models.json` 可能包含明文 API Key，已在 `.gitignore` 中忽略，切勿提交到 Git；`data/evalscope_datasets/`、`data/evalscope.json` 同理。

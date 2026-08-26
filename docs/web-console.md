@@ -23,7 +23,7 @@
 - `context_window_tokens`、`max_output_tokens`、单次请求 `timeout_seconds`。
 - `title`、三个通道开关 `run_gateway` / `run_intelligence` / `run_stress`、连通性 only 模式。
 - 高级压测参数 `parallel`、`number`，以及 `poll_interval_seconds`、总超时 `timeout_seconds_total`。
-- `intelligence_limit`：能力评测每个数据集样本上限，quick 评测默认不限。
+- `intelligence_limit`：能力评测样本上限，quick 评测默认不限；EvalScope 对多 subset 数据集按 subset 截断，本系统默认把 `live_code_bench` 限制到 `release_latest` 单一 subset。
 
 ### 2.2 进度雷达（Live suite）
 
@@ -43,7 +43,7 @@
 - 默认时区 `Asia/Shanghai`，可填计划名 `name`、生成 suite 标题 `title`。
 - 可先把左侧临时模型参数通过 `POST /api/models` 保存为模型配置，再 `POST /api/suites/schedules` 创建定时计划；也可为已有模型直接创建。
 - 列出已有计划：状态、立即触发（`POST /api/suites/schedules/{id}/trigger`）、删除（`DELETE /api/suites/schedules/{id}`）。
-- 定时智力评测默认每个数据集只取前 `200` 条样本（`DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`），可传 `intelligence_limit` 覆盖。
+- 定时智力评测默认 `intelligence_limit=200`（`DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`），可传 `intelligence_limit` 覆盖；`live_code_bench` 内置只跑 `release_latest`，避免多 subset 累加。
 
 ### 2.5 最近 suite（History）
 
