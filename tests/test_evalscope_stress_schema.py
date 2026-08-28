@@ -1,3 +1,6 @@
+import pytest
+from pydantic import ValidationError
+
 from app.evalscope_defaults import (
     DEFAULT_STRESS_DATASET,
     DEFAULT_STRESS_MAX_PROMPT_LENGTH,
@@ -50,3 +53,15 @@ def test_stress_payload_schema_remains_evalscope_arguments_friendly():
     assert data["tokenizer_path"] is None
     assert data["parallel"]
     assert data["number"]
+
+
+def test_stress_request_rejects_mismatched_parallel_number_lists():
+    with pytest.raises(ValidationError) as exc_info:
+        StressRemoteSubmitPayload(
+            model="demo",
+            url="http://model/v1/chat/completions",
+            parallel=[5, 10, 20, 30, 40, 50],
+            number=[10, 20, 30, 50],
+        )
+
+    assert "parallel and number must have the same length" in str(exc_info.value)

@@ -1,3 +1,4 @@
+import json
 import sys
 import types
 
@@ -6,6 +7,7 @@ from app.intelligence.evalscope_direct import (
     EvalScopeIntelligenceExecutor,
     dataset_metadata,
     judge_config_status,
+    summarize_evalscope_task_progress,
 )
 from app.intelligence.schemas import EvalScopeConfig
 from app.stress.evalscope_direct import EvalScopeStressExecutor
@@ -36,6 +38,54 @@ def test_judge_config_status_does_not_expose_api_key():
     assert status["source"] == "analysis_model"
     assert "api_key" not in status
     assert "dummy-secret-key" not in str(status)
+
+
+def test_summarize_evalscope_task_progress_reads_dataset_progress_files(tmp_path):
+    root = tmp_path / "outputs" / "intelligence" / "intel_task_1"
+    first = root / "humaneval" / "20260828_120000"
+    second = root / "live_code_bench" / "20260828_120010"
+    first.mkdir(parents=True)
+    second.mkdir(parents=True)
+    (first / "progress.json").write_text(
+        json.dumps({"status": "completed", "pipeline": "eval", "total_count": 10, "processed_count": 10, "percent": 100}),
+        encoding="utf-8",
+    )
+    (second / "progress.json").write_text(
+        json.dumps({"status": "running", "pipeline": "eval", "total_count": 200, "processed_count": 50, "percent": 25}),
+        encoding="utf-8",
+    )
+
+    progress = summarize_evalscope_task_progress(root, ["humaneval", "live_code_bench", "gsm8k"])
+
+    assert progress["current_dataset"] == "live_code_bench"
+    assert progress["dataset_index"] == 2
+    assert progress["dataset_total"] == 3
+    assert progress["processed_count"] == 50
+    assert progress["total_count"] == 200
+    assert progress["percent"] == 25.0
+    assert progress["overall_percent"] == 41.67
+    assert "live_code_bench 50/200" in progress["message"]
+
+
+def test_dataset_metadata_includes_local_subsets_and_descriptions(tmp_path):
+    datasets_dir = tmp_path / "datasets"
+    (datasets_dir / "bbh" / "boolean_expressions").mkdir(parents=True)
+    (datasets_dir / "bbh" / "date_understanding").mkdir(parents=True)
+    (datasets_dir / "live_code_bench" / "release_latest").mkdir(parents=True)
+    (datasets_dir / "live_code_bench" / "release_v6").mkdir(parents=True)
+
+    data = dataset_metadata(EvalScopeConfig(datasets_dir=str(datasets_dir)))
+
+    bbh = data["datasets"]["bbh"]
+    assert bbh["available_local"] is True
+    assert bbh["description"] == "Big-Bench Hard 复杂推理"
+    assert bbh["subset_count"] == 2
+    assert bbh["subsets"] == ["boolean_expressions", "date_understanding"]
+
+    lcb = data["datasets"]["live_code_bench"]
+    assert lcb["available_local"] is True
+    assert lcb["configured_subset_list"] == ["release_latest"]
+    assert lcb["subsets"] == ["release_latest", "release_v6"]
 
 
 def test_intelligence_executor_enables_remote_sandbox_for_mbpp(tmp_path):

@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from app.intelligence.schemas import IntelligenceTask
+from app.intelligence.schemas import IntelligenceProgress, IntelligenceTask
 from app.main import app
 
 
@@ -17,7 +17,25 @@ class FakeRunner:
     async def refresh_status(self, task_id: str):
         if task_id == "missing":
             return None
-        return IntelligenceTask(task_id=task_id, evalscope_task_id=task_id, model_id="m1", evalscope_base_url="in-process", status="running")
+        return IntelligenceTask(
+            task_id=task_id,
+            evalscope_task_id=task_id,
+            model_id="m1",
+            evalscope_base_url="in-process",
+            status="running",
+            progress="能力评测进行中：gsm8k 5/10（50.0%），数据集 1/1",
+            progress_detail=IntelligenceProgress(
+                status="running",
+                current_dataset="gsm8k",
+                dataset_index=1,
+                dataset_total=1,
+                processed_count=5,
+                total_count=10,
+                percent=50.0,
+                overall_percent=50.0,
+                message="能力评测进行中：gsm8k 5/10（50.0%），数据集 1/1",
+            ),
+        )
 
 
     async def cancel(self, task_id: str):
@@ -38,6 +56,7 @@ def test_intelligence_openapi_paths_present():
     assert "/api/intelligence/evalscope/tasks" in paths
     assert "/api/intelligence/tasks/default" in paths
     assert "/api/intelligence/tasks/{task_id}/result" in paths
+    assert "/api/intelligence/tasks/{task_id}/progress" in paths
     assert "/api/intelligence/reports/{task_id}" in paths
 
 
@@ -58,7 +77,12 @@ def test_intelligence_routes_happy_path(monkeypatch):
     assert submitted["evalscope_base_url"] == "in-process"
     custom = client.post("/api/intelligence/tasks", json={"model_id": "m1", "datasets": ["gsm8k"]}).json()
     assert custom["datasets"] == ["gsm8k"]
-    assert client.get("/api/intelligence/tasks/some").json()["status"] == "running"
+    status = client.get("/api/intelligence/tasks/some").json()
+    assert status["status"] == "running"
+    assert status["progress_detail"]["processed_count"] == 5
+    progress = client.get("/api/intelligence/tasks/some/progress").json()
+    assert progress["progress"] == "能力评测进行中：gsm8k 5/10（50.0%），数据集 1/1"
+    assert progress["progress_detail"]["overall_percent"] == 50.0
     assert client.get("/api/intelligence/tasks/some/result").json()["status"] == "completed"
 
 

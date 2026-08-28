@@ -496,3 +496,26 @@ def test_suite_cancel_route(temp_data_dirs, monkeypatch):
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "interrupted"
     assert client.post("/api/suites/missing/cancel").status_code == 404
+
+
+def test_suite_schedule_rejects_mismatched_stress_sweep_lengths(temp_data_dirs, monkeypatch):
+    monkeypatch.setenv("LLM_BENCHMARK_SCHEDULER_DISABLED", "1")
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/suites/schedules",
+        json={
+            "name": "nightly-demo",
+            "model_id": "demo-chat",
+            "time_of_day": "02:00",
+            "timezone": "Asia/Shanghai",
+            "profile": None,
+            "stress_options": {
+                "parallel": [5, 10, 20, 30, 40, 50],
+                "number": [10, 20, 30, 50],
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    assert "parallel and number must have the same length" in response.text

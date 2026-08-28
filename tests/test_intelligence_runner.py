@@ -1,10 +1,13 @@
 import asyncio
+import json
 import threading
 
 import pytest
 
 from app.core.models import ModelConfigCreate
+from app.intelligence.config_store import EvalScopeConfigStore
 from app.intelligence.runner import IntelligenceRunner
+from app.intelligence.schemas import EvalScopeConfig, IntelligenceTask
 from app.jobs.executor import JobExecutor
 from app.jobs.store import JobStore
 from app.storage.intelligence_task_store import IntelligenceTaskStore
@@ -99,6 +102,57 @@ async def test_intelligence_runner_maps_responses_endpoint(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_intelligence_runner_refreshes_evalscope_progress_file(tmp_path):
+    outputs_dir = tmp_path / "outputs"
+    task_store = IntelligenceTaskStore(tmp_path / "intelligence_tasks")
+    config_store = EvalScopeConfigStore(tmp_path / "evalscope.json")
+    config_store.save(EvalScopeConfig(outputs_dir=str(outputs_dir)))
+    task = IntelligenceTask(
+        task_id="intel_task_progress",
+        model_id="m1",
+        evalscope_base_url="in-process",
+        datasets=["live_code_bench", "gsm8k"],
+        status="running",
+        raw_output_dir=str(outputs_dir / "intelligence" / "intel_task_progress"),
+    )
+    task_store.save(task)
+    progress_dir = outputs_dir / "intelligence" / "intel_task_progress" / "live_code_bench" / "20260828_120000"
+    progress_dir.mkdir(parents=True)
+    (progress_dir / "progress.json").write_text(
+        json.dumps(
+            {
+                "status": "running",
+                "pipeline": "eval",
+                "total_count": 200,
+                "processed_count": 75,
+                "percent": 37.5,
+                "updated_at": "2026-08-28T12:00:00+08:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+    runner = IntelligenceRunner(
+        model_store=_model_store(tmp_path / "models.json"),
+        task_store=task_store,
+        config_store=config_store,
+        executor=FakeIntelligenceExecutor(),
+        reports_dir=tmp_path / "reports",
+        run_in_background=False,
+    )
+
+    refreshed = await runner.refresh_status("intel_task_progress")
+
+    assert refreshed is not None
+    assert refreshed.progress_detail is not None
+    assert refreshed.progress_detail.current_dataset == "live_code_bench"
+    assert refreshed.progress_detail.processed_count == 75
+    assert refreshed.progress_detail.total_count == 200
+    assert refreshed.progress_detail.percent == 37.5
+    assert refreshed.progress_detail.overall_percent == 18.75
+    assert "75/200" in refreshed.progress
+
+
+@pytest.mark.asyncio
 async def test_intelligence_runner_default_uses_curated_dataset_suite(tmp_path):
     executor = FakeIntelligenceExecutor()
     runner = IntelligenceRunner(
@@ -158,11 +212,7 @@ async def test_intelligence_runner_rejects_judge_dataset_without_builtin_judge(t
 
 @pytest.mark.asyncio
 async def test_intelligence_runner_background_uses_job_executor(tmp_path, monkeypatch):
-    from app.core.models import ModelConfigCreate
     from app.intelligence import runner as intelligence_runner_module
-    from app.intelligence.runner import IntelligenceRunner
-    from app.storage.intelligence_task_store import IntelligenceTaskStore
-    from app.storage.model_store import ModelStore
 
     class FakeExecutor:
         def __init__(self):
