@@ -1,0 +1,33 @@
+{
+  "name": "llm-benchmark-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Vue 3 + Vite + Element Plus + ECharts 重写控制台的前端骨架",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "build:no-check": "vite build",
+    "preview": "vite preview --port 4173"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.1",
+    "@vueuse/core": "^11.2.0",
+    "axios": "^1.7.7",
+    "echarts": "^5.5.1",
+    "element-plus": "^2.8.8",
+    "pinia": "^2.2.6",
+    "vue": "^3.5.13",
+    "vue-echarts": "^7.0.3",
+    "vue-router": "^4.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@vitejs/plugin-vue": "^5.2.0",
+    "typescript": "~5.6.3",
+    "unplugin-auto-import": "^0.18.5",
+    "unplugin-vue-components": "^0.27.5",
+    "vite": "^6.0.0",
+    "vue-tsc": "^2.1.10"
+  }
+}

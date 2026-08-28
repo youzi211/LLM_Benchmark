@@ -41,3 +41,16 @@ __pycache__/
 /data/stress_datasets/
 
 /outputs/
+
+# Vue / Vite 前端骨架
+/frontend/node_modules/
+/frontend/dist/
+/frontend/.vite/
+/frontend/src/auto-imports.d.ts
+/frontend/src/components.d.ts
+
+# Vue SPA 构建产物(供未来切换 /ui-vue/ 使用,先不入库)
+/app/web_vue/
+/frontend/*.tsbuildinfo
+/frontend/vite.config.js
+/frontend/vite.config.d.ts

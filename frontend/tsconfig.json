@@ -1,0 +1,51 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noImplicitAny": true,
+    "jsx": "preserve",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "useDefineForClassFields": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
+    "types": ["node"]
+  },
+  "include": [
+    "src/main.ts",
+    "src/App.vue",
+    "src/views/**/*.vue",
+    "src/layouts/**/*.vue",
+    "src/router/**/*.ts",
+    "src/stores/**/*.ts",
+    "src/api/http.ts",
+    "src/api/models.ts",
+    "src/components/EChart.vue",
+    "src/styles/**/*.css",
+    "src/auto-imports.d.ts",
+    "src/components.d.ts",
+    "env.d.ts"
+  ],
+  "exclude": [
+    "src/types/**",
+    "src/api/basicEvaluation.ts",
+    "src/api/intelligenceEvaluation.ts",
+    "src/api/stressEvaluation.ts",
+    "src/api/metrics.ts",
+    "src/components/shared/**",
+    "src/components/BasicEvaluation/**",
+    "src/components/IntelligenceEvaluation/**",
+    "src/components/StressEvaluation/**"
+  ],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}

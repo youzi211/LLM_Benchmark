@@ -1,0 +1,179 @@
+import { http } from "./http";
+
+export type Status = "pending" | "running" | "completed" | "failed" | "interrupted" | "partial" | "error" | string;
+
+export interface TaskLike {
+  task_id: string;
+  model_id?: string;
+  status?: Status;
+  created_at?: string;
+  updated_at?: string;
+  completed_at?: string;
+  report_path?: string | null;
+  error?: unknown;
+  [key: string]: unknown;
+}
+
+export interface DatasetMeta {
+  name?: string;
+  pretty_name?: string;
+  description?: string;
+  categories?: string[];
+  needs_judge?: boolean;
+  available_local?: boolean;
+  local_path?: string;
+  subsets?: string[];
+  subset_count?: number;
+  configured_subset_list?: string[];
+  [key: string]: unknown;
+}
+
+export async function runBasic(payload: Record<string, unknown>) {
+  const { data } = await http.post("/tasks/run", payload);
+  return data;
+}
+
+export async function listBasicTasks(limit = 50): Promise<TaskLike[]> {
+  const { data } = await http.get(`/tasks?limit=${limit}`);
+  return Array.isArray(data) ? data : [];
+}
+
+export async function getBasicTask(taskId: string): Promise<TaskLike> {
+  const { data } = await http.get(`/tasks/${encodeURIComponent(taskId)}`);
+  return data;
+}
+
+export async function runStress(payload: Record<string, unknown>) {
+  const { data } = await http.post("/stress/tasks/default", payload);
+  return data;
+}
+
+export async function listStressTasks(limit = 50): Promise<TaskLike[]> {
+  const { data } = await http.get(`/stress/tasks?limit=${limit}`);
+  return Array.isArray(data) ? data : [];
+}
+
+export async function getStressTask(taskId: string, result = false): Promise<TaskLike> {
+  const { data } = await http.get(`/stress/tasks/${encodeURIComponent(taskId)}${result ? "/result" : ""}`);
+  return data;
+}
+
+export async function cancelStressTask(taskId: string) {
+  const { data } = await http.post(`/stress/tasks/${encodeURIComponent(taskId)}/cancel`);
+  return data;
+}
+
+
+export interface StressDatasetMeta {
+  name: string;
+  pretty_name?: string;
+  description?: string;
+  categories?: string[];
+  is_default?: boolean;
+  is_local_resolvable?: boolean;
+  available_local?: boolean;
+  local_path?: string;
+  [key: string]: unknown;
+}
+
+export async function fetchStressDatasets(): Promise<{ default_dataset: string; datasets: Record<string, StressDatasetMeta> }> {
+  const { data } = await http.get("/stress/datasets");
+  return {
+    default_dataset: data?.default_dataset ?? "",
+    datasets: data?.datasets && typeof data.datasets === "object" ? data.datasets : {},
+  };
+}
+export async function runIntelligence(payload: Record<string, unknown>) {
+  const { data } = await http.post("/intelligence/tasks", payload);
+  return data;
+}
+
+export async function runDefaultIntelligence(payload: { model_id: string }) {
+  const { data } = await http.post("/intelligence/tasks/default", payload);
+  return data;
+}
+
+export async function listIntelligenceTasks(limit = 50): Promise<TaskLike[]> {
+  const { data } = await http.get(`/intelligence/tasks?limit=${limit}`);
+  return Array.isArray(data) ? data : [];
+}
+
+export async function getIntelligenceTask(taskId: string, result = false): Promise<TaskLike> {
+  const { data } = await http.get(`/intelligence/tasks/${encodeURIComponent(taskId)}${result ? "/result" : ""}`);
+  return data;
+}
+
+export async function cancelIntelligenceTask(taskId: string) {
+  const { data } = await http.post(`/intelligence/tasks/${encodeURIComponent(taskId)}/cancel`);
+  return data;
+}
+
+export async function fetchDatasets(): Promise<{ default_datasets: string[]; datasets: Record<string, DatasetMeta> }> {
+  const { data } = await http.get("/intelligence/datasets");
+  return {
+    default_datasets: Array.isArray(data?.default_datasets) ? data.default_datasets : [],
+    datasets: data?.datasets && typeof data.datasets === "object" ? data.datasets : {},
+  };
+}
+
+export async function listSuites(limit = 20) {
+  const { data } = await http.get(`/suites?limit=${limit}`);
+  return Array.isArray(data) ? data : [];
+}
+
+export async function runSuite(payload: Record<string, unknown>, quick = false) {
+  const { data } = await http.post(quick ? "/suites/quick" : "/suites/default", payload);
+  return data;
+}
+
+export async function cancelSuite(suiteId: string) {
+  const { data } = await http.post(`/suites/${encodeURIComponent(suiteId)}/cancel`);
+  return data;
+}
+
+export async function listSchedules(limit = 20) {
+  const { data } = await http.get(`/suites/schedules?limit=${limit}`);
+  return Array.isArray(data) ? data : [];
+}
+
+export async function createSchedule(payload: Record<string, unknown>) {
+  const { data } = await http.post("/suites/schedules", payload);
+  return data;
+}
+
+export async function triggerSchedule(scheduleId: string) {
+  const { data } = await http.post(`/suites/schedules/${encodeURIComponent(scheduleId)}/trigger`);
+  return data;
+}
+
+export async function deleteSchedule(scheduleId: string) {
+  const { data } = await http.delete(`/suites/schedules/${encodeURIComponent(scheduleId)}`);
+  return data;
+}
+
+export function finalStatus(status?: string) {
+  return ["completed", "partial", "failed", "interrupted", "error"].includes(String(status || ""));
+}
+
+export function formatDate(value?: unknown) {
+  if (!value) return "-";
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+export function parseIntegerList(raw: string): number[] | undefined {
+  const text = String(raw || "").trim();
+  if (!text) return undefined;
+  const list = text.split(/[，,\s]+/).filter(Boolean).map(Number);
+  if (list.some((item) => !Number.isInteger(item) || item < 1)) throw new Error(`列表参数只能包含正整数：${text}`);
+  return list;
+}
+
+export function toNumber(raw: unknown): number | undefined {
+  if (raw === null || raw === undefined || String(raw).trim() === "") return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+

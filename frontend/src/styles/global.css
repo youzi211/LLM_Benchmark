@@ -1,0 +1,266 @@
+:root {
+  --lb-bg: #f4f6fb;
+  --lb-surface: #ffffff;
+  --lb-surface-soft: #f8fafc;
+  --lb-fg: #1f2933;
+  --lb-muted: #6b7280;
+  --lb-border: #e5e7eb;
+  --lb-accent: #2563eb;
+  --lb-success: #16a34a;
+  --lb-warning: #d97706;
+  --lb-danger: #dc2626;
+  --lb-radius: 12px;
+  --lb-shadow: 0 12px 36px rgba(15, 23, 42, 0.06);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  color: var(--lb-fg);
+  background:
+    radial-gradient(circle at 16% 0%, rgba(37, 99, 235, 0.08), transparent 28%),
+    linear-gradient(180deg, #f8fbff 0%, var(--lb-bg) 42%, #eef2f7 100%);
+  font-size: 14px;
+}
+
+.lb-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.lb-main {
+  flex: 1;
+  padding: 18px 20px 32px;
+  max-width: 1440px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.view-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.92fr) minmax(360px, 1fr) minmax(0, 1.35fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.panel-card {
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: var(--lb-radius);
+  box-shadow: var(--lb-shadow);
+}
+
+.detail-card {
+  min-width: 0;
+}
+
+.panel-card .el-card__header {
+  padding: 13px 16px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.panel-card .el-card__body {
+  padding: 16px;
+}
+
+.card-title,
+.dataset-head,
+.detail-actions,
+.tag-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-title,
+.dataset-head {
+  justify-content: space-between;
+}
+
+.card-title span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+}
+
+.muted {
+  color: var(--lb-muted);
+  line-height: 1.65;
+}
+
+.mt {
+  margin-top: 14px;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.section-title {
+  margin: 16px 0 8px;
+  font-size: 14px;
+  font-weight: 650;
+  color: #0f172a;
+}
+
+.detail-actions {
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.tag-row {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  margin: 8px 0;
+}
+
+.dataset-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(275px, 1fr));
+  gap: 12px;
+  margin: 8px 0 14px;
+}
+
+.dataset-card-vue {
+  min-width: 0;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #ffffff 0%, var(--lb-surface-soft) 100%);
+}
+
+.dataset-card-vue .el-card__body {
+  padding: 12px;
+}
+
+.dataset-card-vue p {
+  margin: 10px 0 8px;
+  min-height: 42px;
+  color: #475569;
+  line-height: 1.55;
+}
+
+.dataset-card-vue .path,
+.path {
+  display: block;
+  margin-top: 8px;
+  color: var(--lb-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-all;
+}
+
+.subset-summary {
+  display: grid;
+  gap: 8px;
+}
+
+.subset-line {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.subset-label {
+  flex: 0 0 62px;
+  color: var(--lb-muted);
+  font-size: 12px;
+  line-height: 24px;
+}
+
+.subset-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lb-placeholder {
+  border: 1px dashed var(--lb-border);
+  background: #fff;
+  border-radius: 8px;
+  padding: 32px;
+  text-align: center;
+  color: var(--lb-muted);
+}
+
+.lb-placeholder h2 {
+  margin: 8px 0;
+  color: var(--lb-fg);
+}
+
+@media (max-width: 1180px) {
+  .view-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .lb-main {
+    padding: 12px 12px 24px;
+  }
+
+  .view-grid {
+    gap: 12px;
+  }
+
+  .panel-card .el-card__body {
+    padding: 12px;
+  }
+
+  .dataset-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Stress dataset cards */
+.dataset-card {
+  border: 1px solid var(--el-border-color, #dcdfe6);
+  border-radius: 6px;
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.dataset-card:hover {
+  border-color: var(--el-color-primary, #409eff);
+}
+.dataset-card--active {
+  border-color: var(--el-color-primary, #409eff);
+  box-shadow: 0 0 0 2px var(--el-color-primary-light-8, #d9ecff);
+}
+.dataset-card__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.dataset-card__name {
+  font-weight: 600;
+}
+.dataset-card__desc {
+  font-size: 13px;
+  margin: 0 0 6px;
+  line-height: 1.4;
+}
+
+/* Subset override switch */
+.subset-line--select {
+  margin-top: 8px;
+  border-top: 1px dashed var(--el-border-color-lighter, #e4e7ed);
+  padding-top: 8px;
+}
+.subset-line .el-checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}

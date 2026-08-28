@@ -7,281 +7,179 @@
     <link rel="stylesheet" href="/ui/styles.css" />
   </head>
   <body>
-    <div class="shell">
-      <header class="hero" aria-labelledby="page-title">
+    <div class="shell app-shell">
+      <header class="topbar" aria-labelledby="page-title">
         <div>
-          <p class="eyebrow">LLM Benchmark · 评测配线台</p>
+          <p class="eyebrow">LLM Benchmark · 三线评测中心</p>
           <h1 id="page-title">大模型测试平台</h1>
-          <p class="lead">
-            直接填写 OpenAI 兼容地址、Key、模型名和窗口大小，启动网关 smoke、EvalScope 智力评测和压测，随后在同一页面跟踪 suite 进度与总览报告。
-          </p>
+          <p class="lead">围绕基础评测、压测评测、能力评测三条主线提交任务、跟踪进度、查看结果；一键完整评测和定时任务作为辅助入口保留。</p>
         </div>
-        <div class="hero-card" aria-label="评测通道概览">
-          <div class="scope-line"><span></span><strong>Gateway</strong><small>接入验收</small></div>
-          <div class="scope-line"><span></span><strong>EvalScope</strong><small>能力评分</small></div>
-          <div class="scope-line"><span></span><strong>Perf</strong><small>压力曲线</small></div>
+        <div class="system-card" aria-label="系统状态">
+          <span id="status-basic" class="health-pill">基础服务 -</span>
+          <span id="status-stress" class="health-pill">压测 EvalScope -</span>
+          <span id="status-intelligence" class="health-pill">能力 EvalScope -</span>
+          <span id="status-judge" class="health-pill">Judge -</span>
         </div>
       </header>
 
-      <main class="grid">
-        <section class="panel control-panel" aria-labelledby="quick-title">
-          <div class="panel-heading">
-            <div>
-              <p class="section-kicker">Quick suite</p>
-              <h2 id="quick-title">临时模型一键评测</h2>
-            </div>
-            <span class="pill">不落盘 Key</span>
-          </div>
-
-          <form id="quick-form" class="form-stack">
-            <div class="field-grid two">
-              <label>
-                <span>服务地址 URL</span>
-                <input id="url" name="url" type="url" required placeholder="http://127.0.0.1:9001/v1" autocomplete="off" />
-              </label>
-              <label>
-                <span>模型名 model</span>
-                <input id="model" name="model" required placeholder="demo-model" autocomplete="off" />
-              </label>
-            </div>
-
-            <div class="field-grid two">
-              <label>
-                <span>API Key</span>
-                <input id="key" name="key" type="password" placeholder="可为空；不会写入服务端模型配置" autocomplete="off" />
-              </label>
-              <label>
-                <span>协议</span>
-                <select id="protocol" name="protocol">
-                  <option value="chat_completions">chat_completions</option>
-                  <option value="responses">responses</option>
-                </select>
-              </label>
-            </div>
-
-            <div class="field-grid three">
-              <label>
-                <span>窗口大小 context_window_tokens</span>
-                <input id="context-window" name="context_window_tokens" type="number" min="1" placeholder="8192" />
-              </label>
-              <label>
-                <span>最大输出 max_output_tokens</span>
-                <input id="max-output" name="max_output_tokens" type="number" min="1" placeholder="1024" />
-              </label>
-              <label>
-                <span>请求超时 timeout_seconds</span>
-                <input id="request-timeout" name="timeout_seconds" type="number" min="1" max="600" value="60" />
-              </label>
-            </div>
-
-            <label>
-              <span>评测标题</span>
-              <input id="title" name="title" placeholder="demo-model quick benchmark" autocomplete="off" />
-            </label>
-
-            <fieldset class="lane-box">
-              <legend>评测通道</legend>
-              <label class="check"><input id="run-gateway" type="checkbox" checked /> <span>网关 smoke / 工程检查</span></label>
-              <label class="check"><input id="run-intelligence" type="checkbox" checked /> <span>EvalScope 智力评测</span></label>
-              <label class="check"><input id="run-stress" type="checkbox" checked /> <span>EvalScope 压测</span></label>
-              <label class="check"><input id="connectivity-only" type="checkbox" /> <span>小批量 smoke：仅跑 connectivity</span></label>
-            </fieldset>
-
-            <details class="advanced">
-              <summary>压测与等待参数</summary>
-              <div class="field-grid two compact">
-                <label>
-                  <span>并发 parallel</span>
-                  <input id="stress-parallel" placeholder="1,5" />
-                </label>
-                <label>
-                  <span>请求数 number</span>
-                  <input id="stress-number" placeholder="10,50" />
-                </label>
-                <label>
-                  <span>轮询间隔（秒）</span>
-                  <input id="poll-interval" type="number" min="0" max="3600" placeholder="10" />
-                </label>
-                <label>
-                  <span>总超时（秒）</span>
-                  <input id="total-timeout" type="number" min="1" max="172800" placeholder="86400" />
-                </label>
+      <section class="panel global-control" aria-label="全局模型和辅助操作">
+        <div class="global-model">
+          <label>
+            <span>当前模型</span>
+            <select id="global-model-select" aria-label="选择当前模型"></select>
+          </label>
+          <button id="refresh-models" class="mini" type="button">刷新模型</button>
+          <button id="refresh-current-tab" class="mini" type="button">刷新当前页</button>
+        </div>
+        <div class="aux-actions">
+          <details class="aux-panel" id="full-suite-panel">
+            <summary>一键完整评测</summary>
+            <div class="aux-body">
+              <p class="hint">使用当前模型创建组合评测；可选择基础、压测、能力三条线。</p>
+              <div class="inline-checks">
+                <label class="check"><input id="suite-run-basic" type="checkbox" checked /> <span>基础评测</span></label>
+                <label class="check"><input id="suite-run-stress" type="checkbox" checked /> <span>压测评测</span></label>
+                <label class="check"><input id="suite-run-intelligence" type="checkbox" checked /> <span>能力评测</span></label>
               </div>
-            </details>
+              <button id="start-full-suite" class="primary" type="button">启动完整评测</button>
 
-            <div class="actions">
-              <button id="start-quick" class="primary" type="submit">启动一键评测</button>
-              <button id="clear-key" class="ghost" type="button">清空 Key</button>
-            </div>
-          </form>
-        </section>
+              <details class="nested-panel">
+                <summary>临时模型完整评测</summary>
+                <div class="field-grid two compact">
+                  <label><span>服务地址 URL</span><input id="quick-url" type="url" placeholder="http://127.0.0.1:9001/v1" autocomplete="off" /></label>
+                  <label><span>模型名 model</span><input id="quick-model" placeholder="demo-model" autocomplete="off" /></label>
+                  <label><span>API Key</span><input id="quick-key" type="password" placeholder="可为空；不会写入模型配置" autocomplete="off" /></label>
+                  <label><span>协议</span><select id="quick-protocol"><option value="chat_completions">chat_completions</option><option value="responses">responses</option></select></label>
+                </div>
+                <button id="start-quick-suite" class="ghost" type="button">启动临时模型完整评测</button>
+              </details>
 
-        <aside class="panel side-panel" aria-labelledby="status-title">
-          <div class="panel-heading">
-            <div>
-              <p class="section-kicker">Live suite</p>
-              <h2 id="status-title">进度雷达</h2>
-            </div>
-            <button id="refresh-suites" class="mini" type="button">刷新列表</button>
-          </div>
-
-          <div id="notice" class="notice" role="status">准备就绪：填写参数后启动评测。</div>
-
-          <div class="suite-search">
-            <label>
-              <span>suite_id</span>
-              <input id="suite-id" placeholder="suite_..." autocomplete="off" />
-            </label>
-            <button id="track-suite" class="ghost" type="button">跟踪</button>
-          </div>
-
-          <article id="suite-card" class="suite-card empty">
-            <p class="muted">尚未选择 suite。</p>
-          </article>
-
-          <div class="report-actions">
-            <a id="report-link" class="report-link disabled" href="#" target="_blank" rel="noopener">打开总览报告</a>
-            <button id="stop-poll" class="mini danger" type="button">停止轮询</button>
-          </div>
-        </aside>
-
-        <section class="panel saved-panel" aria-labelledby="saved-title">
-          <div class="panel-heading">
-            <div>
-              <p class="section-kicker">Saved models</p>
-              <h2 id="saved-title">已有模型配置</h2>
-            </div>
-            <button id="load-models" class="mini" type="button">读取模型</button>
-          </div>
-          <p class="hint">如果已经在 <code>data/models.json</code> 中配置过模型，可从这里发起 <code>/api/suites/default</code>。临时评测仍推荐使用左侧 Quick suite。</p>
-          <div class="saved-run">
-            <select id="model-select" aria-label="选择已有模型">
-              <option value="">暂无模型，请先读取</option>
-            </select>
-            <button id="start-default" class="ghost" type="button">用已有模型启动</button>
-          </div>
-        </section>
-
-        <section class="panel schedule-panel" aria-labelledby="schedule-section-title">
-          <div class="panel-heading">
-            <div>
-              <p class="section-kicker">Scheduled suites</p>
-              <h2 id="schedule-section-title">定时一键评测</h2>
-            </div>
-            <button id="refresh-schedules" class="mini" type="button">刷新计划</button>
-          </div>
-          <p class="hint">创建半夜 00:00 等定时任务。默认使用 scheduled_light 轻量 profile 且“只执行一次”，适合今晚跑一次；需要每天/每 N 天重复时再切换为周期执行。定时任务需要持久化模型配置；如果从左侧 URL/Key 创建计划，Key 会写入本机 <code>data/models.json</code>。</p>
-
-          <div class="schedule-shared">
-            <div class="field-grid two compact">
-              <label>
-                <span>执行模式</span>
-                <select id="schedule-mode">
-                  <option value="once">只执行一次</option>
-                  <option value="recurring">周期执行</option>
-                </select>
-              </label>
-              <label id="schedule-date-field">
-                <span>执行日期 run_date</span>
-                <input id="schedule-date" type="date" />
-              </label>
-              <label>
-                <span>开始时间 time_of_day</span>
-                <input id="schedule-time" type="time" value="00:00" />
-              </label>
-              <label>
-                <span>时区 timezone</span>
-                <input id="schedule-timezone" value="Asia/Shanghai" autocomplete="off" />
-              </label>
-              <label>
-                <span>评测 profile</span>
-                <select id="schedule-profile">
-                  <option value="scheduled_light" selected>scheduled_light：轻量定时</option>
-                  <option value="scheduled_code">scheduled_code：代码评测，需要 sandbox</option>
-                  <option value="full_offline">full_offline：完整离线，需要 sandbox</option>
-                </select>
-              </label>
-              <label>
-                <span>计划名称 name</span>
-                <input id="schedule-name" placeholder="demo-model 今晚零点评测" autocomplete="off" />
-              </label>
-              <label>
-                <span>评测标题 title</span>
-                <input id="schedule-run-title" placeholder="demo-model 半夜综合评测" autocomplete="off" />
-              </label>
-              <label id="schedule-interval-field" class="hidden-field">
-                <span>重复间隔 interval_days</span>
-                <input id="schedule-interval" type="number" min="1" max="365" value="1" />
-                <small>周期执行专用：1=每天，7=每 7 天。</small>
-              </label>
-            </div>
-            <p id="schedule-mode-help" class="schedule-mode-help">只执行一次：到达指定日期和时间后自动触发一次，执行后计划会自动停用。</p>
-          </div>
-
-          <details class="advanced schedule-details" open>
-            <summary>从左侧临时模型参数保存并定时</summary>
-            <div class="field-grid two compact">
-              <label>
-                <span>持久化 model_id</span>
-                <input id="schedule-model-id" placeholder="demo-model-nightly" autocomplete="off" />
-              </label>
-              <label>
-                <span>保存名称 name</span>
-                <input id="schedule-model-name" placeholder="demo-model 定时评测模型" autocomplete="off" />
-              </label>
-            </div>
-            <p class="warning-text">注意：这个按钮会先保存左侧 URL、Key、model、窗口大小等模型配置，再创建定时计划。</p>
-            <button id="create-quick-schedule" class="primary" type="button">保存模型并创建定时计划</button>
-          </details>
-
-          <details class="advanced schedule-details">
-            <summary>用已有模型创建定时计划</summary>
-            <div class="saved-run schedule-run">
-              <select id="schedule-model-select" aria-label="选择定时评测模型">
-                <option value="">暂无模型，请先读取</option>
-              </select>
-              <button id="create-model-schedule" class="ghost" type="button">为已有模型定时</button>
+              <div class="aux-section-heading">最近完整评测</div>
+              <button id="refresh-suites" class="mini" type="button">刷新完整评测</button>
+              <div id="suite-list" class="suite-list compact-list" aria-live="polite"></div>
             </div>
           </details>
 
-          <div id="schedule-list" class="schedule-list" aria-live="polite"></div>
+          <details class="aux-panel" id="schedule-panel">
+            <summary>定时任务</summary>
+            <div class="aux-body">
+              <div class="field-grid three compact">
+                <label><span>计划名称</span><input id="schedule-name" placeholder="nightly benchmark" /></label>
+                <label><span>Profile</span><select id="schedule-profile"><option value="scheduled_light">scheduled_light</option><option value="scheduled_code">scheduled_code</option><option value="full_offline">full_offline</option></select></label>
+                <label><span>执行时间</span><input id="schedule-time" type="time" value="02:00" /></label>
+                <label><span>执行日期（一次性）</span><input id="schedule-date" type="date" /></label>
+                <label><span>周期天数</span><input id="schedule-interval" type="number" min="1" max="365" value="1" /></label>
+                <label><span>模式</span><select id="schedule-mode"><option value="once">只执行一次</option><option value="repeat">周期执行</option></select></label>
+              </div>
+              <div class="inline-checks">
+                <label class="check"><input id="schedule-run-basic" type="checkbox" checked /> <span>基础评测</span></label>
+                <label class="check"><input id="schedule-run-stress" type="checkbox" checked /> <span>压测评测</span></label>
+                <label class="check"><input id="schedule-run-intelligence" type="checkbox" checked /> <span>能力评测</span></label>
+              </div>
+              <button id="create-schedule" class="primary" type="button">为当前模型创建定时任务</button>
+              <div id="schedule-list" class="schedule-list compact-list" aria-live="polite"></div>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <div id="notice" class="notice" role="status" aria-live="polite">请选择模型，然后在基础评测、压测评测或能力评测中提交任务。</div>
+
+      <nav class="main-tabs" aria-label="评测主导航">
+        <button class="tab-button active" type="button" data-tab="basic">基础评测</button>
+        <button class="tab-button" type="button" data-tab="stress">压测评测</button>
+        <button class="tab-button" type="button" data-tab="intelligence">能力评测</button>
+      </nav>
+
+      <main class="evaluation-workspace">
+        <section id="tab-basic" class="tab-panel active" aria-labelledby="basic-title">
+          <div class="lane-layout">
+            <section class="panel submit-panel">
+              <p class="section-kicker">Basic</p>
+              <h2 id="basic-title">基础评测</h2>
+              <p class="hint">验证模型服务基础可用性、协议兼容、usage、错误结构、上下文和缓存 smoke。</p>
+              <div class="field-grid two compact">
+                <label><span>评测计划</span><select id="basic-plan"><option value="gateway_acceptance_v1">gateway_acceptance_v1</option></select></label>
+                <label><span>指定指标（可选，逗号分隔）</span><input id="basic-metrics" placeholder="connectivity,usage" /></label>
+              </div>
+              <button id="start-basic" class="primary" type="button">开始基础评测</button>
+            </section>
+
+            <section class="panel list-panel">
+              <div class="panel-heading compact-heading"><h3>基础评测任务</h3><button id="refresh-basic" class="mini" type="button">刷新</button></div>
+              <div id="basic-task-list" class="task-list" aria-live="polite"></div>
+            </section>
+
+            <section class="panel detail-panel">
+              <div class="panel-heading compact-heading"><h3>基础评测详情</h3><a id="basic-report-link" class="report-link disabled" href="#" target="_blank" rel="noreferrer">查看报告</a></div>
+              <div id="basic-detail" class="detail-empty">请选择一个基础评测任务。</div>
+            </section>
+          </div>
         </section>
 
-        <section class="panel history-panel" aria-labelledby="history-title">
-          <div class="panel-heading">
-            <div>
-              <p class="section-kicker">History</p>
-              <h2 id="history-title">最近 suite</h2>
-            </div>
+        <section id="tab-stress" class="tab-panel" aria-labelledby="stress-title">
+          <div class="lane-layout">
+            <section class="panel submit-panel">
+              <p class="section-kicker">Stress</p>
+              <h2 id="stress-title">压测评测</h2>
+              <p class="hint">验证吞吐、延迟、TTFT / TPOT、成功率和不同并发档位表现。</p>
+              <label class="check switch-line"><input id="stress-custom-enabled" type="checkbox" /> <span>使用自定义压测参数</span></label>
+              <div class="field-grid two compact stress-options">
+                <label><span>parallel</span><input id="stress-parallel" placeholder="1,5,10" /></label>
+                <label><span>number</span><input id="stress-number" placeholder="10,50,100" /></label>
+                <label><span>stream</span><select id="stress-stream"><option value="">默认</option><option value="true">true</option><option value="false">false</option></select></label>
+                <label><span>dataset</span><input id="stress-dataset" placeholder="默认数据集" /></label>
+                <label><span>dataset_path</span><input id="stress-dataset-path" placeholder="可选本地数据集路径" /></label>
+                <label><span>rate</span><input id="stress-rate" type="number" step="0.1" placeholder="默认" /></label>
+                <label><span>min_prompt_length</span><input id="stress-min-prompt" type="number" min="0" placeholder="默认" /></label>
+                <label><span>max_prompt_length</span><input id="stress-max-prompt" type="number" min="1" placeholder="默认" /></label>
+                <label><span>min_tokens</span><input id="stress-min-tokens" type="number" min="1" placeholder="默认" /></label>
+                <label><span>max_tokens</span><input id="stress-max-tokens" type="number" min="1" placeholder="默认" /></label>
+              </div>
+              <button id="start-stress" class="primary" type="button">开始压测评测</button>
+            </section>
+
+            <section class="panel list-panel">
+              <div class="panel-heading compact-heading"><h3>压测任务</h3><button id="refresh-stress" class="mini" type="button">刷新</button></div>
+              <div id="stress-task-list" class="task-list" aria-live="polite"></div>
+            </section>
+
+            <section class="panel detail-panel">
+              <div class="panel-heading compact-heading"><h3>压测详情</h3><a id="stress-report-link" class="report-link disabled" href="#" target="_blank" rel="noreferrer">查看报告</a></div>
+              <div id="stress-detail" class="detail-empty">请选择一个压测任务。</div>
+            </section>
           </div>
-          <div id="suite-list" class="suite-list" aria-live="polite"></div>
         </section>
 
-        <section class="panel insights-panel" aria-labelledby="insights-title">
-          <div class="panel-heading">
-            <div>
-              <p class="section-kicker">Metrics curves</p>
-              <h2 id="insights-title">指标曲线</h2>
-            </div>
-            <button id="refresh-insights" class="mini" type="button">刷新指标</button>
+        <section id="tab-intelligence" class="tab-panel" aria-labelledby="intelligence-title">
+          <div class="lane-layout">
+            <section class="panel submit-panel">
+              <p class="section-kicker">Intelligence</p>
+              <h2 id="intelligence-title">能力评测</h2>
+              <p class="hint">验证数学、代码、中文考试、综合推理等数据集表现。运行中会展示当前数据集和样本进度。</p>
+              <label class="check switch-line"><input id="intelligence-custom-enabled" type="checkbox" /> <span>自定义数据集</span></label>
+              <div class="field-grid two compact">
+                <label><span>limit</span><input id="intelligence-limit" type="number" min="1" placeholder="默认不限；定时通常 200" /></label>
+                <label><span>eval_batch_size</span><input id="intelligence-batch-size" type="number" min="1" placeholder="默认" /></label>
+              </div>
+              <div id="dataset-picker" class="dataset-picker" aria-live="polite"></div>
+              <button id="start-intelligence" class="primary" type="button">开始能力评测</button>
+            </section>
+
+            <section class="panel list-panel">
+              <div class="panel-heading compact-heading"><h3>能力评测任务</h3><button id="refresh-intelligence" class="mini" type="button">刷新</button></div>
+              <div id="intelligence-task-list" class="task-list" aria-live="polite"></div>
+            </section>
+
+            <section class="panel detail-panel">
+              <div class="panel-heading compact-heading"><h3>能力评测详情</h3><a id="intelligence-report-link" class="report-link disabled" href="#" target="_blank" rel="noreferrer">查看报告</a></div>
+              <div id="intelligence-detail" class="detail-empty">请选择一个能力评测任务。</div>
+            </section>
           </div>
-          <p class="hint">选择或完成一个 suite 后，页面会自动读取网关 smoke、智力评测和压测结果，生成吞吐、延迟、成功率和数据集分数图。</p>
-          <div id="insights-empty" class="insights-empty">尚未选择 suite，或该 suite 还没有可展示的指标结果。</div>
-          <div id="insights-grid" class="insights-grid" aria-live="polite"></div>
         </section>
       </main>
     </div>
 
-    <template id="step-template">
-      <li class="step-item">
-        <span class="step-dot"></span>
-        <div>
-          <strong></strong>
-          <small></small>
-        </div>
-      </li>
-    </template>
-
-    <script src="/ui/app.js" defer></script>
+    <script src="/ui/app.js" type="module"></script>
   </body>
 </html>

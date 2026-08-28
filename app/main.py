@@ -20,8 +20,25 @@ from app.jobs.executor import shutdown_job_executor
 from app.suites.scheduler import start_scheduler, stop_scheduler
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
+WEB_VUE_DIR = Path(__file__).resolve().parent / "web_vue"
 
 app = FastAPI(title="LLM Benchmark", version="0.1.0")
+
+
+def _mount_optional_static(application: FastAPI, url_path: str, directory: Path, name: str) -> bool:
+    """Mount ``directory`` at ``url_path`` only when it exists on disk.
+
+    The Vue rewrite keeps its build output under ``app/web_vue`` so the service can
+    expose it under ``/ui-vue`` in parallel with the legacy ``/ui`` page. When the
+    directory is absent (e.g. before the Vue build has been run or while only
+    shipping server-side changes) the mount is skipped instead of crashing the
+    FastAPI app at import time. Returns ``True`` if the mount was added.
+    """
+
+    if directory.is_dir():
+        application.mount(url_path, StaticFiles(directory=str(directory), html=True), name=name)
+        return True
+    return False
 
 
 @app.exception_handler(HTTPException)
@@ -52,6 +69,7 @@ app.include_router(reports_router, prefix="/api")
 app.include_router(stress_router, prefix="/api")
 app.include_router(suites_router, prefix="/api")
 app.mount("/ui", StaticFiles(directory=WEB_DIR, html=True), name="ui")
+_mount_optional_static(app, "/ui-vue", WEB_VUE_DIR, name="ui-vue")
 
 
 @app.on_event("startup")
