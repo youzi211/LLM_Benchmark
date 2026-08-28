@@ -22,7 +22,7 @@
 - 控制台主界面按三条评测线组织：基础评测、压测评测、能力评测。三条线共用顶部的已保存模型选择器（`GET /api/models`）。
 - 基础评测页调用 `POST /api/tasks/run`、`GET /api/tasks`、`GET /api/tasks/{task_id}` 和 `GET /api/reports/{task_id}`。
 - 压测评测页调用 `GET /api/stress/evalscope/health`、`POST /api/stress/tasks/default`、`GET /api/stress/tasks`、`GET /api/stress/tasks/{task_id}`、`GET /api/stress/tasks/{task_id}/result`、`POST /api/stress/tasks/{task_id}/cancel` 和 `GET /api/stress/reports/{task_id}`。
-- 能力评测页调用 `GET /api/intelligence/evalscope/health`、`GET /api/intelligence/evalscope/judge-config`、`GET /api/intelligence/datasets`、`POST /api/intelligence/tasks/default`、`POST /api/intelligence/tasks`、`GET /api/intelligence/tasks`、`GET /api/intelligence/tasks/{task_id}`、`GET /api/intelligence/tasks/{task_id}/progress`、`GET /api/intelligence/tasks/{task_id}/result`、`POST /api/intelligence/tasks/{task_id}/cancel` 和 `GET /api/intelligence/reports/{task_id}`；数据集元信息会展示描述、本地可用状态、本地路径、本地 subset 列表和当前配置的 `subset_list`。
+- 能力评测页调用 `GET /api/intelligence/evalscope/health`、`GET /api/intelligence/evalscope/config`、`PUT /api/intelligence/evalscope/config`、`GET /api/intelligence/evalscope/judge-config`、`GET /api/intelligence/evalscope/judge-health`、`GET /api/intelligence/evalscope/sandbox-health`、`GET /api/intelligence/datasets`、`POST /api/intelligence/tasks/default`、`POST /api/intelligence/tasks`、`GET /api/intelligence/tasks`、`GET /api/intelligence/tasks/{task_id}`、`GET /api/intelligence/tasks/{task_id}/progress`、`GET /api/intelligence/tasks/{task_id}/result`、`POST /api/intelligence/tasks/{task_id}/cancel` 和 `GET /api/intelligence/reports/{task_id}`；数据集元信息会展示描述、本地可用状态、本地路径、本地 subset 列表和当前配置的 `subset_list`。
 - 一键完整评测和定时任务作为辅助入口保留，分别调用 `/api/suites/default`、`/api/suites/quick`、`/api/suites`、`/api/suites/{suite_id}/report`、`/api/suites/{suite_id}/cancel` 以及 `/api/suites/schedules*`。
 - 控制台不在浏览器 localStorage 中保存 API Key；临时模型完整评测仍遵循 `/api/suites/quick` 的安全边界，即不把传入 Key 写入 `data/models.json`、suite JSON 或报告。定时任务使用已保存模型配置。
 - Vue 重写控制台 (`/ui-vue/`) 与主控制台 (`/ui/`) 复用同一组 `/api/*` JSON 接口；前端通过 `vite.config.ts` 中的 `/api` 代理在开发期访问 8020 端口，生产期静态产物继续通过 `http://<主服务>:8020/api/*` 访问同一份后端，接口契约保持不变。
@@ -597,6 +597,32 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 
 检查本地 Judge 配置是否完整。默认 Judge 来自 `data/models.json` 顶层 `analysis_model_id`；可选 `data/evalscope.json` 只允许用 `judge_model_config_id` 覆盖模型配置 ID。响应不会返回 API Key 明文。
 
+
+#### GET `/api/intelligence/evalscope/config`
+
+读取当前 EvalScope 本地配置。响应包含 `datasets_dir`、`outputs_dir`、`judge_model_config_id`、`judge_generation_config`、`judge_worker_num`、`dataset_args`、`sandbox_enabled`、`sandbox_type` 和 `sandbox_manager_config`。`sandbox_manager_config` 中的 `api_key`、`token`、`password` 等敏感字段会被脱敏，不返回明文。
+
+#### PUT `/api/intelligence/evalscope/config`
+
+保存 EvalScope 本地配置到 `data/evalscope.json`。常用字段：
+
+| 字段 | 类型 | 说明 |
+|---|---:|---|
+| `judge_model_config_id` | string/null | LLM-as-Judge 使用的已保存模型配置 ID；为空时回退到 `data/models.json` 顶层 `analysis_model_id`。 |
+| `judge_generation_config` | object | Judge 生成参数，例如 `temperature`、`max_tokens`。 |
+| `judge_worker_num` | integer | Judge 并发 worker 数，范围 1-128。 |
+| `sandbox_enabled` | boolean | 是否启用 EvalScope 代码执行 sandbox。 |
+| `sandbox_type` | string | sandbox engine，默认 `docker`。 |
+| `sandbox_manager_config` | object | 透传给 EvalScope sandbox manager 的配置，例如 `{ "base_url": "http://10.182.17.2:1234" }`。 |
+
+#### GET `/api/intelligence/evalscope/sandbox-health`
+
+对当前 sandbox 配置做存活检查。`sandbox_enabled=false` 时返回 `status: disabled`；配置了 `sandbox_manager_config.base_url` / `url` / `endpoint` 时会优先请求远端 `/health`，并回退检查 `/sandboxes`，只有 2xx 响应才判定 `status: ok`；没有远端地址且 `sandbox_type=docker` 时检查本机 `docker info`。可传 `deep=true` 执行更严格的远端 smoke：创建一个短生命周期 sandbox，执行 `echo LLM_BENCHMARK_SANDBOX_OK`，再删除 sandbox；前端“测试 Sandbox”按钮默认使用该深度检查。
+
+#### GET `/api/intelligence/evalscope/judge-health`
+
+解析当前 Judge 模型配置并发送一次极小的非流式请求，验证 LLM-as-Judge 模型是否可用。未配置时返回 `status: missing`；请求失败时返回 `status: error` 和脱敏错误信息。
+
 #### GET `/api/intelligence/evalscope/tasks`
 
 兼容旧入口，返回本系统本地归档的智力评测任务列表，响应包含 `mode: in_process`。
@@ -1054,13 +1080,19 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 
 成功响应：`200 OK`，返回 `SuiteRun`，其中 `model_id` 形如 `inline_yyyymmddhhmmss_xxxxxxxx`。后台模式依赖当前服务进程内的临时模型配置；如果进程在任务完成前重启，临时密钥不会被恢复，应重新提交 quick suite。
 
-### 13.5 查询 suite 列表
+### 13.5 查询 Profile 列表
+
+#### GET `/api/suites/profiles`
+
+返回所有内置和自定义 Profile 的完整配置（名称、描述、数据集、limit、压测参数等）。用于定时任务创建表单展示 Profile 详情。
+
+### 13.6 查询 suite 列表
 
 #### GET `/api/suites`
 
 读取本地 suite 列表。可选 query 参数：`limit`，默认 `50`。
 
-### 13.6 查询 suite 详情
+### 13.7 查询 suite 详情
 
 #### GET `/api/suites/{suite_id}`
 
@@ -1070,7 +1102,7 @@ Suites 是“一键评测模型并出报告”的编排层。它复用已有三�
 
 请求取消单个 suite。非终态 suite 会立即标记为 `interrupted`，当前运行步骤标记为 `interrupted`，尚未开始的步骤标记为 `skipped`，并级联取消已提交的 intelligence/stress 子任务。不存在时返回 `404 suite_not_found`。
 
-### 13.7 下载 suite 总览报告
+### 13.8 下载 suite 总览报告
 
 #### GET `/api/suites/{suite_id}/report`
 

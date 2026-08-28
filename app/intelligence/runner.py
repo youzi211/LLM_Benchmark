@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any, Callable, Protocol
 from uuid import uuid4
 
-from app.core.models import ModelConfig, utc_now
+from app.adapters.base import create_adapter
+from app.core.models import AdapterRequest, ModelConfig, utc_now
 from app.intelligence.config_store import EvalScopeConfigStore
 from app.jobs.executor import get_job_executor
 from app.intelligence.evalscope_direct import (
@@ -52,6 +53,7 @@ class IntelligenceExecutor(Protocol):
         eval_batch_size: int | None = None,
         generation_config: dict[str, Any] | None = None,
         judge_model_args: dict[str, Any] | None = None,
+        dataset_args: dict[str, dict[str, Any]] | None = None,
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]: ...
 
@@ -155,8 +157,14 @@ class IntelligenceRunner:
             return None, None, f"configured Judge model not found: {', '.join(missing)}"
         return None, None, "no Judge model configured; set analysis_model_id or judge_model_config_id"
 
-    async def submit_default(self, model_id: str, *, limit: int | None = None) -> IntelligenceTask:
-        return await self.submit_custom(model_id=model_id, datasets=list(DEFAULT_DATASETS), limit=limit)
+    async def submit_default(
+        self,
+        model_id: str,
+        *,
+        limit: int | None = None,
+        dataset_args: dict[str, dict[str, Any]] | None = None,
+    ) -> IntelligenceTask:
+        return await self.submit_custom(model_id=model_id, datasets=list(DEFAULT_DATASETS), limit=limit, dataset_args=dataset_args)
 
     async def submit_custom(
         self,
@@ -166,6 +174,7 @@ class IntelligenceRunner:
         limit: int | None = None,
         eval_batch_size: int | None = None,
         generation_config: dict[str, Any] | None = None,
+        dataset_args: dict[str, dict[str, Any]] | None = None,
     ) -> IntelligenceTask:
         model = self._model(model_id)
         required_judge_datasets = datasets_requiring_judge(datasets)
@@ -206,6 +215,7 @@ class IntelligenceRunner:
                 "task_id": None,
                 "status": "pending",
                 "datasets": datasets,
+                "dataset_args": dataset_args or {},
                 "judge": {
                     "configured": judge_model is not None,
                     "source": judge_source,
@@ -225,6 +235,7 @@ class IntelligenceRunner:
             eval_batch_size=eval_batch_size,
             generation_config=generation_config,
             judge_model_args=judge_model_args,
+            dataset_args=dataset_args,
         )
         return self.task_store.get(task.task_id) or task
 
@@ -251,6 +262,7 @@ class IntelligenceRunner:
         eval_batch_size: int | None,
         generation_config: dict[str, Any] | None,
         judge_model_args: dict[str, Any] | None,
+        dataset_args: dict[str, dict[str, Any]] | None,
     ) -> None:
         task = self.task_store.get(task_id)
         if task is None:
@@ -282,6 +294,7 @@ class IntelligenceRunner:
                 eval_batch_size=eval_batch_size,
                 generation_config=generation_config,
                 judge_model_args=judge_model_args,
+                dataset_args=dataset_args,
                 progress_callback=lambda progress: self._apply_progress(task_id, progress),
             )
             latest = self.task_store.get(task_id)
@@ -459,6 +472,42 @@ class IntelligenceRunner:
 
     def judge_status(self) -> dict[str, Any]:
         return self._judge_status()
+
+    async def judge_health(self) -> dict[str, Any]:
+        judge_model, source, missing_reason = self._resolve_judge_model()
+        if judge_model is None:
+            return {
+                "status": "missing",
+                "configured": False,
+                "mode": IN_PROCESS_EVALSCOPE,
+                "error": missing_reason,
+            }
+        adapter = create_adapter(judge_model)
+        response = await adapter.complete(
+            AdapterRequest(prompt="Reply with ok only.", max_tokens=8, temperature=0)
+        )
+        if response.ok:
+            return {
+                "status": "ok",
+                "configured": True,
+                "mode": IN_PROCESS_EVALSCOPE,
+                "model_config_id": judge_model.id,
+                "model_id": judge_model.model,
+                "source": source,
+                "http_status": response.http_status,
+                "latency_ms": response.latency_ms,
+            }
+        return {
+            "status": "error",
+            "configured": True,
+            "mode": IN_PROCESS_EVALSCOPE,
+            "model_config_id": judge_model.id,
+            "model_id": judge_model.model,
+            "source": source,
+            "http_status": response.http_status,
+            "latency_ms": response.latency_ms,
+            "error": response.error,
+        }
 
     def local_datasets(self) -> dict[str, Any]:
         return local_dataset_metadata(self.config)

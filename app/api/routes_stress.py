@@ -17,6 +17,7 @@ from app.intelligence.evalscope_direct import evalscope_health
 from app.storage.stress_task_store import StressTaskStore
 from app.stress.runner import StressRunner
 from app.stress.schemas import StressDefaultRunRequest, StressRunRequest
+from app.utils.json_sanitize import make_json_safe
 
 router = APIRouter(prefix="/stress", tags=["stress"])
 
@@ -31,6 +32,15 @@ def evalscope_stress_health():
     if health.get("status") != "ok":
         raise api_error(502, "evalscope_stress_error", health.get("error") or "EvalScope package is not available")
     return health
+
+
+
+def _effective_default_stress_dataset(datasets: dict[str, dict]) -> str | None:
+    if DEFAULT_STRESS_DATASET in datasets:
+        return DEFAULT_STRESS_DATASET
+    if "speed_benchmark" in datasets:
+        return "speed_benchmark"
+    return next(iter(datasets), None)
 
 
 def _stress_dataset_metadata() -> dict:
@@ -68,7 +78,7 @@ def _stress_dataset_metadata() -> dict:
         if name in LOCAL_RESOLVABLE_STRESS_DATASETS and not available_local:
             continue
         result[name] = row
-    return {"total": len(result), "default_dataset": DEFAULT_STRESS_DATASET, "datasets": result}
+    return {"total": len(result), "default_dataset": _effective_default_stress_dataset(result), "datasets": result}
 
 
 @router.get("/datasets")
@@ -87,7 +97,7 @@ async def submit_default_stress_task(request: StressDefaultRunRequest):
         if text.startswith("model_disabled:"):
             raise api_error(400, "model_disabled", f"Model config is disabled: {request.model_id}")
         raise api_error(400, "invalid_stress_task_request", text)
-    return task
+    return make_json_safe(task)
 
 
 @router.post("/tasks")
@@ -97,7 +107,7 @@ async def submit_custom_stress_task(request: StressRunRequest):
 
 @router.get("/tasks")
 def list_stress_tasks(limit: int = 50):
-    return StressTaskStore().list(limit=limit)
+    return make_json_safe(StressTaskStore().list(limit=limit))
 
 
 @router.post("/tasks/{task_id}/cancel")
@@ -105,7 +115,7 @@ async def cancel_stress_task(task_id: str):
     task = await _runner().cancel(task_id)
     if task is None:
         raise api_error(404, "stress_task_not_found", f"Stress task not found: {task_id}")
-    return task
+    return make_json_safe(task)
 
 
 @router.get("/tasks/{task_id}")
@@ -113,7 +123,7 @@ async def get_stress_task(task_id: str):
     task = await _runner().refresh_status(task_id)
     if task is None:
         raise api_error(404, "stress_task_not_found", f"Stress task not found: {task_id}")
-    return task
+    return make_json_safe(task)
 
 
 @router.get("/tasks/{task_id}/result")
@@ -121,7 +131,7 @@ async def get_stress_result(task_id: str):
     task = await _runner().fetch_result(task_id)
     if task is None:
         raise api_error(404, "stress_task_not_found", f"Stress task not found: {task_id}")
-    return task
+    return make_json_safe(task)
 
 
 @router.get("/reports/{task_id}")

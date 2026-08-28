@@ -5,6 +5,7 @@ from typing import Any
 from app.intelligence.evalscope_direct import outputs_root, _to_plain
 from app.intelligence.schemas import EvalScopeConfig
 from app.reports.markdown import redact_text
+from app.utils.json_sanitize import make_json_safe
 from app.stress.schemas import StressRemoteSubmitPayload
 
 
@@ -33,7 +34,7 @@ class EvalScopeStressExecutor:
         # _perf_mapping_rows 解析，后者按 dict 判定会跳过这些档位，导致标准化
         # runs 为空、报告档位表和"一眼看懂"全部显示 "-"。这里先递归扁平化为
         # 纯 dict/list，保证持久化与解析一致。
-        raw = _to_plain(raw)
+        raw = make_json_safe(_to_plain(raw))
         # EvalScope perf does not include the configured output directory in its
         # returned summary. Preserve the task-scoped root explicitly so the task
         # boundary exposes a stable locator without duplicating the full result.

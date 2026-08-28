@@ -12,6 +12,7 @@ from app.jobs.executor import get_job_executor
 from app.stress.runner import StressRunner
 from app.suites.runner import SuiteRunner
 from app.suites.schemas import SuiteDefaultRunRequest, SuiteQuickRunRequest, SuiteScheduleCreate, SuiteScheduleLastRun
+from app.suites.profiles import EvalScopeProfileStore
 from app.suites.store import SuiteRunStore, SuiteScheduleStore
 from app.suites.transient_model_store import TransientModelStore
 
@@ -94,6 +95,12 @@ async def start_quick_suite(request: SuiteQuickRunRequest):
 @router.get("")
 def list_suites(limit: int = 50):
     return SuiteRunStore().list(limit=limit)
+
+
+@router.get("/profiles")
+def list_suite_profiles():
+    store = EvalScopeProfileStore()
+    return [p.model_dump() for p in store.list()]
 
 
 @router.post("/schedules")

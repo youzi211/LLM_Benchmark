@@ -177,3 +177,88 @@ export function toNumber(raw: unknown): number | undefined {
 }
 
 
+
+export async function getSuite(suiteId: string) {
+  const { data } = await http.get(`/suites/${encodeURIComponent(suiteId)}`);
+  return data;
+}
+
+export async function getSchedule(scheduleId: string) {
+  const { data } = await http.get(`/suites/schedules/${encodeURIComponent(scheduleId)}`);
+  return data;
+}
+
+export async function getScheduleLastRun(scheduleId: string) {
+  const { data } = await http.get(`/suites/schedules/${encodeURIComponent(scheduleId)}/last-run`);
+  return data;
+}
+
+export interface SuiteProfile {
+  profile_id: string;
+  name: string;
+  description?: string;
+  requires_sandbox?: boolean;
+  run_gateway?: boolean;
+  run_intelligence?: boolean;
+  run_stress?: boolean;
+  intelligence_datasets?: string[];
+  intelligence_limit?: number;
+  intelligence_eval_batch_size?: number;
+  stress_options?: Record<string, unknown>;
+}
+
+export async function fetchSuiteProfiles(): Promise<SuiteProfile[]> {
+  const { data } = await http.get("/suites/profiles");
+  return Array.isArray(data) ? data : [];
+}
+
+export interface EvalScopeConfig {
+  datasets_dir?: string | null;
+  outputs_dir?: string | null;
+  judge_model_config_id?: string | null;
+  judge_generation_config?: Record<string, unknown>;
+  judge_worker_num?: number;
+  ignore_dataset_errors?: boolean;
+  dataset_args?: Record<string, Record<string, unknown>>;
+  sandbox_enabled?: boolean;
+  sandbox_type?: string;
+  sandbox_manager_config?: Record<string, unknown>;
+}
+
+export interface EvalScopeHealthStatus {
+  status: string;
+  configured?: boolean;
+  mode?: string;
+  engine?: string;
+  base_url?: string;
+  checked_url?: string;
+  http_status?: number;
+  latency_ms?: number;
+  model_config_id?: string;
+  model_id?: string;
+  source?: string;
+  message?: string;
+  error?: unknown;
+  [key: string]: unknown;
+}
+
+export async function fetchEvalScopeConfig(): Promise<EvalScopeConfig> {
+  const { data } = await http.get("/intelligence/evalscope/config");
+  return data && typeof data === "object" ? data : {};
+}
+
+export async function saveEvalScopeConfig(payload: EvalScopeConfig): Promise<EvalScopeConfig> {
+  const { data } = await http.put("/intelligence/evalscope/config", payload);
+  return data && typeof data === "object" ? data : {};
+}
+
+export async function fetchSandboxHealth(deep = false): Promise<EvalScopeHealthStatus> {
+  const { data } = await http.get(`/intelligence/evalscope/sandbox-health${deep ? "?deep=true" : ""}`);
+  return data as EvalScopeHealthStatus;
+}
+
+export async function fetchJudgeHealth(): Promise<EvalScopeHealthStatus> {
+  const { data } = await http.get("/intelligence/evalscope/judge-health");
+  return data as EvalScopeHealthStatus;
+}
+

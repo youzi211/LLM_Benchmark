@@ -1,7 +1,9 @@
+import math
+
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.stress.schemas import StressTask
+from app.stress.schemas import StressNormalizedResult, StressRunResult, StressTask
 
 
 class FakeRunner:
@@ -41,6 +43,18 @@ def test_stress_openapi_paths_present():
     assert "/api/stress/reports/{task_id}" in paths
 
 
+def test_stress_datasets_default_is_available_when_local_default_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLM_BENCHMARK_STRESS_DATASETS_DIR", str(tmp_path / "missing_stress_datasets"))
+    client = TestClient(app)
+
+    response = client.get("/api/stress/datasets")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["default_dataset"] in body["datasets"]
+    assert body["default_dataset"] == "speed_benchmark"
+
+
 def test_stress_routes_happy_path(monkeypatch):
     from app.api import routes_stress
 
@@ -53,6 +67,43 @@ def test_stress_routes_happy_path(monkeypatch):
     assert submitted["evalscope_base_url"] == "in-process"
     assert client.get("/api/stress/tasks/some").json()["status"] == "running"
     assert client.get("/api/stress/tasks/some/result").json()["status"] == "completed"
+
+
+def test_stress_result_sanitizes_non_finite_numbers(monkeypatch):
+    from app.api import routes_stress
+
+    class NonFiniteRunner(FakeRunner):
+        async def fetch_result(self, task_id: str):
+            return StressTask(
+                task_id=task_id,
+                model_id="m1",
+                protocol="chat_completions",
+                evalscope_base_url="in-process",
+                status="completed",
+                raw_result={
+                    "summary": {"best_req_throughput": math.nan},
+                    "runs": [{"request_throughput": math.inf, "avg_latency": -math.inf}],
+                },
+                normalized_result=StressNormalizedResult(
+                    task_id=task_id,
+                    summary={"best_req_throughput": math.nan},
+                    runs=[StressRunResult(request_throughput=math.inf, avg_latency_seconds=-math.inf)],
+                ),
+            )
+
+    monkeypatch.setattr(routes_stress, "_runner", lambda: NonFiniteRunner())
+    client = TestClient(app)
+
+    response = client.get("/api/stress/tasks/some/result")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["raw_result"]["summary"]["best_req_throughput"] is None
+    assert payload["raw_result"]["runs"][0]["request_throughput"] is None
+    assert payload["raw_result"]["runs"][0]["avg_latency"] is None
+    assert payload["normalized_result"]["summary"]["best_req_throughput"] is None
+    assert payload["normalized_result"]["runs"][0]["request_throughput"] is None
+    assert payload["normalized_result"]["runs"][0]["avg_latency_seconds"] is None
 
 
 def test_stress_routes_errors(monkeypatch):

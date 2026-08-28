@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ArrowDown } from "@element-plus/icons-vue";
 import { useModelsStore } from "@/stores/models";
+import ModelCreateDrawer from "@/components/models/ModelCreateDrawer.vue";
+import EvalScopeConfigDrawer from "@/components/evalscope/EvalScopeConfigDrawer.vue";
 
 const store = useModelsStore();
 const router = useRouter();
 const route = useRoute();
+const modelDrawerVisible = ref(false);
+const evalscopeDrawerVisible = ref(false);
 
 onMounted(() => {
   store.load().catch(() => {
@@ -34,6 +38,10 @@ function onSelectModel(id: string) {
 function selectMainTab(tabName: string | number | boolean | undefined) {
   const target = mainTabs.find((t) => t.name === String(tabName));
   if (target) router.push(target.path);
+}
+
+function onModelCreated(id: string) {
+  store.select(id);
 }
 </script>
 
@@ -64,6 +72,8 @@ function selectMainTab(tabName: string | number | boolean | undefined) {
             />
           </el-select>
           <el-button size="small" @click="store.load(true)">刷新模型</el-button>
+          <el-button size="small" type="primary" plain @click="modelDrawerVisible = true">添加模型</el-button>
+          <el-button size="small" type="warning" plain @click="evalscopeDrawerVisible = true">评测环境</el-button>
         </div>
       </div>
 
@@ -105,6 +115,9 @@ function selectMainTab(tabName: string | number | boolean | undefined) {
     <footer class="lb-footer">
       <small>Vue 3 · Vite · Element Plus · ECharts — 并行验证中，旧控制台仍挂在 /ui/</small>
     </footer>
+
+    <ModelCreateDrawer v-model="modelDrawerVisible" @created="onModelCreated" />
+    <EvalScopeConfigDrawer v-model="evalscopeDrawerVisible" />
   </div>
 </template>
 

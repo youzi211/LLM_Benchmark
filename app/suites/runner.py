@@ -235,6 +235,7 @@ class SuiteRunner:
                     limit=suite.request.intelligence_limit,
                     eval_batch_size=suite.request.intelligence_eval_batch_size,
                     generation_config=suite.request.intelligence_generation_config,
+                    dataset_args=suite.request.intelligence_dataset_args,
                 )
             else:
                 task = await self.intelligence_runner.submit_default(suite.model_id, limit=suite.request.intelligence_limit)

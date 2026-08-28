@@ -444,6 +444,22 @@ def test_suite_quick_route_uses_inline_model_without_persisting_key(temp_data_di
     assert "dummy-key-should-not-be-persisted" not in suite_file.read_text(encoding="utf-8")
 
 
+def test_suite_quick_request_preserves_intelligence_dataset_args():
+    from app.suites.schemas import SuiteQuickRunRequest
+
+    request = SuiteQuickRunRequest(
+        base_url="http://gateway.example/v1/chat/completions",
+        api_key="<test-key>",
+        model="demo-model",
+        intelligence_datasets=["bbh"],
+        intelligence_dataset_args={"bbh": {"subset_list": ["boolean_expressions"]}},
+    )
+
+    suite_request = request.to_suite_request("inline_test_model")
+
+    assert suite_request.intelligence_dataset_args == {"bbh": {"subset_list": ["boolean_expressions"]}}
+
+
 def test_suite_quick_request_builds_transient_model_from_url_key_model(temp_data_dirs):
     from app.suites.schemas import SuiteQuickRunRequest
 

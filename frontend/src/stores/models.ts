@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { fetchModels, type ModelConfig } from "@/api/models";
+import { createModel, fetchModels, type ModelConfig, type ModelConfigCreate } from "@/api/models";
 
 interface State {
   models: ModelConfig[];
@@ -28,6 +28,9 @@ export const useModelsStore = defineStore("models", {
       try {
         const models = await fetchModels();
         this.models = models;
+        if (this.currentId && !models.some((model) => model.id === this.currentId)) {
+          this.currentId = null;
+        }
         if (!this.currentId && models.length) {
           this.currentId = models[0].id ?? null;
         }
@@ -39,6 +42,12 @@ export const useModelsStore = defineStore("models", {
     },
     select(id: string): void {
       this.currentId = id;
+    },
+    async create(payload: ModelConfigCreate): Promise<ModelConfig> {
+      const created = await createModel(payload);
+      await this.load(true);
+      this.currentId = created.id;
+      return created;
     },
   },
 });

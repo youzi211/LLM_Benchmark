@@ -70,13 +70,14 @@ class FakeIntelligenceRunner:
         self.store.save(task)
         return task
 
-    async def submit_custom(self, *, model_id: str, datasets: list[str], limit: int | None = None, eval_batch_size: int | None = None, generation_config: dict | None = None) -> IntelligenceTask:
+    async def submit_custom(self, *, model_id: str, datasets: list[str], limit: int | None = None, eval_batch_size: int | None = None, generation_config: dict | None = None, dataset_args: dict | None = None) -> IntelligenceTask:
         self.submitted_custom = {
             "model_id": model_id,
             "datasets": datasets,
             "limit": limit,
             "eval_batch_size": eval_batch_size,
             "generation_config": generation_config,
+            "dataset_args": dataset_args,
         }
         task = await self.submit_default(model_id, limit=limit)
         task.datasets = datasets
@@ -233,6 +234,7 @@ async def test_suite_runner_uses_custom_intelligence_profile_options(tmp_path: P
         "limit": 3,
         "eval_batch_size": 2,
         "generation_config": {"temperature": 0.0, "max_tokens": 64},
+        "dataset_args": None,
     }
 
 
@@ -402,6 +404,7 @@ async def test_suite_runner_uses_custom_intelligence_profile_options(tmp_path: P
         "limit": 3,
         "eval_batch_size": 2,
         "generation_config": {"temperature": 0.0, "max_tokens": 64},
+        "dataset_args": None,
     }
 
 

@@ -56,6 +56,7 @@ LOCAL_RESOLVABLE_DATASETS = LOCAL_RESOLVABLE_STRESS_DATASETS
 TERMINAL_STATUSES = {"completed", "failed", "interrupted"}
 ALLOWED_STATUSES = {"pending", "running", "completed", "failed", "interrupted"}
 IN_PROCESS_EVALSCOPE = "in-process"
+SAFE_BUILTIN_STRESS_DATASET = "speed_benchmark"
 
 
 class StressExecutor(Protocol):
@@ -269,9 +270,17 @@ class StressRunner:
             "api_key": model.api_key or "EMPTY",
             "api": _api_type(model),
         }
+        requested_dataset = getattr(options, "dataset", None) or DEFAULT_STRESS_DATASET
         dataset_path = self._resolve_dataset_path(options)
+        if requested_dataset in LOCAL_RESOLVABLE_DATASETS and dataset_path is None:
+            if getattr(options, "dataset", None):
+                raise ValueError(f"stress_dataset_not_local:{requested_dataset}")
+            requested_dataset = SAFE_BUILTIN_STRESS_DATASET
+
         for key in ALLOWED_OPTION_KEYS:
             value = getattr(options, key, None)
+            if key == "dataset":
+                value = requested_dataset
             if value is None:
                 # dataset_path 单独处理：用户未显式指定时，按本地数据集约定补齐，
                 # 让 EvalScope 改为 local 加载；其它字段为空一律不透传。

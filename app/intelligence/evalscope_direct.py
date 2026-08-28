@@ -3,10 +3,13 @@ from __future__ import annotations
 import copy
 import json
 import os
+import subprocess
 import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
+
+import httpx
 
 from app.evalscope_defaults import (
     CODE_EXECUTION_DATASETS,
@@ -44,6 +47,154 @@ def evalscope_health() -> dict[str, Any]:
     except Exception as exc:  # pragma: no cover - depends on optional local install
         return {"status": "error", "mode": "in_process", "error": redact_text(str(exc))}
     return {"status": "ok", "mode": "in_process", "evalscope_version": getattr(evalscope, "__version__", None)}
+
+
+def sandbox_health(config: EvalScopeConfig, *, timeout_seconds: float = 3.0, deep: bool = False) -> dict[str, Any]:
+    """Best-effort liveness probe for the configured EvalScope sandbox.
+
+    The default mode verifies that the configured sandbox manager is reachable.
+    When ``deep`` is true and a remote manager is configured, it also creates a
+    short-lived sandbox, executes a trivial shell command, and deletes it. This
+    mirrors the EvalScope code-execution path closely enough to catch missing
+    Docker/shell-tool problems before users submit jobs.
+    """
+
+    engine = config.sandbox_type or "docker"
+    manager_config = dict(config.sandbox_manager_config or {})
+    if not config.sandbox_enabled:
+        return {"status": "disabled", "engine": engine, "message": "sandbox is disabled"}
+
+    base_url = manager_config.get("base_url") or manager_config.get("url") or manager_config.get("endpoint")
+    if isinstance(base_url, str) and base_url.strip():
+        root = base_url.strip().rstrip("/")
+        candidates = [f"{root}/health", f"{root}/sandboxes"]
+        errors: list[str] = []
+        for url in candidates:
+            try:
+                response = httpx.get(url, timeout=timeout_seconds)
+            except Exception as exc:  # pragma: no cover - depends on external service
+                errors.append(f"{url}: {redact_text(str(exc))}")
+                continue
+            if 200 <= response.status_code < 300:
+                payload: dict[str, Any] | None = None
+                try:
+                    parsed = response.json()
+                    payload = parsed if isinstance(parsed, dict) else {"items": parsed}
+                except Exception:
+                    payload = None
+                result: dict[str, Any] = {
+                    "status": "ok",
+                    "engine": engine,
+                    "base_url": root,
+                    "http_status": response.status_code,
+                    "checked_url": url,
+                    "detail": payload,
+                }
+                if deep:
+                    result["execution"] = _remote_sandbox_execution_smoke(
+                        root,
+                        engine,
+                        manager_config,
+                        timeout_seconds=timeout_seconds,
+                    )
+                    if result["execution"].get("status") != "ok":
+                        result["status"] = "error"
+                        result["error"] = result["execution"].get("error") or "sandbox execution smoke failed"
+                return result
+            errors.append(f"{url}: HTTP {response.status_code}")
+        return {"status": "error", "engine": engine, "base_url": root, "error": "; ".join(errors[-2:])}
+
+    if engine == "docker":
+        try:
+            result = subprocess.run(
+                ["docker", "info"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+            )
+        except Exception as exc:  # pragma: no cover - depends on host docker install
+            return {"status": "error", "engine": engine, "error": redact_text(str(exc))}
+        if result.returncode == 0:
+            return {"status": "ok", "engine": engine, "message": "docker daemon is reachable"}
+        detail = (result.stderr or result.stdout or "docker info failed").strip()
+        return {"status": "error", "engine": engine, "error": redact_text(detail)}
+
+    return {
+        "status": "unknown",
+        "engine": engine,
+        "message": "no remote base_url/url/endpoint configured and no built-in probe for this sandbox engine",
+    }
+
+
+def _remote_sandbox_execution_smoke(
+    root: str,
+    engine: str,
+    manager_config: dict[str, Any],
+    *,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    sandbox_id: str | None = None
+    headers = {}
+    api_key = manager_config.get("api_key")
+    if isinstance(api_key, str) and api_key:
+        headers["X-API-Key"] = api_key
+    try:
+        request_timeout = max(timeout_seconds, 30.0)
+        create_response = httpx.post(
+            f"{root}/sandbox/create",
+            params={"sandbox_type": engine},
+            json={
+                "image": manager_config.get("image") or "python:3.11-slim",
+                "working_dir": "/sandbox",
+                "tools_config": ["shell_executor"],
+            },
+            headers=headers,
+            timeout=request_timeout,
+        )
+        if create_response.status_code != 200:
+            return {
+                "status": "error",
+                "stage": "create",
+                "http_status": create_response.status_code,
+                "error": redact_text(create_response.text[:500]),
+            }
+        data = create_response.json()
+        sandbox_id = str(data.get("sandbox_id") or "")
+        if not sandbox_id:
+            return {"status": "error", "stage": "create", "error": "sandbox_id missing in response"}
+
+        execute_response = httpx.post(
+            f"{root}/sandbox/tool/execute",
+            json={
+                "sandbox_id": sandbox_id,
+                "tool_name": "shell_executor",
+                "parameters": {"command": "echo LLM_BENCHMARK_SANDBOX_OK", "timeout": 10},
+            },
+            headers=headers,
+            timeout=request_timeout,
+        )
+        if execute_response.status_code != 200:
+            return {
+                "status": "error",
+                "stage": "execute",
+                "http_status": execute_response.status_code,
+                "sandbox_id": sandbox_id,
+                "error": redact_text(execute_response.text[:500]),
+            }
+        executed = execute_response.json()
+        output = str(executed.get("output") or "")
+        if executed.get("status") != "success" or "LLM_BENCHMARK_SANDBOX_OK" not in output:
+            return {"status": "error", "stage": "execute", "sandbox_id": sandbox_id, "error": redact_text(str(executed)[:500])}
+        return {"status": "ok", "stage": "execute", "sandbox_id": sandbox_id, "output": "LLM_BENCHMARK_SANDBOX_OK"}
+    except Exception as exc:  # pragma: no cover - depends on external service
+        return {"status": "error", "stage": "exception", "error": redact_text(str(exc))}
+    finally:
+        if sandbox_id:
+            try:
+                httpx.delete(f"{root}/sandbox/{sandbox_id}", headers=headers, timeout=max(timeout_seconds, 30.0))
+            except Exception:
+                pass
 
 
 def dataset_metadata(config: EvalScopeConfig) -> dict[str, Any]:
@@ -87,7 +238,7 @@ def local_dataset_metadata(config: EvalScopeConfig) -> dict[str, Any]:
     datasets: dict[str, dict[str, Any]] = {}
     if root.exists():
         for child in sorted(root.iterdir()):
-            if not child.is_dir() or child.name.startswith("."):
+            if not child.is_dir() or child.name.startswith(".") or child.name not in _DATASET_META:
                 continue
             base = dict(_DATASET_META.get(child.name, {}))
             subsets = _local_subset_names(child)
@@ -105,7 +256,8 @@ def local_dataset_metadata(config: EvalScopeConfig) -> dict[str, Any]:
             if configured_subsets:
                 base["configured_subset_list"] = configured_subsets
             datasets[child.name] = base
-    return {"total": len(datasets), "datasets_dir": str(root), "datasets": datasets}
+    default_datasets = [name for name in DEFAULT_DATASETS if name in datasets]
+    return {"total": len(datasets), "default_datasets": default_datasets, "datasets_dir": str(root), "datasets": datasets}
 
 
 def datasets_requiring_judge(datasets: list[str]) -> list[str]:
@@ -309,6 +461,7 @@ class EvalScopeIntelligenceExecutor:
         eval_batch_size: int | None = None,
         generation_config: dict[str, Any] | None = None,
         judge_model_args: dict[str, Any] | None = None,
+        dataset_args: dict[str, dict[str, Any]] | None = None,
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         try:
@@ -337,6 +490,7 @@ class EvalScopeIntelligenceExecutor:
                 generation_config=generation_config,
                 work_dir=str(dataset_work_dir),
                 judge_model_args=judge_model_args,
+                user_dataset_args=dataset_args,
             )
 
             def emit(progress: dict[str, Any]) -> None:
@@ -424,8 +578,9 @@ class EvalScopeIntelligenceExecutor:
         generation_config: dict[str, Any] | None,
         work_dir: str,
         judge_model_args: dict[str, Any] | None,
+        user_dataset_args: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        dataset_args = self._dataset_args(dataset=dataset, local_paths=local_paths)
+        dataset_args = self._dataset_args(dataset=dataset, local_paths=local_paths, user_dataset_args=user_dataset_args)
         data: dict[str, Any] = {
             "model": model,
             "api_url": api_url,
@@ -462,9 +617,11 @@ class EvalScopeIntelligenceExecutor:
             data["judge_worker_num"] = self.config.judge_worker_num
         return data
 
-    def _dataset_args(self, *, dataset: str, local_paths: dict[str, str]) -> dict[str, dict[str, Any]]:
+    def _dataset_args(self, *, dataset: str, local_paths: dict[str, str], user_dataset_args: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:
         args = copy.deepcopy(DEFAULT_INTELLIGENCE_DATASET_ARGS.get(dataset, {}))
         args.update(copy.deepcopy(self.config.dataset_args.get(dataset, {})))
+        if user_dataset_args and dataset in user_dataset_args:
+            args.update(copy.deepcopy(user_dataset_args[dataset]))
         if dataset in local_paths and not args.get("local_path"):
             args["local_path"] = local_paths[dataset]
         return {dataset: args} if args else {}
@@ -473,7 +630,7 @@ class EvalScopeIntelligenceExecutor:
         root = datasets_root(self.config)
         if not root.exists():
             return {}
-        return {child.name: str(child) for child in root.iterdir() if child.is_dir()}
+        return {child.name: str(child) for child in root.iterdir() if child.is_dir() and child.name in _DATASET_META}
 
     def _report_table(self, report_map: dict[str, Any]) -> str | None:
         if not report_map:

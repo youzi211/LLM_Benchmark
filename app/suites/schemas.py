@@ -89,6 +89,7 @@ class SuiteDefaultRunRequest(BaseModel):
     intelligence_limit: int | None = Field(default=None, ge=1)
     intelligence_eval_batch_size: int | None = Field(default=None, ge=1)
     intelligence_generation_config: dict[str, Any] | None = None
+    intelligence_dataset_args: dict[str, dict[str, Any]] | None = Field(default=None, validation_alias=AliasChoices("intelligence_dataset_args", "dataset_args"))
     wait_for_completion: bool = False
     poll_interval_seconds: float | None = Field(default=None, ge=0, le=3600)
     timeout_seconds: float | None = Field(default=None, ge=1, le=172800)
@@ -178,6 +179,7 @@ class SuiteQuickRunRequest(SuiteInlineModelRequest):
     intelligence_limit: int | None = Field(default=None, ge=1)
     intelligence_eval_batch_size: int | None = Field(default=None, ge=1)
     intelligence_generation_config: dict[str, Any] | None = None
+    intelligence_dataset_args: dict[str, dict[str, Any]] | None = Field(default=None, validation_alias=AliasChoices("intelligence_dataset_args", "dataset_args"))
     wait_for_completion: bool = False
     poll_interval_seconds: float | None = Field(default=None, ge=0, le=3600)
     timeout_seconds_total: float | None = Field(default=None, ge=1, le=172800)
@@ -215,6 +217,7 @@ class SuiteQuickRunRequest(SuiteInlineModelRequest):
             intelligence_limit=self.intelligence_limit,
             intelligence_eval_batch_size=self.intelligence_eval_batch_size,
             intelligence_generation_config=self.intelligence_generation_config,
+            intelligence_dataset_args=self.intelligence_dataset_args,
             wait_for_completion=self.wait_for_completion,
             poll_interval_seconds=self.poll_interval_seconds,
             timeout_seconds=self.timeout_seconds_total,
@@ -278,6 +281,7 @@ class SuiteScheduleCreate(BaseModel):
     intelligence_limit: int | None = Field(default=None, ge=1)
     intelligence_eval_batch_size: int | None = Field(default=None, ge=1)
     intelligence_generation_config: dict[str, Any] | None = None
+    intelligence_dataset_args: dict[str, dict[str, Any]] | None = None
     poll_interval_seconds: float | None = Field(default=None, ge=0, le=3600)
     timeout_seconds: float | None = Field(default=None, ge=1, le=172800)
 
@@ -327,6 +331,7 @@ class SuiteScheduleCreate(BaseModel):
             intelligence_limit=self.intelligence_limit if self.intelligence_limit is not None else DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT,
             intelligence_eval_batch_size=self.intelligence_eval_batch_size,
             intelligence_generation_config=self.intelligence_generation_config,
+            intelligence_dataset_args=self.intelligence_dataset_args,
             wait_for_completion=False,
             poll_interval_seconds=self.poll_interval_seconds,
             timeout_seconds=self.timeout_seconds,

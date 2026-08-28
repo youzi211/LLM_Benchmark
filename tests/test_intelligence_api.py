@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 
 from app.intelligence.schemas import IntelligenceProgress, IntelligenceTask
@@ -84,6 +86,164 @@ def test_intelligence_routes_happy_path(monkeypatch):
     assert progress["progress"] == "能力评测进行中：gsm8k 5/10（50.0%），数据集 1/1"
     assert progress["progress_detail"]["overall_percent"] == 50.0
     assert client.get("/api/intelligence/tasks/some/result").json()["status"] == "completed"
+
+
+def test_intelligence_custom_route_passes_dataset_args(monkeypatch):
+    from app.api import routes_intelligence
+
+    captured = {}
+
+    class CapturingRunner(FakeRunner):
+        async def submit_custom(self, **kwargs):
+            captured.update(kwargs)
+            return await super().submit_custom(**kwargs)
+
+    monkeypatch.setattr(routes_intelligence, "_runner", lambda: CapturingRunner())
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/intelligence/tasks",
+        json={
+            "model_id": "m1",
+            "datasets": ["bbh"],
+            "dataset_args": {"bbh": {"subset_list": ["boolean_expressions"]}},
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert captured["dataset_args"] == {"bbh": {"subset_list": ["boolean_expressions"]}}
+
+
+def test_intelligence_custom_route_rejects_non_local_dataset(monkeypatch, temp_data_dirs):
+    from app.api import routes_intelligence
+
+    monkeypatch.setattr(routes_intelligence, "_runner", lambda: FakeRunner())
+    monkeypatch.setattr(routes_intelligence, "local_dataset_metadata", lambda config: {"total": 1, "datasets": {"bbh": {"pretty_name": "BBH"}}})
+    client = TestClient(app)
+
+    response = client.post("/api/intelligence/tasks", json={"model_id": "m1", "datasets": ["gsm8k"]})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "dataset_not_local"
+
+
+def test_evalscope_config_update_preserves_unmanaged_fields(temp_data_dirs):
+    data_dir, _ = temp_data_dirs
+    config_path = data_dir / "evalscope.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        '{"ignore_dataset_errors": false, "dataset_args": {"bbh": {"subset_list": ["boolean_expressions"]}}}',
+        encoding="utf-8",
+    )
+    client = TestClient(app)
+
+    response = client.put(
+        "/api/intelligence/evalscope/config",
+        json={
+            "judge_model_config_id": "judge-model",
+            "judge_generation_config": {"temperature": 0, "max_tokens": 128},
+            "judge_worker_num": 2,
+            "sandbox_enabled": True,
+            "sandbox_type": "docker",
+            "sandbox_manager_config": {"base_url": "http://sandbox.local:1234"},
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["ignore_dataset_errors"] is False
+    assert body["dataset_args"] == {"bbh": {"subset_list": ["boolean_expressions"]}}
+
+
+
+def test_intelligence_datasets_endpoint_only_returns_known_local_datasets(temp_data_dirs):
+    data_dir, _ = temp_data_dirs
+    dataset_root = data_dir / "evalscope_datasets"
+    (dataset_root / "bbh" / "boolean_expressions").mkdir(parents=True)
+    (dataset_root / "datasets" / "downloads").mkdir(parents=True)
+    config_path = data_dir / "evalscope.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps({"datasets_dir": str(dataset_root)}), encoding="utf-8")
+    client = TestClient(app)
+
+    response = client.get("/api/intelligence/datasets")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert list(body["datasets"].keys()) == ["bbh"]
+    assert body["datasets"]["bbh"]["available_local"] is True
+    assert body["datasets"]["bbh"]["subsets"] == ["boolean_expressions"]
+    assert body["default_datasets"] == ["bbh"]
+
+
+def test_evalscope_config_api_persists_judge_and_masks_sensitive_sandbox_config(temp_data_dirs):
+    client = TestClient(app)
+
+    payload = {
+        "judge_model_config_id": "judge-model",
+        "judge_generation_config": {"temperature": 0, "max_tokens": 128},
+        "judge_worker_num": 2,
+        "sandbox_enabled": True,
+        "sandbox_type": "docker",
+        "sandbox_manager_config": {"base_url": "http://sandbox.local:1234", "api_key": "dummy"},
+    }
+    saved = client.put("/api/intelligence/evalscope/config", json=payload)
+    assert saved.status_code == 200, saved.text
+    body = saved.json()
+    assert body["judge_model_config_id"] == "judge-model"
+    assert body["sandbox_enabled"] is True
+    assert body["sandbox_manager_config"]["base_url"] == "http://sandbox.local:1234"
+    assert body["sandbox_manager_config"]["api_key"] != "dummy"
+
+    got = client.get("/api/intelligence/evalscope/config")
+    assert got.status_code == 200
+    assert got.json()["sandbox_manager_config"]["api_key"] == body["sandbox_manager_config"]["api_key"]
+
+
+
+def test_sandbox_health_requires_real_health_endpoint(monkeypatch):
+    from app.intelligence.evalscope_direct import sandbox_health
+    from app.intelligence.schemas import EvalScopeConfig
+
+    class Response:
+        def __init__(self, status_code, payload=None):
+            self.status_code = status_code
+            self._payload = payload or {}
+
+        def json(self):
+            return self._payload
+
+    calls = []
+
+    def fake_get(url, timeout):
+        calls.append(url)
+        if url.endswith("/health"):
+            return Response(200, {"healthy": True})
+        return Response(404, {"detail": "not found"})
+
+    monkeypatch.setattr("app.intelligence.evalscope_direct.httpx.get", fake_get)
+
+    result = sandbox_health(
+        EvalScopeConfig(
+            sandbox_enabled=True,
+            sandbox_type="docker",
+            sandbox_manager_config={"base_url": "http://sandbox.local:1234"},
+        )
+    )
+
+    assert result["status"] == "ok"
+    assert result["http_status"] == 200
+    assert result["checked_url"] == "http://sandbox.local:1234/health"
+    assert "http://sandbox.local:1234" not in calls
+
+
+def test_evalscope_sandbox_health_disabled(temp_data_dirs):
+    client = TestClient(app)
+
+    response = client.get("/api/intelligence/evalscope/sandbox-health")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "disabled"
 
 
 def test_intelligence_routes_errors(monkeypatch):

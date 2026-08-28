@@ -136,6 +136,40 @@ async def test_stress_runner_normalizes_evalscope_perf_raw_mapping(tmp_path):
 
 
 
+@pytest.mark.asyncio
+async def test_stress_runner_default_falls_back_to_non_download_dataset(tmp_path, monkeypatch):
+    missing_root = tmp_path / "missing_stress_datasets"
+    monkeypatch.setattr(stress_runner_module, "STRESS_DATASETS_DIR", missing_root)
+    executor = FakeStressExecutor()
+    runner = StressRunner(
+        model_store=_model_store(tmp_path / "models.json"),
+        task_store=StressTaskStore(tmp_path / "stress_tasks"),
+        executor=executor,
+        reports_dir=tmp_path / "reports",
+        run_in_background=False,
+    )
+
+    await runner.submit_default("m1")
+
+    assert executor.submitted_payload["dataset"] == "speed_benchmark"
+    assert executor.submitted_payload.get("dataset_path") is None
+
+
+def test_stress_runner_rejects_explicit_missing_local_dataset(tmp_path, monkeypatch):
+    missing_root = tmp_path / "missing_stress_datasets"
+    monkeypatch.setattr(stress_runner_module, "STRESS_DATASETS_DIR", missing_root)
+    runner = StressRunner(
+        model_store=_model_store(tmp_path / "models.json"),
+        task_store=StressTaskStore(tmp_path / "stress_tasks"),
+        executor=FakeStressExecutor(),
+        reports_dir=tmp_path / "reports",
+        run_in_background=False,
+    )
+
+    with pytest.raises(ValueError, match="stress_dataset_not_local:longalpaca"):
+        runner._build_payload(runner.model_store.get("m1"), stress_runner_module.StressDefaultRunRequest(model_id="m1", dataset=DEFAULT_STRESS_DATASET))
+
+
 def test_stress_runner_resolves_local_jsonl_dataset_path(tmp_path, monkeypatch):
     dataset_root = tmp_path / "stress_datasets"
     dataset_root.mkdir()

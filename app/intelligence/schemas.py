@@ -59,6 +59,7 @@ class IntelligenceRunRequest(BaseModel):
     limit: int | None = Field(default=None, ge=1)
     eval_batch_size: int | None = Field(default=None, ge=1)
     generation_config: dict[str, Any] | None = None
+    dataset_args: dict[str, dict[str, Any]] | None = None
 
 
 class IntelligenceDatasetResult(BaseModel):

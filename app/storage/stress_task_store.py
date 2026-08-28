@@ -5,6 +5,7 @@ from pathlib import Path
 
 from app.storage.file_utils import read_json_file, write_json_file_atomic
 from app.stress.schemas import StressTask
+from app.utils.json_sanitize import make_json_safe
 
 
 class StressTaskStore:
@@ -15,14 +16,14 @@ class StressTaskStore:
         return self.directory / f"{task_id}.json"
 
     def save(self, task: StressTask) -> StressTask:
-        write_json_file_atomic(self._path(task.task_id), task.model_dump(mode="json"))
+        write_json_file_atomic(self._path(task.task_id), make_json_safe(task.model_dump(mode="json")))
         return task
 
     def get(self, task_id: str) -> StressTask | None:
         path = self._path(task_id)
         if not path.exists():
             return None
-        return StressTask.model_validate(read_json_file(path, {}))
+        return StressTask.model_validate(make_json_safe(read_json_file(path, {})))
 
     def list(self, limit: int = 50) -> list[StressTask]:
         if not self.directory.exists():
@@ -30,7 +31,7 @@ class StressTaskStore:
         tasks: list[StressTask] = []
         for path in self.directory.glob("stress_task_*.json"):
             try:
-                tasks.append(StressTask.model_validate(read_json_file(path, {})))
+                tasks.append(StressTask.model_validate(make_json_safe(read_json_file(path, {}))))
             except Exception:
                 continue
         tasks.sort(key=lambda item: (item.created_at, item.task_id), reverse=True)

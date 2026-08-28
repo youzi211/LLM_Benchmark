@@ -264,3 +264,251 @@ body,
   flex-wrap: wrap;
   gap: 4px 12px;
 }
+
+/* 两栏布局（定时任务页） */
+.view-grid--two {
+  grid-template-columns: minmax(360px, 1fr) minmax(0, 1.2fr);
+}
+
+/* Suite 步骤时间线 */
+.step-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.step-title {
+  font-weight: 500;
+}
+.step-msg {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+
+/* 错误列表 */
+.error-list {
+  margin-top: 8px;
+}
+.error-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+  color: var(--lb-danger);
+}
+
+/* 分隔线 */
+.el-divider {
+  margin: 20px 0 12px;
+}
+
+/* Profile 下拉选项 */
+.profile-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 0;
+}
+.profile-option__name {
+  font-weight: 500;
+}
+.profile-option__desc {
+  font-size: 12px;
+  line-height: 1.4;
+}
+.profile-option__detail {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+/* Profile 下拉：Element Plus 默认选项是固定 34px 高度，自定义多行内容会被裁剪。 */
+.profile-select-popper .el-select-dropdown__item {
+  height: auto;
+  min-height: 56px;
+  line-height: 1.45;
+  padding: 8px 16px;
+  white-space: normal;
+}
+
+.profile-select-popper .el-select-dropdown__item + .el-select-dropdown__item {
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.profile-select-popper .profile-option {
+  width: 100%;
+  line-height: 1.45;
+}
+
+.profile-option__header,
+.profile-summary__header,
+.profile-summary__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.profile-option__id {
+  font-size: 12px;
+}
+
+.profile-summary {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(64, 158, 255, 0.22);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(64, 158, 255, 0.06), rgba(64, 158, 255, 0.02));
+}
+
+.profile-summary__header {
+  margin-bottom: 8px;
+}
+
+.profile-summary__label {
+  min-width: 72px;
+  color: var(--lb-muted);
+  font-size: 12px;
+}
+
+.profile-summary__row + .profile-summary__row {
+  margin-top: 6px;
+}
+
+.dataset-card__meta {
+  margin: -2px 0 6px;
+  font-size: 12px;
+}
+
+/* 定时任务主页面：列表与详情保持轻量，复杂配置进入 Drawer。 */
+.schedules-page {
+  display: grid;
+  gap: 16px;
+}
+
+.page-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: var(--lb-radius);
+  background: linear-gradient(135deg, #ffffff 0%, #f8fbff 55%, #edf5ff 100%);
+  box-shadow: var(--lb-shadow);
+}
+
+.page-hero h1 {
+  margin: 2px 0 6px;
+  font-size: 24px;
+  line-height: 1.25;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--lb-accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.page-hero__actions,
+.lane-tags,
+.dataset-head__tags,
+.drawer-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.schedules-grid {
+  align-items: stretch;
+}
+
+.detail-empty {
+  display: grid;
+  min-height: 420px;
+  place-items: center;
+}
+
+.schedule-summary-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.07), rgba(37, 99, 235, 0.02));
+}
+
+.schedule-summary-card p,
+.schedule-summary-card h2 {
+  margin: 0;
+}
+
+.schedule-summary-card h2 {
+  margin-top: 4px;
+  font-size: 20px;
+}
+
+.schedule-editor-drawer .el-drawer__body {
+  padding-top: 12px;
+}
+
+.schedule-editor {
+  min-height: 100%;
+}
+
+.schedule-editor__hint {
+  margin-bottom: 12px;
+}
+
+.schedule-editor-tabs .el-tabs__content {
+  padding-top: 8px;
+}
+
+.dataset-pick-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.drawer-footer {
+  justify-content: flex-end;
+}
+
+@media (max-width: 760px) {
+  .page-hero {
+    flex-direction: column;
+  }
+
+  .page-hero__actions {
+    width: 100%;
+  }
+
+  .page-hero__actions .el-button {
+    flex: 1;
+  }
+}
+
+/* 模型添加 Drawer */
+.model-editor__hint {
+  margin-bottom: 14px;
+}
+
+.model-editor-form .el-collapse {
+  margin-top: 8px;
+}
+
+.form-help {
+  margin-top: 4px;
+  color: var(--lb-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
