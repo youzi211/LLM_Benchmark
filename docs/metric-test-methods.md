@@ -870,7 +870,7 @@ EvalScope 智力评测不是 `gateway_acceptance_v1` 的接入验收指标，因
 |---|---|---|
 | 1 | 调用 `GET /api/intelligence/datasets/local` 查看本地可用数据集。 | 数据集 `pretty_name`、`needs_judge`、`categories`。 |
 | 2 | 调用 `POST /api/intelligence/tasks/default` 或 `POST /api/intelligence/tasks` 提交评测。 | 本系统 `task_id` 与 EvalScope `evalscope_task_id`。 |
-| 3 | 调用 `GET /api/intelligence/tasks/{task_id}` 刷新状态。 | `pending`、`running`、`completed`、`failed`、`interrupted` 和 `progress`。 |
+| 3 | 调用 `GET /api/intelligence/tasks/{task_id}` 或 `GET /api/intelligence/tasks/{task_id}/progress` 刷新状态。 | `pending`、`running`、`completed`、`failed`、`interrupted`、`progress` 和结构化 `progress_detail`。 |
 | 4 | 调用 `GET /api/intelligence/tasks/{task_id}/result` 获取终态结果。 | 精简标准化数据集分数、能力维度汇总、报告路径，以及任务级 `raw_result` / `raw_output_dir` 定位。 |
 | 5 | 调用 `GET /api/intelligence/reports/{task_id}` 下载报告。 | 人可读 Markdown 报告。 |
 
@@ -880,6 +880,7 @@ EvalScope 智力评测不是 `gateway_acceptance_v1` 的接入验收指标，因
 - 代码执行类数据集（`humaneval`、`humaneval_plus`、`mbpp`、`mbpp_plus`、`live_code_bench`）必须配置 EvalScope sandbox 才能评分；推荐在 `data/evalscope.json` 中设置 `sandbox_enabled=true` 和远程 `sandbox_manager_config.base_url`。FastAPI 主服务启动时不会在 `app.main` 中自动启动 sandbox；运行这类数据集前必须先独立启动 `ms-enclave server` 并确认 `/health` 可访问，或在同机验证时使用 `scripts/start_all.*` 的显式 sandbox 选项。运行时适配层会把本地兼容字段转换为 EvalScope 官方 `sandbox={"enabled": true, "engine": "docker", "manager_config": {...}}`。
 - 需要 Judge 的数据集默认使用 `data/models.json` 顶层 `analysis_model_id` 指向的内置 Judge；可用 `data/evalscope.json` 的 `judge_model_config_id` 覆盖。没有可用 Judge 时，包含 Judge 数据集的任务会在提交阶段被拒绝，避免跑到 EvalScope 内部才失败。
 - `score` 只做展示和后续人工分析，不设置上线阈值，不输出自动准入结论。
+- 运行中进度来自 EvalScope 在输出目录写入的 `progress.json`，服务端汇总为任务级 `progress_detail`，用于显示当前数据集、样本完成数和整体百分比。
 - `normalized_result` 只保留数据集分数、能力维度汇总、状态和错误摘要；完整 EvalScope 业务结果只保留在任务级 `raw_result`，`raw_output_dir` 指向 EvalScope 原始输出目录。
 - Markdown 报告和 overview 只展示摘要与原始结果定位，不再复制完整 `report_table`、metrics 或 JSON 附录；需要排查时使用 `/api/intelligence/tasks/{task_id}/result` 和报告中的原始输出目录。
 

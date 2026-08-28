@@ -14,14 +14,18 @@
 
 ### 1.1 可视化控制台
 
-主服务内置一个轻量 Web 控制台，随 FastAPI 进程一起提供静态资源，不需要单独启动前端服务：
+主服务内置一个轻量 Web 控制台，随 FastAPI 进程一起提供静态资源，不需要单独启动前端服务；并行提供一个由 Vue 3 + Vite 重写的控制台（`/ui-vue/`）作为交叉验证入口：
 
 - `GET /`：浏览器访问时跳转到 `/ui/`。
-- `GET /ui/`：打开评测控制台页面。
-- 控制台主要调用现有 JSON API：`POST /api/suites/quick`、`POST /api/suites/default`、`GET /api/suites`、`GET /api/suites/{suite_id}` 和 `GET /api/suites/{suite_id}/report`。
-- 定时一键评测区域会调用 `GET /api/models`、`GET /api/evalscope/profiles`、`POST /api/models`、`PUT /api/models/{model_id}`、`POST /api/suites/schedules`、`GET /api/suites/schedules`、`GET /api/suites/schedules/{schedule_id}/last-run`、`POST /api/suites/schedules/{schedule_id}/trigger` 和 `DELETE /api/suites/schedules/{schedule_id}`。
-- 指标曲线区域会按 suite 中的 `gateway_task_id`、`intelligence_task_id`、`stress_task_id` 继续读取 `GET /api/tasks/{task_id}`、`GET /api/intelligence/tasks/{task_id}/result` 和 `GET /api/stress/tasks/{task_id}/result`，用于展示 smoke 状态、数据集分数、吞吐、延迟、TTFT/TPOT 和成功率。
-- 控制台不在浏览器 localStorage 中保存 API Key；临时模型一键评测仍遵循 `/api/suites/quick` 的安全边界，即不把传入 Key 写入 `data/models.json`、suite JSON 或报告。定时计划需要持久化模型配置；如果从左侧临时参数创建定时计划，Key 会写入本机 `data/models.json`。
+- `GET /ui/`：打开主控制台页面（静态源 `app/web/`）。
+- `GET /ui-vue/`：打开 Vue 重写控制台（构建产物 `app/web_vue/`，源码 `frontend/`）。该挂载仅在 `app/web_vue/` 目录实际存在时生效；当目录缺失（例如未执行 `npm run build`），主服务 `_mount_optional_static(app, "/ui-vue", WEB_VUE_DIR, name="ui-vue")` 会跳过挂载，`/ui-vue/*` 路径返回 404，不影响 `/ui/`。
+- 控制台主界面按三条评测线组织：基础评测、压测评测、能力评测。三条线共用顶部的已保存模型选择器（`GET /api/models`）。
+- 基础评测页调用 `POST /api/tasks/run`、`GET /api/tasks`、`GET /api/tasks/{task_id}` 和 `GET /api/reports/{task_id}`。
+- 压测评测页调用 `GET /api/stress/evalscope/health`、`POST /api/stress/tasks/default`、`GET /api/stress/tasks`、`GET /api/stress/tasks/{task_id}`、`GET /api/stress/tasks/{task_id}/result`、`POST /api/stress/tasks/{task_id}/cancel` 和 `GET /api/stress/reports/{task_id}`。
+- 能力评测页调用 `GET /api/intelligence/evalscope/health`、`GET /api/intelligence/evalscope/judge-config`、`GET /api/intelligence/datasets`、`POST /api/intelligence/tasks/default`、`POST /api/intelligence/tasks`、`GET /api/intelligence/tasks`、`GET /api/intelligence/tasks/{task_id}`、`GET /api/intelligence/tasks/{task_id}/progress`、`GET /api/intelligence/tasks/{task_id}/result`、`POST /api/intelligence/tasks/{task_id}/cancel` 和 `GET /api/intelligence/reports/{task_id}`；数据集元信息会展示描述、本地可用状态、本地路径、本地 subset 列表和当前配置的 `subset_list`。
+- 一键完整评测和定时任务作为辅助入口保留，分别调用 `/api/suites/default`、`/api/suites/quick`、`/api/suites`、`/api/suites/{suite_id}/report`、`/api/suites/{suite_id}/cancel` 以及 `/api/suites/schedules*`。
+- 控制台不在浏览器 localStorage 中保存 API Key；临时模型完整评测仍遵循 `/api/suites/quick` 的安全边界，即不把传入 Key 写入 `data/models.json`、suite JSON 或报告。定时任务使用已保存模型配置。
+- Vue 重写控制台 (`/ui-vue/`) 与主控制台 (`/ui/`) 复用同一组 `/api/*` JSON 接口；前端通过 `vite.config.ts` 中的 `/api` 代理在开发期访问 8020 端口，生产期静态产物继续通过 `http://<主服务>:8020/api/*` 访问同一份后端，接口契约保持不变。
 
 ## 2. 通用错误格式
 
@@ -633,7 +637,8 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 | `evalscope_base_url` | string | 兼容字段；当前固定为 `in-process`，表示主服务内直接调用 EvalScope。 |
 | `datasets` | string[] | 本次评测数据集。 |
 | `status` | string | `pending`、`running`、`completed`、`failed`、`interrupted`。 |
-| `progress` | string/null | 本地进度文本，例如正在执行哪个数据集。 |
+| `progress` | string/null | 本地进度文本，例如当前数据集、样本完成数和整体百分比。 |
+| `progress_detail` | object/null | EvalScope `progress.json` 汇总后的结构化进度，包含 `current_dataset`、`dataset_index`、`dataset_total`、`processed_count`、`total_count`、`percent`、`overall_percent` 和各已启动数据集进度。 |
 | `report_path` | string/null | 本地 Markdown 报告路径。 |
 | `normalized_result` | object/null | 精简标准化结果，只包含数据集分数、能力维度汇总、状态和错误摘要；不嵌入完整 `report_table`、metrics 或原始报告。 |
 | `raw_result` | object/null | 任务级完整 EvalScope 业务结果归档；大字段只保留这一份，详情通过结果 API 获取。 |
@@ -698,7 +703,11 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 
 #### GET `/api/intelligence/tasks/{task_id}`
 
-读取本地任务。任务不存在返回 `404 intelligence_task_not_found`。
+读取本地任务。运行中任务会尝试读取 EvalScope 输出目录下的 `progress.json` 并刷新 `progress` / `progress_detail`；任务不存在返回 `404 intelligence_task_not_found`。
+
+#### GET `/api/intelligence/tasks/{task_id}/progress`
+
+读取本地能力评测任务的轻量进度快照，返回 `task_id`、`status`、`progress`、`progress_detail` 和 `updated_at`。该接口同样会从 EvalScope `progress.json` 刷新进度；任务不存在返回 `404 intelligence_task_not_found`。
 
 #### POST `/api/intelligence/tasks/{task_id}/cancel`
 
@@ -766,6 +775,10 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 | `error` | object/null | 脱敏后的错误。 |
 
 ### 11.3 本系统压测接口
+
+#### GET `/api/stress/datasets`
+
+返回压测数据集元信息，只展示本地已下载的数据集和不需要下载的内置数据集（random、speed_benchmark）。返回 default_dataset 和 datasets 字典，每个数据集包含 pretty_name、description、categories、is_default、vailable_local。
 
 #### GET `/api/stress/evalscope/health`
 
@@ -1269,3 +1282,4 @@ $overviewBody = @{
 $overview = Invoke-RestMethod -Uri 'http://127.0.0.1:8020/api/overview/reports' -Method Post -ContentType 'application/json' -Body $overviewBody
 Invoke-WebRequest -Uri "http://127.0.0.1:8020/api/overview/reports/$($overview.overview_id)/markdown" -OutFile "overview.md"
 ```
+
