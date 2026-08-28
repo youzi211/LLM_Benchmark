@@ -8,6 +8,7 @@ from pydantic import AliasChoices, BaseModel, Field, field_validator, model_vali
 
 from app.core.models import ModelConfig, Protocol, utc_now
 from app.evalscope_defaults import DEFAULT_SCHEDULE_PROFILE, DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT
+from app.stress.schemas import validate_closed_loop_sweep_lengths
 
 SuiteRunStatus = Literal["queued", "running", "completed", "partial", "failed", "interrupted"]
 SuiteStepStatus = Literal["pending", "running", "completed", "skipped", "failed", "interrupted"]
@@ -63,6 +64,11 @@ class SuiteStressOptions(BaseModel):
         if any(item < 1 for item in value):
             raise ValueError("values must be positive")
         return value
+
+    @model_validator(mode="after")
+    def validate_sweep_lengths(self) -> "SuiteStressOptions":
+        validate_closed_loop_sweep_lengths(self.parallel, self.number)
+        return self
 
     def to_stress_request_data(self, model_id: str) -> dict[str, Any]:
         data = self.model_dump(exclude_none=True)

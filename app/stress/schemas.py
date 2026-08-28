@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.models import utc_now
 from app.evalscope_defaults import (
@@ -22,6 +22,15 @@ from app.evalscope_defaults import (
 StressTaskStatus = Literal["pending", "running", "completed", "failed", "interrupted"]
 
 
+def validate_closed_loop_sweep_lengths(parallel: list[int] | None, number: list[int] | None) -> None:
+    """EvalScope perf pairs ``parallel`` and ``number`` by position in closed-loop mode."""
+    if parallel is not None and number is not None and len(parallel) != len(number):
+        raise ValueError(
+            "parallel and number must have the same length for EvalScope closed-loop stress sweeps "
+            f"(got parallel={len(parallel)}, number={len(number)})"
+        )
+
+
 class StressDefaultRunRequest(BaseModel):
     model_id: str
     parallel: list[int] | None = None
@@ -38,6 +47,12 @@ class StressDefaultRunRequest(BaseModel):
     prefix_length: int | None = Field(default=None, ge=0)
     dataset_args: dict[str, Any] | None = None
     extra_args: dict[str, Any] | None = None
+
+
+    @model_validator(mode="after")
+    def validate_sweep_lengths(self) -> "StressDefaultRunRequest":
+        validate_closed_loop_sweep_lengths(self.parallel, self.number)
+        return self
 
 
 class StressRunRequest(StressDefaultRunRequest):
@@ -76,6 +91,11 @@ class StressRemoteSubmitPayload(BaseModel):
         if any(item < 1 for item in value):
             raise ValueError("values must be positive")
         return value
+
+    @model_validator(mode="after")
+    def validate_sweep_lengths(self) -> "StressRemoteSubmitPayload":
+        validate_closed_loop_sweep_lengths(self.parallel, self.number)
+        return self
 
 
 class StressRunResult(BaseModel):

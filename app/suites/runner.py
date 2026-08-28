@@ -240,7 +240,7 @@ class SuiteRunner:
                 task = await self.intelligence_runner.submit_default(suite.model_id, limit=suite.request.intelligence_limit)
             suite.intelligence_task_id = task.task_id
             self.suite_store.save(suite)
-            task = await self._wait_for_intelligence(task.task_id, suite.request)
+            task = await self._wait_for_intelligence(suite, task.task_id, suite.request)
             if task is not None and task.status == "interrupted":
                 self._interrupt_step(suite, "intelligence", task_id=suite.intelligence_task_id, message="任务已取消")
                 raise asyncio.CancelledError
@@ -271,12 +271,13 @@ class SuiteRunner:
             self._append_error(suite, "stress", exc)
             self._finish_step(suite, "stress", failed=True, message=str(exc))
 
-    async def _wait_for_intelligence(self, task_id: str, request: SuiteDefaultRunRequest):
+    async def _wait_for_intelligence(self, suite: SuiteRun, task_id: str, request: SuiteDefaultRunRequest):
         deadline = self._deadline(request)
         while True:
             task = await self.intelligence_runner.fetch_result(task_id)
             if task is None or task.status in TERMINAL_EVALSCOPE_STATUSES:
                 return task
+            self._update_step_message(suite, "intelligence", task_id=task_id, message=getattr(task, "progress", None))
             if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError(f"intelligence task timeout: {task_id}")
             await asyncio.sleep(self._poll_interval(request))
@@ -290,6 +291,15 @@ class SuiteRunner:
             if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError(f"stress task timeout: {task_id}")
             await asyncio.sleep(self._poll_interval(request))
+
+    def _update_step_message(self, suite: SuiteRun, name: str, *, task_id: str | None = None, message: str | None = None) -> None:
+        if not message:
+            return
+        step = self._step(suite, name)
+        step.task_id = task_id or step.task_id
+        step.message = message
+        suite.updated_at = utc_now()
+        self.suite_store.save(suite)
 
     def _write_overview(self, suite: SuiteRun) -> None:
         self._start_step(suite, "overview")

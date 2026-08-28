@@ -83,6 +83,29 @@ class IntelligenceCategorySummary(BaseModel):
     average_score: float | None = None
 
 
+class IntelligenceDatasetProgress(BaseModel):
+    dataset: str
+    status: str | None = None
+    processed_count: int | None = None
+    total_count: int | None = None
+    percent: float | None = None
+    updated_at: datetime | None = None
+
+
+class IntelligenceProgress(BaseModel):
+    status: str | None = None
+    current_dataset: str | None = None
+    dataset_index: int | None = Field(default=None, ge=1)
+    dataset_total: int | None = Field(default=None, ge=1)
+    processed_count: int | None = Field(default=None, ge=0)
+    total_count: int | None = Field(default=None, ge=0)
+    percent: float | None = Field(default=None, ge=0, le=100)
+    overall_percent: float | None = Field(default=None, ge=0, le=100)
+    message: str | None = None
+    updated_at: datetime | None = None
+    datasets: list[IntelligenceDatasetProgress] = Field(default_factory=list)
+
+
 class IntelligenceNormalizedResult(BaseModel):
     task_id: str
     evalscope_task_id: str | None = None
@@ -108,6 +131,7 @@ class IntelligenceTask(BaseModel):
     datasets: list[str] = Field(default_factory=list)
     status: IntelligenceTaskStatus = "pending"
     progress: str | None = None
+    progress_detail: IntelligenceProgress | None = None
     message: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -121,3 +145,4 @@ class IntelligenceTask(BaseModel):
     raw_output_dir: str | None = None
     normalized_result: IntelligenceNormalizedResult | None = None
     error: dict[str, Any] | None = None
+

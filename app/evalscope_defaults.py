@@ -92,6 +92,78 @@ DATASET_METADATA: dict[str, dict[str, Any]] = {
     "longbench_v2": {"pretty_name": "LongBench v2", "description": "长上下文评测", "categories": ["Long Context"], "needs_judge": True},
 }
 
+# 压测数据集的展示元信息。与智力评测的 DATASET_METADATA 分开维护，
+# 因为压测数据集（longalpaca、speed_benchmark 等）和智力评测数据集
+# 完全不同，混在一个 dict 里容易误导。只列出可用的已知数据集；
+# random / speed_benchmark 等不下载的内置数据集也纳入展示。
+STRESS_DATASET_METADATA: dict[str, dict[str, Any]] = {
+    "longalpaca": {
+        "pretty_name": "LongAlpaca",
+        "description": "长文本语料，适合测试长上下文吞吐与延迟",
+        "categories": ["Long Context"],
+        "is_local_resolvable": True,
+    },
+    "openqa": {
+        "pretty_name": "OpenQA",
+        "description": "开放问答语料，通用对话场景",
+        "categories": ["QA"],
+        "is_local_resolvable": True,
+    },
+    "share_gpt_zh": {
+        "pretty_name": "ShareGPT 中文",
+        "description": "中文多轮对话语料",
+        "categories": ["Conversation", "Chinese"],
+        "is_local_resolvable": True,
+    },
+    "share_gpt_en": {
+        "pretty_name": "ShareGPT 英文",
+        "description": "英文多轮对话语料",
+        "categories": ["Conversation"],
+        "is_local_resolvable": True,
+    },
+    "share_gpt_zh_multi_turn": {
+        "pretty_name": "ShareGPT 中文多轮",
+        "description": "中文多轮对话，适合多轮交互压测",
+        "categories": ["Conversation", "Chinese"],
+        "is_local_resolvable": True,
+    },
+    "share_gpt_en_multi_turn": {
+        "pretty_name": "ShareGPT 英文多轮",
+        "description": "英文多轮对话，适合多轮交互压测",
+        "categories": ["Conversation"],
+        "is_local_resolvable": True,
+    },
+    "flickr8k": {
+        "pretty_name": "Flickr8K",
+        "description": "图像描述语料，可测多模态压测",
+        "categories": ["Multimodal"],
+        "is_local_resolvable": True,
+    },
+    "kontext_bench": {
+        "pretty_name": "KontextBench",
+        "description": "上下文依赖评测语料",
+        "categories": ["Context"],
+        "is_local_resolvable": True,
+    },
+    "swe_smith": {
+        "pretty_name": "SWE-Smith",
+        "description": "软件工程任务语料",
+        "categories": ["Code"],
+        "is_local_resolvable": True,
+    },
+    "random": {
+        "pretty_name": "Random",
+        "description": "随机生成 Token，不依赖外部数据集，快速验证吞吐",
+        "categories": ["Synthetic"],
+        "is_local_resolvable": False,
+    },
+    "speed_benchmark": {
+        "pretty_name": "Speed Benchmark",
+        "description": "EvalScope 内置速度基准",
+        "categories": ["Benchmark"],
+        "is_local_resolvable": False,
+    },
+}
 DEFAULT_STRESS_DATASET = "longalpaca"
 DEFAULT_STRESS_PARALLEL: tuple[int, ...] = (1, 5, 10, 20)
 DEFAULT_STRESS_NUMBER: tuple[int, ...] = (10, 50, 100, 200)
@@ -127,3 +199,4 @@ LOCAL_RESOLVABLE_STRESS_DATASETS = frozenset(
         "swe_smith",
     }
 )
+

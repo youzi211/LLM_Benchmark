@@ -102,6 +102,20 @@ async def cancel_intelligence_task(task_id: str):
     return task
 
 
+@router.get("/tasks/{task_id}/progress")
+async def get_intelligence_task_progress(task_id: str):
+    task = await _runner().refresh_status(task_id)
+    if task is None:
+        raise api_error(404, "intelligence_task_not_found", f"Intelligence task not found: {task_id}")
+    return {
+        "task_id": task.task_id,
+        "status": task.status,
+        "progress": task.progress,
+        "progress_detail": task.progress_detail,
+        "updated_at": task.updated_at,
+    }
+
+
 @router.get("/tasks/{task_id}")
 async def get_intelligence_task(task_id: str):
     task = await _runner().refresh_status(task_id)
@@ -127,3 +141,4 @@ def get_intelligence_report(task_id: str):
     if not path.exists():
         raise api_error(404, "intelligence_report_not_found", f"Intelligence report not found for task: {task_id}")
     return FileResponse(path, media_type="text/markdown; charset=utf-8", filename=path.name)
+

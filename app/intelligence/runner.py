@@ -4,7 +4,7 @@ import os
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 from uuid import uuid4
 
 from app.core.models import ModelConfig, utc_now
@@ -17,6 +17,8 @@ from app.intelligence.evalscope_direct import (
     datasets_requiring_judge,
     judge_config_status,
     local_dataset_metadata,
+    outputs_root,
+    summarize_evalscope_task_progress,
 )
 from app.intelligence.report import write_intelligence_report
 from app.intelligence.schemas import (
@@ -24,6 +26,7 @@ from app.intelligence.schemas import (
     IntelligenceCategorySummary,
     IntelligenceDatasetResult,
     IntelligenceNormalizedResult,
+    IntelligenceProgress,
     IntelligenceTask,
 )
 from app.reports.markdown import redact_text
@@ -49,6 +52,7 @@ class IntelligenceExecutor(Protocol):
         eval_batch_size: int | None = None,
         generation_config: dict[str, Any] | None = None,
         judge_model_args: dict[str, Any] | None = None,
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]: ...
 
 
@@ -176,8 +180,9 @@ class IntelligenceRunner:
                 "api_key": judge_model.api_key or "EMPTY",
                 "generation_config": self.config.judge_generation_config,
             }
+        task_id = new_intelligence_task_id()
         task = IntelligenceTask(
-            task_id=new_intelligence_task_id(),
+            task_id=task_id,
             evalscope_task_id=None,
             model_id=model.id,
             model_config_name=model.name,
@@ -186,6 +191,16 @@ class IntelligenceRunner:
             datasets=datasets,
             status="pending",
             progress="任务已创建，等待本地 EvalScope 执行",
+            progress_detail=IntelligenceProgress(
+                status="pending",
+                current_dataset=datasets[0] if datasets else None,
+                dataset_index=1 if datasets else None,
+                dataset_total=len(datasets) or None,
+                processed_count=0,
+                overall_percent=0.0,
+                message="任务已创建，等待本地 EvalScope 执行",
+            ),
+            raw_output_dir=str(outputs_root(self.config) / "intelligence" / task_id),
             raw_submit_response={
                 "mode": IN_PROCESS_EVALSCOPE,
                 "task_id": None,
@@ -244,6 +259,15 @@ class IntelligenceRunner:
             return
         task.status = "running"
         task.progress = "正在通过 Python 包直接执行 EvalScope 能力评测"
+        task.progress_detail = IntelligenceProgress(
+            status="running",
+            current_dataset=datasets[0] if datasets else None,
+            dataset_index=1 if datasets else None,
+            dataset_total=len(datasets) or None,
+            processed_count=0,
+            overall_percent=0.0,
+            message=task.progress,
+        )
         task.updated_at = utc_now()
         self.task_store.save(task)
         should_save = True
@@ -258,6 +282,7 @@ class IntelligenceRunner:
                 eval_batch_size=eval_batch_size,
                 generation_config=generation_config,
                 judge_model_args=judge_model_args,
+                progress_callback=lambda progress: self._apply_progress(task_id, progress),
             )
             latest = self.task_store.get(task_id)
             if latest is not None and latest.status == "interrupted":
@@ -274,6 +299,19 @@ class IntelligenceRunner:
             task.completed_at = _parse_dt(raw_result.get("completed_at")) or utc_now()
             task.evalscope_task_id = raw_result.get("task_id") or task.evalscope_task_id or task.task_id
             task.progress = "能力评测完成" if task.status == "completed" else "能力评测失败"
+            task.progress_detail = IntelligenceProgress(
+                status=task.status,
+                current_dataset=task.datasets[-1] if task.datasets else None,
+                dataset_index=len(task.datasets) or None,
+                dataset_total=len(task.datasets) or None,
+                processed_count=None,
+                total_count=None,
+                percent=100.0 if task.status == "completed" else None,
+                overall_percent=100.0 if task.status == "completed" else None,
+                message=task.progress,
+                updated_at=task.completed_at,
+                datasets=task.progress_detail.datasets if task.progress_detail else [],
+            )
             report_path = write_intelligence_report(task, self.reports_dir, judge_status=self._judge_status(task.datasets))
             task.report_path = str(report_path)
         except Exception as exc:
@@ -286,6 +324,19 @@ class IntelligenceRunner:
             task.error = _safe_error(exc)
             task.progress = f"能力评测失败：{task.error['message']}"
             task.completed_at = utc_now()
+            task.progress_detail = IntelligenceProgress(
+                status="failed",
+                current_dataset=task.progress_detail.current_dataset if task.progress_detail else None,
+                dataset_index=task.progress_detail.dataset_index if task.progress_detail else None,
+                dataset_total=task.progress_detail.dataset_total if task.progress_detail else (len(task.datasets) or None),
+                processed_count=task.progress_detail.processed_count if task.progress_detail else None,
+                total_count=task.progress_detail.total_count if task.progress_detail else None,
+                percent=task.progress_detail.percent if task.progress_detail else None,
+                overall_percent=task.progress_detail.overall_percent if task.progress_detail else None,
+                message=task.progress,
+                updated_at=task.completed_at,
+                datasets=task.progress_detail.datasets if task.progress_detail else [],
+            )
             report_path = write_intelligence_report(task, self.reports_dir, judge_status=self._judge_status(task.datasets))
             task.report_path = str(report_path)
         finally:
@@ -295,6 +346,39 @@ class IntelligenceRunner:
             if should_save:
                 task.updated_at = utc_now()
                 self.task_store.save(task)
+
+
+    def _progress_output_root(self, task: IntelligenceTask) -> Path:
+        if task.raw_output_dir:
+            return Path(task.raw_output_dir)
+        return outputs_root(self.config) / "intelligence" / task.task_id
+
+    def _apply_progress(self, task_id: str, progress: dict[str, Any]) -> None:
+        task = self.task_store.get(task_id)
+        if task is None or task.status in TERMINAL_STATUSES:
+            return
+        detail = IntelligenceProgress.model_validate(progress)
+        task.progress_detail = detail
+        if detail.message:
+            task.progress = detail.message
+        task.updated_at = utc_now()
+        self.task_store.save(task)
+
+    def _refresh_progress_from_output(self, task: IntelligenceTask) -> IntelligenceTask:
+        if task.status in TERMINAL_STATUSES:
+            return task
+        progress = summarize_evalscope_task_progress(self._progress_output_root(task), task.datasets)
+        if not progress:
+            return task
+        detail = IntelligenceProgress.model_validate(progress)
+        if task.progress_detail == detail and task.progress == detail.message:
+            return task
+        task.progress_detail = detail
+        if detail.message:
+            task.progress = detail.message
+        task.updated_at = utc_now()
+        self.task_store.save(task)
+        return task
 
 
     async def cancel(self, task_id: str) -> IntelligenceTask | None:
@@ -322,15 +406,31 @@ class IntelligenceRunner:
             task.progress = "任务已取消"
             task.error = {"message": "任务已取消", "type": "CancelledError"}
             task.completed_at = utc_now()
+            task.progress_detail = IntelligenceProgress(
+                status="interrupted",
+                current_dataset=task.progress_detail.current_dataset if task.progress_detail else None,
+                dataset_index=task.progress_detail.dataset_index if task.progress_detail else None,
+                dataset_total=task.progress_detail.dataset_total if task.progress_detail else (len(task.datasets) or None),
+                processed_count=task.progress_detail.processed_count if task.progress_detail else None,
+                total_count=task.progress_detail.total_count if task.progress_detail else None,
+                percent=task.progress_detail.percent if task.progress_detail else None,
+                overall_percent=task.progress_detail.overall_percent if task.progress_detail else None,
+                message=task.progress,
+                updated_at=task.completed_at,
+                datasets=task.progress_detail.datasets if task.progress_detail else [],
+            )
             task.updated_at = utc_now()
             self.task_store.save(task)
         return self.task_store.get(task_id) or task
 
     async def refresh_status(self, task_id: str) -> IntelligenceTask | None:
-        return self.task_store.get(task_id)
+        task = self.task_store.get(task_id)
+        if task is None:
+            return None
+        return self._refresh_progress_from_output(task)
 
     async def fetch_result(self, task_id: str) -> IntelligenceTask | None:
-        task = self.task_store.get(task_id)
+        task = await self.refresh_status(task_id)
         if task is None:
             return None
         if task.status in TERMINAL_STATUSES and not task.report_path:
@@ -426,3 +526,4 @@ class IntelligenceRunner:
                 )
             )
         return summaries
+
