@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ArrowDown } from "@element-plus/icons-vue";
 import { useModelsStore } from "@/stores/models";
@@ -12,10 +12,56 @@ const route = useRoute();
 const modelDrawerVisible = ref(false);
 const evalscopeDrawerVisible = ref(false);
 
+const runningCounts = ref({ basic: 0, intelligence: 0, stress: 0 });
+const runningTotal = computed(() => runningCounts.value.basic + runningCounts.value.intelligence + runningCounts.value.stress);
+let runningTimer: number | undefined;
+
+function isFinal(status: unknown): boolean {
+  return ["completed", "partial", "failed", "interrupted", "error"].includes(String(status || ""));
+}
+
+async function refreshRunning() {
+  try {
+    const origin = window.location.origin;
+    const fetcher = (url: string) => fetch(url).then((r) => r.ok ? r.json() : []).catch(() => []);
+    const [basicRes, intelRes, stressRes] = await Promise.allSettled([
+      fetcher(origin + "/api/tasks?limit=100"),
+      fetcher(origin + "/api/intelligence/tasks?limit=100"),
+      fetcher(origin + "/api/stress/tasks?limit=100"),
+    ]);
+    const safeArray = (v: PromiseSettledResult<unknown>): Array<Record<string, unknown>> => v.status === "fulfilled" && Array.isArray(v.value) ? v.value as Array<Record<string, unknown>> : [];
+    runningCounts.value = {
+      basic: safeArray(basicRes).filter((t: Record<string, unknown>) => !isFinal(t.status)).length,
+      intelligence: safeArray(intelRes).filter((t: Record<string, unknown>) => !isFinal(t.status)).length,
+      stress: safeArray(stressRes).filter((t: Record<string, unknown>) => !isFinal(t.status)).length,
+    };
+  } catch {
+    // 静默失败；徽标继续显示上一次的状态即可。
+  }
+}
+
+function startRunningPoll() {
+  stopRunningPoll();
+  refreshRunning();
+  runningTimer = window.setInterval(refreshRunning, 5000);
+}
+
+function stopRunningPoll() {
+  if (runningTimer !== undefined) {
+    window.clearInterval(runningTimer);
+    runningTimer = undefined;
+  }
+}
+
 onMounted(() => {
   store.load().catch(() => {
     // 静默失败,顶部选择区会显示错误提示;不阻塞骨架运行。
   });
+  startRunningPoll();
+});
+
+onUnmounted(() => {
+  stopRunningPoll();
 });
 
 const mainTabs = [
@@ -71,7 +117,11 @@ function onModelCreated(id: string) {
               :value="m.id"
             />
           </el-select>
-          <el-button size="small" @click="store.load(true)">刷新模型</el-button>
+          <div class="lb-running-pill" :class="{'lb-running-pill--on': runningTotal > 0}" :title="`基础 ${runningCounts.basic} · 能力 ${runningCounts.intelligence} · 压测 ${runningCounts.stress}`">
+          <span class="lb-running-pill__dot"></span>
+          <span>运行中 {{ runningTotal }}</span>
+        </div>
+        <el-button size="small" @click="store.load(true)">刷新模型</el-button>
           <el-button size="small" type="primary" plain @click="modelDrawerVisible = true">添加模型</el-button>
           <el-button size="small" type="warning" plain @click="evalscopeDrawerVisible = true">评测环境</el-button>
         </div>
@@ -214,6 +264,38 @@ function onModelCreated(id: string) {
 
   .lb-model-control :deep(.el-select) {
     flex: 1 1 220px;
+  }
+
+  .lb-running-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(107, 114, 128, 0.10);
+    border: 1px solid rgba(107, 114, 128, 0.22);
+    color: var(--lb-muted);
+    font-size: 12px;
+    cursor: default;
+    user-select: none;
+  }
+
+  .lb-running-pill--on {
+    background: rgba(22, 163, 74, 0.10);
+    border-color: rgba(22, 163, 74, 0.32);
+    color: #166534;
+  }
+
+  .lb-running-pill__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(107, 114, 128, 0.6);
+  }
+
+  .lb-running-pill--on .lb-running-pill__dot {
+    background: var(--lb-success);
+    box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.18);
   }
 }
 </style>
