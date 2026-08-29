@@ -52,17 +52,45 @@ const form = ref(defaultForm());
 
 function healthTagType(status?: string) {
   if (status === "ok") return "success";
-  if (status === "disabled" || status === "unknown" || status === "missing") return "warning";
+  if (status === "missing" || status === "warning") return "warning";
+  if (status === "disabled" || status === "unknown") return "info";
   if (status === "error") return "danger";
   return "info";
 }
 
+function formatLatency(ms?: number | null) {
+  if (ms === undefined || ms === null) return "-";
+  return `${ms} ms`;
+}
+
+function formatHttpStatus(code?: number | null) {
+  if (code === undefined || code === null) return "-";
+  return String(code);
+}
+
+function formatHealthDetail(health: EvalScopeHealthStatus | null) {
+  if (!health) return "";
+  if (typeof health.error === "string") return health.error;
+  if (health.error && typeof health.error === "object") return JSON.stringify(health.error);
+  if (health.message) return health.message;
+  return "";
+}
+
+function formatConfigured(c?: boolean | null) {
+  if (c === true) return "已配置";
+  if (c === false) return "未配置";
+  return "-";
+}
+
 function healthMessage(health: EvalScopeHealthStatus | null) {
   if (!health) return "尚未测试";
-  if (health.status === "ok") return health.checked_url ? `主服务正常，远端 Sandbox 可用：${health.checked_url}` : "主服务正常，Sandbox 可用";
-  if (health.status === "disabled") return "主服务正常，但 Sandbox 配置未启用";
-  const detail = typeof health.error === "string" ? health.error : health.message || health.status;
-  return `主服务正常，远端 Sandbox 探测未通过：${detail}`;
+  const parts: string[] = [];
+  parts.push(health.status || "");
+  if (health.latency_ms != null) parts.push(`${health.latency_ms} ms`);
+  if (health.http_status != null) parts.push(`HTTP ${health.http_status}`);
+  if (health.checked_url) parts.push(health.checked_url);
+  if (health.base_url && health.base_url !== health.checked_url) parts.push(health.base_url);
+  return parts.filter(Boolean).join(" · ");
 }
 
 function toOptionalPositiveInteger(raw: string, field: string) {
@@ -189,6 +217,17 @@ watch(
         title="Judge 用于 LLM-as-Judge 数据集评分；Sandbox 用于 HumanEval、MBPP、LiveCodeBench 等代码执行类数据集。"
       />
 
+      <div v-if="store.currentModel" class="current-model-bar">
+        <span class="label">当前模型</span>
+        <strong>{{ store.currentModel.name || store.currentModel.id }}</strong>
+        <span class="muted">{{ store.currentModel.id }}</span>
+        <span class="muted env-url">{{ store.currentModel.base_url || '' }}</span>
+      </div>
+      <div v-else class="current-model-bar current-model-bar--empty">
+        <span class="label">当前模型</span>
+        <span class="muted">尚未选择模型。先到顶部选择模型后再配置 Judge / Sandbox。</span>
+      </div>
+
       <el-form label-position="top" class="evalscope-config-form">
         <div class="section-title">Judge 模型</div>
         <el-form-item label="Judge 模型配置">
@@ -224,6 +263,16 @@ watch(
           <el-tag :type="healthTagType(judgeHealth?.status)" effect="plain">{{ judgeHealth?.status || '未测试' }}</el-tag>
           <span class="muted">{{ healthMessage(judgeHealth) }}</span>
         </div>
+        <el-descriptions v-if="judgeHealth" :column="3" size="small" border class="mt health-detail">
+          <el-descriptions-item label="延迟">{{ formatLatency(judgeHealth.latency_ms) }}</el-descriptions-item>
+          <el-descriptions-item label="HTTP">{{ formatHttpStatus(judgeHealth.http_status) }}</el-descriptions-item>
+          <el-descriptions-item label="模型配置">{{ judgeHealth.model_config_id || judgeHealth.model_id || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="URL">{{ judgeHealth.checked_url || judgeHealth.base_url || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="来源">{{ judgeHealth.source || 'auto' }}</el-descriptions-item>
+          <el-descriptions-item label="说明">
+            <code class="health-error">{{ formatHealthDetail(judgeHealth) }}</code>
+          </el-descriptions-item>
+        </el-descriptions>
 
         <el-divider />
         <div class="section-title">Sandbox</div>
@@ -248,6 +297,17 @@ watch(
           <el-tag :type="healthTagType(sandboxHealth?.status)" effect="plain">{{ sandboxHealth?.status || '未测试' }}</el-tag>
           <span class="muted">{{ healthMessage(sandboxHealth) }}</span>
         </div>
+        <el-descriptions v-if="sandboxHealth" :column="3" size="small" border class="mt health-detail">
+          <el-descriptions-item label="延迟">{{ formatLatency(sandboxHealth.latency_ms) }}</el-descriptions-item>
+          <el-descriptions-item label="HTTP">{{ formatHttpStatus(sandboxHealth.http_status) }}</el-descriptions-item>
+          <el-descriptions-item label="配置">{{ formatConfigured(sandboxHealth.configured) }}</el-descriptions-item>
+          <el-descriptions-item label="类型">{{ sandboxHealth.engine || sandboxHealth.mode || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="探测 URL">{{ sandboxHealth.checked_url || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="Base URL">{{ sandboxHealth.base_url || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="说明" :span="3">
+            <code class="health-error">{{ formatHealthDetail(sandboxHealth) || '沙箱已就绪' }}</code>
+          </el-descriptions-item>
+        </el-descriptions>
 
         <el-collapse class="mt">
           <el-collapse-item title="高级：EvalScope 路径" name="paths">
