@@ -90,6 +90,7 @@ DATASET_METADATA: dict[str, dict[str, Any]] = {
     "alpaca_eval": {"pretty_name": "AlpacaEval", "description": "指令遵循，需要 LLM Judge", "categories": ["Instruction"], "needs_judge": True},
     "arena_hard": {"pretty_name": "Arena-Hard", "description": "对话质量，需要 LLM Judge", "categories": ["Instruction"], "needs_judge": True},
     "longbench_v2": {"pretty_name": "LongBench v2", "description": "长上下文评测", "categories": ["Long Context"], "needs_judge": True},
+    "chartqa": {"pretty_name": "ChartQA", "description": "图表问答评测（多模态）", "categories": ["Multimodal", "Reasoning"], "needs_judge": False},
 }
 
 # 压测数据集的展示元信息。与智力评测的 DATASET_METADATA 分开维护，
