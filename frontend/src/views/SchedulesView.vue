@@ -4,10 +4,14 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import ScheduleEditorDrawer from "@/components/schedules/ScheduleEditorDrawer.vue";
 import {
   deleteSchedule,
+  fetchDatasets,
+  fetchSuiteProfiles,
   formatDate,
   getScheduleLastRun,
   listSchedules,
   triggerSchedule,
+  type DatasetMeta,
+  type SuiteProfile,
 } from "@/api/evaluations";
 
 const loading = ref(false);
@@ -15,6 +19,8 @@ const drawerVisible = ref(false);
 const schedules = ref<Record<string, any>[]>([]);
 const selected = ref<Record<string, any> | null>(null);
 const lastRun = ref<Record<string, any> | null>(null);
+const profiles = ref<SuiteProfile[]>([]);
+const datasetMap = ref<Record<string, DatasetMeta>>({});
 
 function statusType(status?: string) {
   if (status === "completed") return "success";
@@ -95,9 +101,40 @@ function onCreated() {
   void reload();
 }
 
-onMounted(() => {
-  void reload();
+onMounted(async () => {
+  await reload();
+  const ps = await fetchSuiteProfiles();
+  profiles.value = Array.isArray(ps) ? ps : [];
+  try {
+    const ds = await fetchDatasets();
+    datasetMap.value = ds?.datasets || {};
+  } catch {
+    datasetMap.value = {};
+  }
 });
+
+const selectedProfile = computed(() =>
+  selected.value ? profiles.value.find((p) => p.profile_id === selected.value?.profile) ?? null : null,
+);
+
+function profileLaneLabels(p?: SuiteProfile | null) {
+  if (!p) return [];
+  const lanes: string[] = [];
+  if (p.run_gateway !== false) lanes.push("基础");
+  if (p.run_stress !== false) lanes.push("压测");
+  if (p.run_intelligence !== false) lanes.push("能力");
+  return lanes;
+}
+
+function profileDatasetLabels(p?: SuiteProfile | null) {
+  return (p?.intelligence_datasets || []).map((name) => datasetMap.value[name]?.pretty_name || name);
+}
+
+function profileLimitLabel(p?: SuiteProfile | null) {
+  const v = p?.intelligence_limit;
+  if (v === undefined || v === null) return "不限";
+  return String(v);
+}
 </script>
 
 <template>
@@ -180,6 +217,31 @@ onMounted(() => {
               能力 {{ scheduleDatasetCount(selected) }} 个 / 压测 {{ scheduleStressDataset(selected) }}
             </el-descriptions-item>
           </el-descriptions>
+
+          <div v-if="selectedProfile || selected.profile" class="section-title">Profile 详情</div>
+          <el-descriptions v-if="selectedProfile || selected.profile" :column="2" border>
+            <el-descriptions-item label="Profile 名">{{ selectedProfile?.name || selected.profile }}</el-descriptions-item>
+            <el-descriptions-item label="描述">{{ selectedProfile?.description || '未配置' }}</el-descriptions-item>
+            <el-descriptions-item label="评测线">
+              <div class="lane-tags">
+                <el-tag v-for="lane in profileLaneLabels(selectedProfile)" :key="lane" size="small" effect="plain">{{ lane }}</el-tag>
+                <span v-if="!profileLaneLabels(selectedProfile).length" class="muted">-</span>
+              </div>
+            </el-descriptions-item>
+            <el-descriptions-item label="能力数据集">
+              <template v-if="profileDatasetLabels(selectedProfile).length">
+                <el-tag v-for="ds in profileDatasetLabels(selectedProfile)" :key="ds" size="small" type="primary" effect="plain">{{ ds }}</el-tag>
+                <span class="muted">共 {{ profileDatasetLabels(selectedProfile).length }} 个</span>
+              </template>
+              <span v-else class="muted">-</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="Limit">{{ profileLimitLabel(selectedProfile) }}</el-descriptions-item>
+            <el-descriptions-item label="Sandbox">
+              <el-tag v-if="selectedProfile?.requires_sandbox" size="small" type="warning">需要 sandbox</el-tag>
+              <span v-else>不需要</span>
+            </el-descriptions-item>
+          </el-descriptions>
+          <p v-else class="muted">未配置 Profile，无法展示详情。</p>
 
           <el-divider />
           <div class="section-title">上次运行详情</div>
