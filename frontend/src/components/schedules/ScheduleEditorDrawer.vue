@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { useModelsStore } from "@/stores/models";
+import DatasetPicker from "@/components/common/DatasetPicker.vue";
 import {
   createSchedule,
   fetchDatasets,
@@ -115,15 +116,6 @@ async function loadProfiles() {
 function profileDatasetLabels(profile?: SuiteProfile) {
   return (profile?.intelligence_datasets || []).map((name) => datasetMap.value[name]?.pretty_name || name);
 }
-
-function profileDatasetDetail(name: string) {
-  const meta = datasetMap.value[name];
-  if (!meta) return name;
-  const subsetCount = meta.configured_subset_list?.length || meta.subset_count || meta.subsets?.length || 0;
-  const suffix = subsetCount ? ` · ${subsetCount} 个子集` : "";
-  return `${meta.pretty_name || name}${suffix}`;
-}
-
 function firstLocalStressDataset() {
   return stressDatasets.value[defaultStressDataset.value]?.available_local
     ? defaultStressDataset.value
@@ -216,31 +208,6 @@ function applyProfileDefaults(profileId = form.value.profile) {
   form.value.stressMinTokens = stress.min_tokens === null || stress.min_tokens === undefined ? "" : String(stress.min_tokens);
   form.value.stressMaxTokens = stress.max_tokens === null || stress.max_tokens === undefined ? "" : String(stress.max_tokens);
 }
-
-function hasSubsets(meta: DatasetMeta) {
-  return (meta.subsets?.length || 0) > 0;
-}
-
-function subsetTitle(meta: DatasetMeta) {
-  const total = meta.subsets?.length || 0;
-  const configured = meta.configured_subset_list?.length || 0;
-  if (!total && !configured) return "子集信息";
-  if (configured) return `子集：本地 ${total} 个 · 默认运行 ${configured} 个`;
-  return `子集：本地 ${total} 个`;
-}
-
-function toggleSubsetOverride(name: string) {
-  subsetOverride.value[name] = !subsetOverride.value[name];
-  if (subsetOverride.value[name]) {
-    const meta = datasetMap.value[name];
-    chosenSubsets.value[name] = meta?.configured_subset_list?.length
-      ? [...meta.configured_subset_list]
-      : [...(meta?.subsets || [])];
-  } else {
-    delete chosenSubsets.value[name];
-  }
-}
-
 watch(chosenDatasets, (current) => {
   const selected = new Set(current);
   for (const name of Object.keys(subsetOverride.value)) {
@@ -522,46 +489,15 @@ onMounted(() => {
             </el-row>
           </el-form>
 
-          <el-checkbox-group v-model="chosenDatasets" v-loading="datasetsLoading" class="dataset-pick-list">
-            <el-empty v-if="!datasetsLoading && !localDatasetEntries.length" description="未发现本地能力评测数据集" />
-            <div v-for="[name, meta] in localDatasetEntries" :key="name" class="dataset-pick">
-              <el-card class="dataset-card" :class="{ 'dataset-card--active': chosenDatasets.includes(name) }" shadow="never">
-                <div class="dataset-head">
-                  <el-checkbox :value="name" :label="meta.pretty_name || name" />
-                  <div class="dataset-head__tags">
-                    <el-tag v-if="defaultDatasets.includes(name)" size="small" type="success">默认</el-tag>
-                    <el-tag v-if="meta.needs_judge" size="small" type="warning" effect="plain">Judge</el-tag>
-                  </div>
-                </div>
-                <p class="dataset-card__desc muted">{{ meta.description || '暂无描述' }}</p>
-                <div class="dataset-card__meta muted">{{ profileDatasetDetail(name) }}</div>
-                <div class="tag-row" v-if="meta.categories?.length">
-                  <el-tag v-for="c in meta.categories" :key="c" size="small" effect="plain">{{ c }}</el-tag>
-                </div>
-
-                <el-collapse v-if="hasSubsets(meta)">
-                  <el-collapse-item :title="subsetTitle(meta)" name="subsets">
-                    <div class="subset-summary">
-                      <div v-if="meta.configured_subset_list?.length" class="subset-line">
-                        <span class="subset-label">默认运行</span>
-                        <div class="subset-tags">
-                          <el-tag v-for="s in meta.configured_subset_list" :key="`cfg-${name}-${s}`" type="primary" effect="plain" size="small">{{ s }}</el-tag>
-                        </div>
-                      </div>
-                      <div class="subset-line subset-line--select">
-                        <el-switch :model-value="!!subsetOverride[name]" @change="toggleSubsetOverride(name)" active-text="自定义子集" inactive-text="默认子集" size="small" />
-                      </div>
-                      <div v-if="subsetOverride[name]" class="subset-line">
-                        <el-checkbox-group v-model="chosenSubsets[name]">
-                          <el-checkbox v-for="s in meta.subsets" :key="`${name}-chk-${s}`" :value="s" :label="s" size="small" />
-                        </el-checkbox-group>
-                      </div>
-                    </div>
-                  </el-collapse-item>
-                </el-collapse>
-              </el-card>
-            </div>
-          </el-checkbox-group>
+          <DatasetPicker
+            v-model="chosenDatasets"
+            :datasets="datasetMap"
+            :default-datasets="defaultDatasets"
+            :subset-model-value="chosenSubsets"
+            :subset-override="subsetOverride"
+            @update:subset-model-value="(v) => (chosenSubsets = v)"
+            @update:subset-override="(v) => (subsetOverride = v)"
+          />
         </el-tab-pane>
 
         <el-tab-pane label="压测评测" name="stress" :disabled="!form.runStress">
