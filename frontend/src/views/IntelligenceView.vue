@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useModelsStore } from "@/stores/models";
 import EChart from "@/components/EChart.vue";
+import DatasetPicker from "@/components/common/DatasetPicker.vue";
 import {
   cancelIntelligenceTask,
   fetchDatasets,
@@ -77,37 +78,6 @@ function progressPercent(task: TaskLike | null) {
   const n = Number(value);
   return Number.isFinite(n) ? Math.max(0, Math.min(n, 100)) : 0;
 }
-
-function subsetTitle(meta: DatasetMeta) {
-  const total = meta.subsets?.length || 0;
-  const configured = meta.configured_subset_list?.length || 0;
-  if (!total && !configured) return "子集信息";
-  if (configured) return `子集：本地 ${total} 个 · 默认运行 ${configured} 个`;
-  return `子集：本地 ${total} 个`;
-}
-
-function hasSubsets(meta: DatasetMeta) {
-  return (meta.subsets?.length || 0) > 0;
-}
-
-function effectiveSubsets(name: string, meta: DatasetMeta): string[] {
-  if (subsetOverride.value[name] && chosenSubsets.value[name]?.length) {
-    return chosenSubsets.value[name];
-  }
-  return meta.configured_subset_list?.length ? meta.configured_subset_list : (meta.subsets || []);
-}
-
-function toggleSubsetOverride(name: string) {
-  subsetOverride.value[name] = !subsetOverride.value[name];
-  if (subsetOverride.value[name]) {
-    // Initialize with configured defaults
-    const meta = datasets.value[name];
-    chosenSubsets.value[name] = meta?.configured_subset_list?.length
-      ? [...meta.configured_subset_list]
-      : [...(meta?.subsets || [])];
-  }
-}
-
 async function loadDatasetMeta() {
   datasetLoading.value = true;
   try {
@@ -213,56 +183,27 @@ onUnmounted(() => {
         <el-row :gutter="10"><el-col :span="12"><el-form-item label="limit"><el-input v-model="limit" placeholder="可选" /></el-form-item></el-col><el-col :span="12"><el-form-item label="eval_batch_size"><el-input v-model="batchSize" placeholder="可选" /></el-form-item></el-col></el-row>
         <el-form-item><el-switch v-model="custom" active-text="自定义数据集" inactive-text="使用后端默认数据集" /></el-form-item>
         <p v-if="!custom" class="muted">不填写 limit / eval_batch_size 时走后端默认入口；填写后会按本地默认数据集发起自定义任务。</p>
-        <el-alert v-if="!localDatasetEntries.length" type="warning" :closable="false" title="未发现本地可用数据集。请先由管理员在 data/evalscope_datasets 下提供数据集目录。" />
-        <el-checkbox-group v-else v-model="chosenDatasets" :disabled="!custom">
-          <div class="dataset-cards">
-            <el-card v-for="[name, meta] in localDatasetEntries" :key="name" shadow="never" class="dataset-card-vue">
-              <div class="dataset-head">
-                <el-checkbox :value="name"><strong>{{ meta.pretty_name || name }}</strong></el-checkbox>
-                <el-tag type="success" effect="plain">本地可用</el-tag>
-              </div>
-              <p>{{ meta.description || '暂无描述' }}</p>
-              <div class="tag-row">
-                <el-tag v-if="defaultDatasets.includes(name)" type="primary" effect="plain">默认</el-tag>
-                <el-tag v-if="meta.needs_judge" type="warning" effect="plain">需要 Judge</el-tag>
-                <el-tag v-if="meta.categories?.includes('Code')" type="warning" effect="plain">需要 sandbox</el-tag>
-                <el-tag v-for="c in meta.categories || []" :key="c" effect="plain">{{ c }}</el-tag>
-              </div>
-              <small class="path">{{ meta.local_path }}</small>
-
-              <el-collapse v-if="hasSubsets(meta)">
-                <el-collapse-item :title="subsetTitle(meta)" name="subsets">
-                  <div class="subset-summary">
-                    <div v-if="meta.configured_subset_list?.length" class="subset-line">
-                      <span class="subset-label">默认运行</span>
-                      <div class="subset-tags">
-                        <el-tag v-for="s in meta.configured_subset_list" :key="`cfg-${name}-${s}`" type="primary" effect="plain">{{ s }}</el-tag>
-                      </div>
-                    </div>
-
-                    <div class="subset-line subset-line--select">
-                      <el-switch
-                        :model-value="!!subsetOverride[name]"
-                        @change="toggleSubsetOverride(name)"
-                        active-text="自定义选择子集"
-                        inactive-text="使用默认子集"
-                        size="small"
-                        style="margin-bottom: 8px;"
-                      />
-                    </div>
-
-                    <div v-if="subsetOverride[name]" class="subset-line">
-                      <el-checkbox-group v-model="chosenSubsets[name]">
-                        <el-checkbox v-for="s in meta.subsets" :key="`${name}-chk-${s}`" :value="s" :label="s" size="small" />
-                      </el-checkbox-group>
-                      <p v-if="!chosenSubsets[name]?.length" class="muted" style="margin-top: 4px;">请至少选择一个子集，否则将使用默认子集。</p>
-                    </div>
-                  </div>
-                </el-collapse-item>
-              </el-collapse>
-            </el-card>
-          </div>
-        </el-checkbox-group>
+        <DatasetPicker
+          v-if="custom && localDatasetEntries.length"
+          v-model="chosenDatasets"
+          :datasets="datasets"
+          :default-datasets="defaultDatasets"
+          :subset-model-value="chosenSubsets"
+          :subset-override="subsetOverride"
+          @update:subset-model-value="(v) => (chosenSubsets = v)"
+          @update:subset-override="(v) => (subsetOverride = v)"
+        />
+        <DatasetPicker
+          v-else-if="!custom && localDatasetEntries.length"
+          :datasets="datasets"
+          :default-datasets="defaultDatasets"
+          :model-value="localDatasetEntries.map(([name]) => name)"
+          :subset-model-value="chosenSubsets"
+          :subset-override="subsetOverride"
+          disabled
+          @update:subset-model-value="(v) => (chosenSubsets = v)"
+          @update:subset-override="(v) => (subsetOverride = v)"
+        />
         <el-button type="primary" :loading="submitting" :disabled="!localDatasetEntries.length" @click="submit">开始能力评测</el-button>
       </el-form>
     </el-card>
