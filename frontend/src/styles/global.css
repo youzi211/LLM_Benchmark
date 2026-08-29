@@ -1,16 +1,50 @@
 :root {
+  /* Surfaces */
   --lb-bg: #f4f6fb;
   --lb-surface: #ffffff;
   --lb-surface-soft: #f8fafc;
+  --lb-surface-alt: #eef2f7;
+
+  /* Foreground */
   --lb-fg: #1f2933;
+  --lb-fg-soft: #475569;
+  --lb-fg-strong: #0f172a;
   --lb-muted: #6b7280;
+
+  /* Lines */
   --lb-border: #e5e7eb;
+  --lb-border-soft: rgba(148, 163, 184, 0.24);
+  --lb-border-dashed: rgba(148, 163, 184, 0.30);
+
+  /* Brand & semantic */
   --lb-accent: #2563eb;
+  --lb-accent-soft: rgba(37, 99, 235, 0.10);
+  --lb-accent-soft-2: rgba(37, 99, 235, 0.18);
   --lb-success: #16a34a;
+  --lb-success-soft: #166534;
   --lb-warning: #d97706;
   --lb-danger: #dc2626;
+  --lb-danger-soft: #b91c1c;
+  --lb-danger-bg: #fef2f2;
+  --lb-danger-border: rgba(220, 38, 38, 0.18);
+  --lb-success-tint: rgba(22, 163, 74, 0.10);
+  --lb-success-tint-2: rgba(22, 163, 74, 0.32);
+  --lb-neutral-tint: rgba(107, 114, 128, 0.10);
+
+  /* Shape & elevation */
   --lb-radius: 12px;
+  --lb-radius-sm: 8px;
+  --lb-radius-lg: 16px;
   --lb-shadow: 0 12px 36px rgba(15, 23, 42, 0.06);
+
+  /* Spacing */
+  --lb-gap-1: 4px;
+  --lb-gap-2: 8px;
+  --lb-gap-3: 12px;
+  --lb-gap-4: 16px;
+
+  /* Type */
+  --lb-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 * {
