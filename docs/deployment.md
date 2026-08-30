@@ -137,7 +137,18 @@ uv run python scripts/smoke_deploy.py
 
 该脚本使用临时 `data/`、`reports/` 和 `outputs/` 目录，不会读取或修改你的真实 `data/models.json`。
 
-## 5. 运行数据和安全
+## 5. 能力评测并发与沙箱安全
+
+EvalScope 的 `SandboxService` 是**进程级单例**。代码执行类能力评测（`humaneval`、`humaneval_plus`、`mbpp`、`mbpp_plus`、`live_code_bench`）在 `run_task` 结束时会通过 `finally` 调用 `shutdown_sandbox_service()` 关闭共享沙箱。若两个能力评测任务在同一主服务进程内**并发**执行，一个任务结束某个数据集时会把另一个任务正在使用的沙箱一并关闭，导致后续样本批量报 `SandboxService is closed/closing and cannot accept new work.`，分数异常偏低。
+
+因此能力评测任务默认**串行执行**（并发上限为 1），由环境变量 `LLM_BENCHMARK_EVALSCOPE_JOB_MAX_CONCURRENCY` 控制，`scripts/start_main.*` 已默认导出 `1`。网关 smoke 与压测走各自的信号量，不受影响。只有当一批评测都不含代码执行类数据集时，才可显式调高该变量以并发运行；含代码类数据集时务必保持为 1。
+
+```bash
+# 默认（推荐，代码类数据集安全）
+export LLM_BENCHMARK_EVALSCOPE_JOB_MAX_CONCURRENCY=1
+```
+
+## 6. 运行数据和安全
 
 不要提交以下文件或目录：
 
@@ -156,6 +167,6 @@ uv run python scripts/smoke_deploy.py
 
 `api_key` 只允许作为运行时配置存在，不能写入文档、报告或 Git 提交。API 响应、任务 JSON 和报告中的错误信息都应保持脱敏。
 
-## 6. 后续扩展
+## 7. 后续扩展
 
 如果未来确实要把 EvalScope 执行拆到独立机器，建议重新设计为一个明确的远程执行器插件或队列 worker，而不是恢复临时 HTTP 包装服务；届时需要同步更新 API 语义、超时、鉴权、任务状态同步和安全边界。
