@@ -24,11 +24,15 @@ cleanup() {
 trap cleanup INT TERM EXIT
 
 if [[ "$START_SANDBOX" == "1" || "$START_SANDBOX" == "true" || "$START_SANDBOX" == "True" ]]; then
-  if ! command -v ms-enclave >/dev/null 2>&1; then
+  MS_ENCLAVE="$ROOT/.venv/bin/ms-enclave"
+  if [[ ! -x "$MS_ENCLAVE" ]]; then
+    MS_ENCLAVE="$(command -v ms-enclave || true)"
+  fi
+  if [[ -z "$MS_ENCLAVE" ]]; then
     echo "未找到 ms-enclave 命令；请先安装 evalscope[sandbox] 或关闭 START_SANDBOX。" >&2
     exit 127
   fi
-  ms-enclave server --host "$SANDBOX_HOST" --port "$SANDBOX_PORT" >>"$LOG_DIR/sandbox.out.log" 2>>"$LOG_DIR/sandbox.err.log" &
+  "$MS_ENCLAVE" server --host "$SANDBOX_HOST" --port "$SANDBOX_PORT" >>"$LOG_DIR/sandbox.out.log" 2>>"$LOG_DIR/sandbox.err.log" &
   sandbox_pid=$!
   printf '\n=== %s 启动 sandbox (PID %s, 端口 %s) ===\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$sandbox_pid" "$SANDBOX_PORT" | tee -a "$LOG_DIR/sandbox.out.log" "$LOG_DIR/sandbox.err.log" >/dev/null
   echo "EvalScope sandbox PID: $sandbox_pid, 地址: http://127.0.0.1:$SANDBOX_PORT"
