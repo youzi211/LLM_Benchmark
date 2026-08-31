@@ -36,6 +36,7 @@ class EvalScopeConfig(BaseModel):
     # evaluations retain the previous minimal zero-config behavior.
     sandbox_enabled: bool = False
     sandbox_type: str = "docker"
+    sandbox_pool_size: int | None = None
     sandbox_manager_config: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("datasets_dir", "outputs_dir", "judge_model_config_id", "sandbox_type")

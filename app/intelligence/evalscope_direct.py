@@ -679,6 +679,7 @@ class EvalScopeIntelligenceExecutor:
             data["sandbox"] = {
                 "enabled": True,
                 "engine": self.config.sandbox_type or "docker",
+                "pool_size": self.config.sandbox_pool_size,
                 "manager_config": dict(self.config.sandbox_manager_config or {}),
             }
         if _dataset_needs_judge(dataset) and judge_model_args:
