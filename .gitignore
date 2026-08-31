@@ -19,6 +19,9 @@ __pycache__/
 # Local brainstorming / visual companion artifacts
 .superpowers/
 
+# Mimocode agents
+/.mimocode/
+
 
 # Local implementation worktrees
 /.worktrees/
