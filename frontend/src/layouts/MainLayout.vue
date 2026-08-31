@@ -1,9 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ArrowDown } from "@element-plus/icons-vue";
+import { ArrowDown, Moon, Sunny } from "@element-plus/icons-vue";
+import { useTheme } from "@/composables/useTheme";
 import { useModelsStore } from "@/stores/models";
+import { getHealth, type HealthStatus } from "@/api/evaluations";
 import ModelCreateDrawer from "@/components/models/ModelCreateDrawer.vue";
+import StatusDot from "@/components/common/StatusDot.vue";
+import ConnectionBanner from "@/components/common/ConnectionBanner.vue";
+import ShortcutHelp from "@/components/layouts/ShortcutHelp.vue";
+import MobileTabs from "@/components/layouts/MobileTabs.vue";
+import { useToast } from "@/composables/useToast";
+import { useShortcuts } from "@/composables/useShortcuts";
 import EvalScopeConfigDrawer from "@/components/evalscope/EvalScopeConfigDrawer.vue";
 
 const store = useModelsStore();
@@ -14,6 +22,42 @@ const evalscopeDrawerVisible = ref(false);
 
 const runningCounts = ref({ basic: 0, intelligence: 0, stress: 0 });
 const runningTotal = computed(() => runningCounts.value.basic + runningCounts.value.intelligence + runningCounts.value.stress);
+const { mode: themeMode, resolved: themeResolved, toggle: toggleTheme } = useTheme();
+useShortcuts();
+const toast = useToast();
+const connDismissed = ref(false);
+const health = ref<HealthStatus | null>(null);
+let healthTimer: number | undefined;
+
+async function refreshHealth() {
+  try {
+    health.value = await getHealth();
+  } catch {
+    // 后端不可达 - 静默, 让 connServices 反映出来
+    health.value = null;
+  }
+}
+
+const connServices = computed(() => {
+  const h = health.value;
+  if (!h) {
+    return [
+      { key: "models", name: "模型", state: store.error ? ("fail" as const) : ("ok" as const), detail: store.error ?? undefined },
+      { key: "evalscope", name: "EvalScope", state: "fail" as const, detail: "健康端点不可达" },
+      { key: "scheduler", name: "调度", state: "fail" as const, detail: "健康端点不可达" },
+    ];
+  }
+  return [
+    { key: "models", name: "模型", state: (store.error || !h.models.ok) ? ("fail" as const) : ("ok" as const), detail: store.error ?? `已配置 ${h.models.count} 个` },
+    { key: "evalscope", name: "EvalScope", state: h.evalscope.ok ? ("ok" as const) : ("warn" as const), detail: h.evalscope.state === "ready" ? "数据集目录就绪" : (h.evalscope.state || "未就绪") },
+    { key: "scheduler", name: "调度", state: h.scheduler.ok ? ("ok" as const) : ("warn" as const), detail: h.scheduler.state === "running" ? "APScheduler" : "已禁用" },
+  ];
+});
+const themeIcon = computed(() => (themeResolved.value === "dark" ? "moon" : "sunny"));
+const themeLabel = computed(() => {
+  if (themeMode.value === "auto") return "跟随系统";
+  return themeResolved.value === "dark" ? "暗色" : "亮色";
+});
 let runningTimer: number | undefined;
 
 function isFinal(status: unknown): boolean {
@@ -42,6 +86,7 @@ async function refreshRunning() {
 
 function startRunningPoll() {
   stopRunningPoll();
+  if (healthTimer !== undefined) window.clearInterval(healthTimer);
   refreshRunning();
   runningTimer = window.setInterval(refreshRunning, 5000);
 }
@@ -58,6 +103,8 @@ onMounted(() => {
     // 静默失败,顶部选择区会显示错误提示;不阻塞骨架运行。
   });
   startRunningPoll();
+  refreshHealth();
+  healthTimer = window.setInterval(refreshHealth, 10000);
 });
 
 onUnmounted(() => {
@@ -65,14 +112,16 @@ onUnmounted(() => {
 });
 
 const mainTabs = [
+  { name: "overview", label: "概览", path: "/overview" },
   { name: "basic", label: "基础评测", path: "/basic" },
-  { name: "stress", label: "压测评测", path: "/stress" },
+  { name: "stress", label: "压测评评", path: "/stress" },
   { name: "intelligence", label: "能力评测", path: "/intelligence" },
 ];
 
 const auxiliary = [
   { label: "一键完整评测", path: "/suites" },
   { label: "定时任务", path: "/schedules" },
+  ...(import.meta.env.DEV ? [{ label: "设计系统", path: "/style-guide" }] : []),
 ];
 
 const currentTab = computed(() => String(route.meta.tab ?? ""));
@@ -89,6 +138,28 @@ function selectMainTab(tabName: string | number | boolean | undefined) {
 function onModelCreated(id: string) {
   store.select(id);
 }
+
+function retryConn(key: string) {
+  connDismissed.value = false;
+  if (key === "models") {
+    store.load(true).catch((err) => toast.error("重试失败: " + String(err?.message ?? err)));
+    return;
+  }
+  toast.info(`已请求重试: ${key}`);
+}
+
+function dismissConn() {
+  connDismissed.value = true;
+  if (store.error) toast.warning(`隐藏了服务异常, 错误: ${store.error}`);
+}
+
+// 当 store.error 变化时, 自动显示顶部状态条
+watch(() => store.error, (err, prev) => {
+  if (err && err !== prev) {
+    toast.error(`模型接口异常: ${err}`);
+    connDismissed.value = false;
+  }
+});
 </script>
 
 <template>
@@ -117,17 +188,28 @@ function onModelCreated(id: string) {
               :value="m.id"
             />
           </el-select>
-          <div class="lb-running-pill" :class="{'lb-running-pill--on': runningTotal > 0}" :title="`基础 ${runningCounts.basic} · 能力 ${runningCounts.intelligence} · 压测 ${runningCounts.stress}`">
+          <StatusDot :state="store.error ? 'fail' : 'ok'" :label="store.error ? 'API 异常' : 'API 正常'" :size="7" />
+        <div class="lb-running-pill" :class="{'lb-running-pill--on': runningTotal > 0}" :title="`基础 ${runningCounts.basic} · 能力 ${runningCounts.intelligence} · 压测 ${runningCounts.stress}`">
           <span class="lb-running-pill__dot"></span>
           <span>运行中 {{ runningTotal }}</span>
         </div>
         <el-button size="small" @click="store.load(true)">刷新模型</el-button>
           <el-button size="small" type="primary" plain @click="modelDrawerVisible = true">添加模型</el-button>
           <el-button size="small" type="warning" plain @click="evalscopeDrawerVisible = true">评测环境</el-button>
+          <el-tooltip :content="`当前主题: ${themeLabel} (点击切换)`" placement="bottom">
+            <ShortcutHelp />
+            <el-button size="small" circle :icon="themeIcon === 'moon' ? Moon : Sunny" @click="toggleTheme" :aria-label="`切换主题: ${themeLabel}`" class="lb-theme-toggle" />
+          </el-tooltip>
         </div>
       </div>
 
-      <div v-if="store.error" class="lb-error">模型接口失败:{{ store.error }}</div>
+      <ConnectionBanner
+        v-if="!connDismissed"
+        :services="connServices"
+        :last-error="store.error"
+        @retry="retryConn"
+        @dismiss="dismissConn"
+      />
     </header>
 
     <nav class="lb-tabs">
@@ -161,6 +243,7 @@ function onModelCreated(id: string) {
     <main class="lb-main">
       <router-view />
     </main>
+    <MobileTabs />
 
     <footer class="lb-footer">
       <small>Vue 3 · Vite · Element Plus · ECharts — 并行验证中，旧控制台仍挂在 /ui/</small>

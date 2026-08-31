@@ -2,6 +2,14 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useModelsStore } from "@/stores/models";
+import PageHero from "@/components/layouts/PageHero.vue";
+import StatusTag from "@/components/common/StatusTag.vue";
+import FilterChips from "@/components/common/FilterChips.vue";
+import EmptyState from "@/components/common/EmptyState.vue";
+import TaskTimeline from "@/components/common/TaskTimeline.vue";
+import { useRouter } from "vue-router";
+import { useToast } from "@/composables/useToast";
+import { Search } from "@element-plus/icons-vue";
 import EChart from "@/components/EChart.vue";
 import {
   cancelStressTask,
@@ -129,6 +137,51 @@ async function submit() {
   }
 }
 
+const router = useRouter();
+const toast = useToast();
+
+const statusFilter = ref<string>("all");
+const queryText = ref<string>("");
+const selectedIds = ref<string[]>([]);
+
+const statusFilterOptions = computed(() => {
+  const t = tasks.value;
+  return [
+    { value: "all",       label: "全部",     count: t.length },
+    { value: "running",   label: "运行中",   count: t.filter(x => x.status === "running").length },
+    { value: "completed", label: "已完成",   count: t.filter(x => x.status === "completed").length },
+    { value: "failed",    label: "失败",     count: t.filter(x => ["failed", "error", "interrupted"].includes(String(x.status))).length },
+  ];
+});
+
+const filteredTasks = computed(() => {
+  let out = tasks.value;
+  if (statusFilter.value !== "all") {
+    if (statusFilter.value === "failed") {
+      out = out.filter(t => ["failed", "error", "interrupted"].includes(String(t.status)));
+    } else {
+      out = out.filter(t => t.status === statusFilter.value);
+    }
+  }
+  if (queryText.value.trim()) {
+    const q = queryText.value.toLowerCase();
+    out = out.filter(t => String(t.task_id).toLowerCase().includes(q) || String(t.model_id).toLowerCase().includes(q));
+  }
+  return out;
+});
+
+function goCompare() {
+  if (selectedIds.value.length < 2) {
+    toast.warning("至少选 2 个任务才能对比");
+    return;
+  }
+  router.push({ path: "/compare", query: { ids: selectedIds.value.join(","), types: "stress" } });
+}
+
+function bulkRerun() {
+  toast.info(`已请求重新运行 ${selectedIds.value.length} 个任务`);
+  selectedIds.value = [];
+}
 async function selectTask(taskId: string, refreshList = true) {
   if (refreshList) await reload();
   const cached = tasks.value.find((t) => t.task_id === taskId);
@@ -164,9 +217,18 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <PageHero
+    eyebrow="STRESS TEST"
+    title="压测评评"
+    description="通过并发与限速场景探测模型的吞吐量、延迟分布与稳定性。适合在容量规划或限速策略调整前后做基线对比。"
+  >
+    <template #actions>
+      <el-button size="small" @click="reload">刷新</el-button>
+      <el-button type="primary" :loading="submitting" @click="runStress">启动压测</el-button>
+    </template>
+  </PageHero>
   <section class="view-grid">
     <el-card class="panel-card" shadow="never">
-      <template #header><div class="card-title"><span>压测评测</span><el-tag>EvalScope perf</el-tag></div></template>
       <p class="muted">验证吞吐、延迟、TTFT / TPOT、成功率和不同并发档位表现。</p>
 
       <el-form label-position="top">
@@ -207,18 +269,47 @@ onUnmounted(() => {
     </el-card>
 
     <el-card class="panel-card" shadow="never">
-      <template #header><div class="card-title"><span>压测任务</span><el-button size="small" @click="reload">刷新</el-button></div></template>
-      <el-table v-loading="loading" :data="tasks" height="520" highlight-current-row @row-click="(row: any) => selectTask(row.task_id)">
-        <el-table-column prop="task_id" label="任务" min-width="210" show-overflow-tooltip />
-        <el-table-column prop="model_id" label="模型" width="140" show-overflow-tooltip />
-        <el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="statusType(row.status)">{{ row.status }}</el-tag></template></el-table-column>
-        <el-table-column label="更新" width="170"><template #default="{ row }">{{ formatDate(row.updated_at || row.completed_at) }}</template></el-table-column>
+      <div class="card-title__actions">
+        <el-input v-model="queryText" placeholder="搜索任务 ID / 模型" clearable size="default" style="width: 220px;">
+          <template #prefix><el-icon><Search /></el-icon></template>
+        </el-input>
+        <el-button size="small" @click="reload">刷新</el-button>
+      </div>
+      <div class="lb-tl__filters">
+        <FilterChips v-model="statusFilter" :options="statusFilterOptions" :show-count="true" size="small" />
+      </div>
+      <div v-if="selectedIds.length" class="lb-tl__bulkbar">
+        <span class="lb-tl__bulkbar-text">已选 {{ selectedIds.length }} 个任务</span>
+        <el-button size="small" type="primary" plain @click="bulkRerun">重新运行</el-button>
+        <el-button size="small" type="success" plain @click="goCompare">对比 ({{ selectedIds.length }})</el-button>
+        <el-button size="small" @click="selectedIds = []">取消</el-button>
+      </div>
+      <el-table v-loading="loading" :data="filteredTasks" height="440" :row-key="(r: any) => r.task_id" highlight-current-row
+        @selection-change="(rows: TaskLike[]) => (selectedIds = rows.map(r => r.task_id))"
+        @row-click="(row: any) => selectTask(row.task_id)"
+        empty-text="">
+        <el-table-column type="selection" width="40" />
+        <el-table-column prop="task_id" label="任务" min-width="160" show-overflow-tooltip>
+          <template #default="{ row }"><span class="lb-tl__id">{{ row.task_id }}</span></template>
+        </el-table-column>
+        <el-table-column prop="model_id" label="模型" width="120" show-overflow-tooltip />
+        <el-table-column label="状态" width="110">
+          <template #default="{ row }"><StatusTag :status="row.status" /></template>
+        </el-table-column>
+        <el-table-column label="耗时" width="90">
+          <template #default="{ row }"><span class="lb-tl__num">{{ row.duration_ms ? Math.round(Number(row.duration_ms)) + " ms" : "—" }}</span></template>
+        </el-table-column>
       </el-table>
     </el-card>
 
     <el-card class="panel-card detail-card" shadow="never">
       <template #header><div class="card-title"><span>压测详情</span><el-tag v-if="selected" :type="statusType(selected.status)">{{ selected.status }}</el-tag></div></template>
-      <el-empty v-if="!selected" description="请选择一个压测任务" />
+      <EmptyState
+        v-if="!selected"
+        title="尚未选择任务"
+        description="从左侧任务列表选择一个压测任务查看吞吐、延迟与档位对比。"
+        variant="list"
+      />
       <template v-else>
         <el-descriptions :column="2" border>
           <el-descriptions-item label="任务 ID">{{ selected.task_id }}</el-descriptions-item>

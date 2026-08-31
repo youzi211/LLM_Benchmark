@@ -262,3 +262,18 @@ export async function fetchJudgeHealth(): Promise<EvalScopeHealthStatus> {
   return data as EvalScopeHealthStatus;
 }
 
+
+/* 健康端点 */
+export interface HealthStatus {
+  status: "ok" | string;
+  uptime_s: number;
+  scheduler_disabled: boolean;
+  models: { ok: boolean; count: number };
+  evalscope: { ok: boolean; state: string; datasets_dir?: string };
+  scheduler: { ok: boolean; state: string };
+}
+
+export async function getHealth(): Promise<HealthStatus> {
+  const { data } = await http.get("/health");
+  return data;
+}

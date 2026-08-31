@@ -3,6 +3,9 @@ import { computed, onMounted, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useModelsStore } from "@/stores/models";
 import DatasetPicker from "@/components/common/DatasetPicker.vue";
+import PageHero from "@/components/layouts/PageHero.vue";
+import Stepper from "@/components/layouts/Stepper.vue";
+import EmptyState from "@/components/common/EmptyState.vue";
 import {
   cancelSuite,
   fetchDatasets,
@@ -37,6 +40,16 @@ const stressDatasetsLoading = ref(false);
 const stressDatasets = ref<Record<string, StressDatasetMeta>>({});
 const defaultStressDataset = ref("");
 const selectedStressDataset = ref("");
+
+const currentStep = ref(0);
+
+const wizardSteps = [
+  { key: "lane",    title: "选择评测线", description: "勾选要跑的基础 / 压测 / 能力" },
+  { key: "dataset", title: "能力数据集", description: "选择本地可用的 EvalScope 数据集", optional: true },
+  { key: "params",  title: "参数",       description: "设置压测并发 / 样本上限" },
+  { key: "judge",   title: "临时模型",   description: "快速模式: 临时配置一个模型", optional: true },
+  { key: "confirm", title: "确认启动",   description: "检查并启动套件" },
+];
 
 const form = ref({
   runGateway: true,
@@ -236,97 +249,156 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="view-grid">
+<PageHero
+    eyebrow="ONE-CLICK SUITE"
+    title="一键完整评测"
+    description="串联基础 / 压测 / 能力三条评测线, 一次启动, 生成统一总览报告。适合上线前 / 模型升级后做完整基线。"
+  >
+    <template #actions>
+      <el-button size="small" :disabled="currentStep === 0" @click="currentStep--">上一步</el-button>
+      <el-button size="small" type="primary" :disabled="currentStep === wizardSteps.length - 1" @click="currentStep++">下一步</el-button>
+    </template>
+  </PageHero>
+
+  <Stepper :steps="wizardSteps" :current="currentStep" clickable @jump="(i) => currentStep = i" />
+
+    <section class="view-grid">
     <el-card class="panel-card" shadow="never">
-      <template #header>
-        <div class="card-title"><span>一键完整评测</span><el-tag>Suite</el-tag></div>
-      </template>
       <p class="muted">串起基础 / 压测 / 能力三条评测线，生成统一总览报告。可按需勾选评测线。</p>
       <el-form label-position="top">
-        <el-form-item>
-          <el-switch v-model="form.quickMode" active-text="快速模式（临时模型）" inactive-text="使用已注册模型" />
-        </el-form-item>
-
-        <template v-if="form.quickMode">
-          <el-form-item label="API URL"><el-input v-model="form.quickUrl" placeholder="https://..." /></el-form-item>
-          <el-form-item label="API Key"><el-input v-model="form.quickKey" placeholder="可选" show-password /></el-form-item>
-          <el-form-item label="模型名称"><el-input v-model="form.quickModel" placeholder="gpt-4o-mini" /></el-form-item>
-          <el-form-item label="显示名称（可选）"><el-input v-model="form.quickName" /></el-form-item>
-        </template>
-        <el-form-item v-else label="当前模型">
-          <el-input :model-value="store.currentModel?.name || store.currentId || '未选择模型'" disabled />
-        </el-form-item>
-
-        <el-form-item label="评测线选择">
-          <el-checkbox v-model="form.runGateway">基础评测</el-checkbox>
-          <el-checkbox v-model="form.runStress">压测评测</el-checkbox>
-          <el-checkbox v-model="form.runIntelligence">能力评测</el-checkbox>
-        </el-form-item>
-
-        <!-- 能力评测数据集 + 子集选择 -->
-        <template v-if="form.runIntelligence">
-          <div class="section-title">能力评测数据集</div>
-          <DatasetPicker
-            v-model="chosenDatasets"
-            :datasets="datasetMap"
-            :default-datasets="defaultDatasets"
-            :subset-model-value="chosenSubsets"
-            :subset-override="subsetOverride"
-            @update:subset-model-value="(v) => (chosenSubsets = v)"
-            @update:subset-override="(v) => (subsetOverride = v)"
-          />
-          <el-row :gutter="12">
-            <el-col :span="12"><el-form-item label="limit"><el-input v-model="form.intelligenceLimit" placeholder="留空=不限" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="eval_batch_size"><el-input v-model="form.intelligenceEvalBatchSize" placeholder="默认" /></el-form-item></el-col>
-          </el-row>
-        </template>
-
-        <!-- 压测数据集卡片选择 -->
-        <template v-if="form.runStress">
-          <div class="section-title">压测数据集</div>
-          <div class="dataset-cards" v-loading="stressDatasetsLoading">
-            <div
-              v-for="ds in stressDatasetList"
-              :key="ds.name"
-              class="dataset-card"
-              :class="{ 'dataset-card--active': selectedStressDataset === ds.name }"
-              @click="pickStressDataset(ds.name)"
-            >
-              <div class="dataset-card__header">
-                <span class="dataset-card__name">{{ ds.pretty_name || ds.name }}</span>
-                <el-tag v-if="ds.is_default" size="small" type="success">默认</el-tag>
-                <el-tag v-if="ds.available_local" size="small" type="info">本地</el-tag>
-              </div>
-              <p class="dataset-card__desc muted">{{ ds.description || '暂无描述' }}</p>
-            </div>
-          </div>
-          <el-form-item label="dataset_path（可选）"><el-input v-model="form.stressDatasetPath" placeholder="留空自动解析" /></el-form-item>
-          <el-row :gutter="12">
-            <el-col :span="12"><el-form-item label="parallel"><el-input v-model="form.stressParallel" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="number"><el-input v-model="form.stressNumber" /></el-form-item></el-col>
-          </el-row>
-          <el-form-item label="stream">
-            <el-select v-model="form.stressStream" class="full-width">
-              <el-option label="默认" value="" />
-              <el-option label="true" value="true" />
-              <el-option label="false" value="false" />
-            </el-select>
+        <!-- Step 0: 选择评测线 + 模型 -->
+        <div v-show="currentStep === 0">
+          <el-form-item label="评测线选择">
+            <el-checkbox v-model="form.runGateway">基础评测</el-checkbox>
+            <el-checkbox v-model="form.runStress">压测评评</el-checkbox>
+            <el-checkbox v-model="form.runIntelligence">能力评测</el-checkbox>
           </el-form-item>
-          <el-row :gutter="12">
-            <el-col :span="12"><el-form-item label="最小 token"><el-input v-model="form.stressMinTokens" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="最大 token"><el-input v-model="form.stressMaxTokens" /></el-form-item></el-col>
-          </el-row>
-        </template>
+          <el-form-item>
+            <el-switch v-model="form.quickMode" active-text="快速模式（临时模型）" inactive-text="使用已注册模型" />
+          </el-form-item>
+          <el-form-item v-if="!form.quickMode" label="当前模型">
+            <el-input :model-value="store.currentModel?.name || store.currentId || '未选择模型'" disabled />
+          </el-form-item>
+          <el-alert v-if="!form.runGateway && !form.runStress && !form.runIntelligence" type="warning" :closable="false" show-icon>
+            请至少勾选一条评测线
+          </el-alert>
+        </div>
 
-        <el-button type="primary" :loading="submitting" @click="submit">开始一键评测</el-button>
+        <!-- Step 1: 能力数据集 -->
+        <div v-show="currentStep === 1">
+          <template v-if="form.runIntelligence">
+            <div class="section-title">能力评测数据集</div>
+            <DatasetPicker
+              v-model="chosenDatasets"
+              :datasets="datasetMap"
+              :default-datasets="defaultDatasets"
+              :subset-model-value="chosenSubsets"
+              :subset-override="subsetOverride"
+              @update:subset-model-value="(v) => (chosenSubsets = v)"
+              @update:subset-override="(v) => (subsetOverride = v)"
+            />
+            <el-row :gutter="12">
+              <el-col :span="12"><el-form-item label="limit"><el-input v-model="form.intelligenceLimit" placeholder="留空=不限" /></el-form-item></el-col>
+              <el-col :span="12"><el-form-item label="eval_batch_size"><el-input v-model="form.intelligenceEvalBatchSize" placeholder="默认" /></el-form-item></el-col>
+            </el-row>
+          </template>
+          <EmptyState v-else title="未启用能力评测" description="回到第 1 步勾选能力评测" variant="list" />
+        </div>
+
+        <!-- Step 2: 压测参数 -->
+        <div v-show="currentStep === 2">
+          <template v-if="form.runStress">
+            <div class="section-title">压测数据集</div>
+            <div class="dataset-cards" v-loading="stressDatasetsLoading">
+              <div
+                v-for="ds in stressDatasetList"
+                :key="ds.name"
+                class="dataset-card"
+                :class="{ 'dataset-card--active': selectedStressDataset === ds.name }"
+                @click="pickStressDataset(ds.name)"
+              >
+                <div class="dataset-card__header">
+                  <span class="dataset-card__name">{{ ds.pretty_name || ds.name }}</span>
+                  <el-tag v-if="ds.is_default" size="small" type="success">默认</el-tag>
+                  <el-tag v-if="ds.available_local" size="small" type="info">本地</el-tag>
+                </div>
+                <p class="dataset-card__desc muted">{{ ds.description || '暂无描述' }}</p>
+              </div>
+            </div>
+            <el-form-item label="dataset_path（可选）"><el-input v-model="form.stressDatasetPath" placeholder="留空自动解析" /></el-form-item>
+            <el-row :gutter="12">
+              <el-col :span="12"><el-form-item label="parallel"><el-input v-model="form.stressParallel" /></el-form-item></el-col>
+              <el-col :span="12"><el-form-item label="number"><el-input v-model="form.stressNumber" /></el-form-item></el-col>
+            </el-row>
+            <el-form-item label="stream">
+              <el-select v-model="form.stressStream" class="full-width">
+                <el-option label="默认" value="" />
+                <el-option label="true" value="true" />
+                <el-option label="false" value="false" />
+              </el-select>
+            </el-form-item>
+            <el-row :gutter="12">
+              <el-col :span="12"><el-form-item label="最小 token"><el-input v-model="form.stressMinTokens" /></el-form-item></el-col>
+              <el-col :span="12"><el-form-item label="最大 token"><el-input v-model="form.stressMaxTokens" /></el-form-item></el-col>
+            </el-row>
+          </template>
+          <EmptyState v-else title="未启用压测评评" description="回到第 1 步勾选压测评评" variant="list" />
+        </div>
+
+        <!-- Step 3: 临时模型 -->
+        <div v-show="currentStep === 3">
+          <template v-if="form.quickMode">
+            <el-alert type="info" :closable="false" show-icon>
+              <template #title>快速模式: 配置一个临时模型跑此套件</template>
+            </el-alert>
+            <el-form-item label="API URL"><el-input v-model="form.quickUrl" placeholder="https://..." /></el-form-item>
+            <el-form-item label="API Key"><el-input v-model="form.quickKey" placeholder="可选" show-password /></el-form-item>
+            <el-form-item label="模型名称"><el-input v-model="form.quickModel" placeholder="gpt-4o-mini" /></el-form-item>
+            <el-form-item label="显示名称（可选）"><el-input v-model="form.quickName" /></el-form-item>
+          </template>
+          <EmptyState v-else title="已选择注册模型" description="如需临时模型, 回到第 1 步开启快速模式" variant="success" />
+        </div>
+
+        <!-- Step 4: 确认 + 启动 -->
+        <div v-show="currentStep === 4" class="lb-suite-confirm">
+          <h3>请确认配置</h3>
+          <ul class="lb-suite-confirm__list">
+            <li><span>基础评测</span><b>{{ form.runGateway ? '启用' : '跳过' }}</b></li>
+            <li><span>压测评评</span><b>{{ form.runStress ? '启用 · 数据集 ' + (selectedStressDataset || '默认') : '跳过' }}</b></li>
+            <li><span>能力评测</span><b>{{ form.runIntelligence ? '启用 · ' + chosenDatasets.length + ' 个数据集' : '跳过' }}</b></li>
+            <li><span>模型</span><b>{{ form.quickMode ? (form.quickModel || '未填') : (store.currentModel?.name || store.currentId || '未选') }}</b></li>
+            <li><span>压测并发</span><b>{{ form.stressParallel }}</b></li>
+            <li><span>压测请求数</span><b>{{ form.stressNumber }}</b></li>
+          </ul>
+          <el-button type="primary" size="large" :loading="submitting" @click="submit">启动一键评测</el-button>
+        </div>
       </el-form>
+
+      <div v-if="currentStep < 4" class="lb-suite-wizard-foot">
+        <el-button @click="currentStep = 4" :disabled="!form.runGateway && !form.runStress && !form.runIntelligence">跳到确认 →</el-button>
+      </div>
     </el-card>
 
     <el-card class="panel-card" shadow="never">
-      <template #header>
-        <div class="card-title"><span>Suite 列表</span><el-button size="small" @click="reload">刷新</el-button></div>
-      </template>
-      <el-table v-loading="loading" :data="tasks" height="520" highlight-current-row @row-click="selectTask">
+      <div class="lb-suite-list-head">
+        <el-button size="small" @click="reload">刷新</el-button>
+      </div>
+      <EmptyState
+        v-if="!loading && tasks.length === 0"
+        title="还没有 Suite"
+        description="启动一键评测后会在这里显示, 通常包含基础/压测/能力三条线结果。"
+        variant="list"
+        action-label="去配置"
+        @action="currentStep = 0"
+      />
+      <el-table
+        v-else
+        v-loading="loading"
+        :data="tasks"
+        height="520"
+        highlight-current-row
+        @row-click="selectTask"
+      >
         <el-table-column prop="suite_id" label="Suite" min-width="210" show-overflow-tooltip />
         <el-table-column prop="model_id" label="模型" width="130" show-overflow-tooltip />
         <el-table-column label="状态" width="100">
@@ -337,17 +409,19 @@ onMounted(() => {
     </el-card>
 
     <el-card class="panel-card detail-card" shadow="never">
-      <template #header>
-        <div class="card-title">
-          <span>Suite 详情</span>
-          <el-tag v-if="selected" :type="statusType(selected.status)">{{ selected.status }}</el-tag>
-        </div>
-      </template>
-      <el-empty v-if="!selected" description="请选择一个 Suite" />
+      <EmptyState
+        v-if="!selected"
+        title="还没有选择 Suite"
+        description="从左侧列表选一个 Suite 查看详细步骤, 耗时, 总览报告链接。"
+        variant="list"
+      />
       <template v-else>
         <el-descriptions :column="2" border>
           <el-descriptions-item label="Suite ID">{{ selected.suite_id }}</el-descriptions-item>
           <el-descriptions-item label="模型">{{ selected.model_id }}</el-descriptions-item>
+          <el-descriptions-item label="状态">
+            <el-tag :type="statusType(selected.status)">{{ selected.status }}</el-tag>
+          </el-descriptions-item>
           <el-descriptions-item label="当前步骤">{{ selected.current_step || '-' }}</el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ formatDate(selected.created_at) }}</el-descriptions-item>
         </el-descriptions>
@@ -387,3 +461,11 @@ onMounted(() => {
     </el-card>
   </section>
 </template>
+
+<style scoped>
+.lb-suite-list-head {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+</style>

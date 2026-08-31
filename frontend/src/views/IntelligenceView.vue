@@ -2,6 +2,14 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useModelsStore } from "@/stores/models";
+import PageHero from "@/components/layouts/PageHero.vue";
+import StatusTag from "@/components/common/StatusTag.vue";
+import FilterChips from "@/components/common/FilterChips.vue";
+import EmptyState from "@/components/common/EmptyState.vue";
+import TaskTimeline from "@/components/common/TaskTimeline.vue";
+import { useRouter } from "vue-router";
+import { useToast } from "@/composables/useToast";
+import { Search } from "@element-plus/icons-vue";
 import EChart from "@/components/EChart.vue";
 import DatasetPicker from "@/components/common/DatasetPicker.vue";
 import {
@@ -145,6 +153,51 @@ async function submit() {
   }
 }
 
+const router = useRouter();
+const toast = useToast();
+
+const statusFilter = ref<string>("all");
+const queryText = ref<string>("");
+const selectedIds = ref<string[]>([]);
+
+const statusFilterOptions = computed(() => {
+  const t = tasks.value;
+  return [
+    { value: "all",       label: "全部",     count: t.length },
+    { value: "running",   label: "运行中",   count: t.filter(x => x.status === "running").length },
+    { value: "completed", label: "已完成",   count: t.filter(x => x.status === "completed").length },
+    { value: "failed",    label: "失败",     count: t.filter(x => ["failed", "error", "interrupted"].includes(String(x.status))).length },
+  ];
+});
+
+const filteredTasks = computed(() => {
+  let out = tasks.value;
+  if (statusFilter.value !== "all") {
+    if (statusFilter.value === "failed") {
+      out = out.filter(t => ["failed", "error", "interrupted"].includes(String(t.status)));
+    } else {
+      out = out.filter(t => t.status === statusFilter.value);
+    }
+  }
+  if (queryText.value.trim()) {
+    const q = queryText.value.toLowerCase();
+    out = out.filter(t => String(t.task_id).toLowerCase().includes(q) || String(t.model_id).toLowerCase().includes(q));
+  }
+  return out;
+});
+
+function goCompare() {
+  if (selectedIds.value.length < 2) {
+    toast.warning("至少选 2 个任务才能对比");
+    return;
+  }
+  router.push({ path: "/compare", query: { ids: selectedIds.value.join(","), types: "intelligence" } });
+}
+
+function bulkRerun() {
+  toast.info(`已请求重新运行 ${selectedIds.value.length} 个任务`);
+  selectedIds.value = [];
+}
 async function selectTask(taskId: string, refreshList = true) {
   if (refreshList) await reload();
   const cached = tasks.value.find((t) => t.task_id === taskId);
@@ -174,9 +227,18 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <PageHero
+    eyebrow="INTELLIGENCE EVAL"
+    title="能力评测"
+    description="基于 EvalScope 的能力维度评估, 覆盖 BBH / MMLU / GSM8K / ARC 等公开数据集。适合在模型升级或大版本切换时建立能力基线。"
+  >
+    <template #actions>
+      <el-button size="small" @click="reload">刷新</el-button>
+      <el-button type="primary" :loading="submitting" @click="runIntelligence">启动能力评测</el-button>
+    </template>
+  </PageHero>
   <section class="view-grid">
     <el-card class="panel-card" shadow="never">
-      <template #header><div class="card-title"><span>能力评测</span><el-tag>EvalScope datasets</el-tag></div></template>
       <p class="muted">只展示并提交本地已提供的数据集。数据集由管理员放入 data/evalscope_datasets。</p>
       <el-form label-position="top">
         <el-form-item label="当前模型"><el-input :model-value="store.currentModel?.name || store.currentId || '未选择模型'" disabled /></el-form-item>
@@ -209,18 +271,45 @@ onUnmounted(() => {
     </el-card>
 
     <el-card class="panel-card" shadow="never">
-      <template #header><div class="card-title"><span>能力任务</span><el-button size="small" @click="reload">刷新</el-button></div></template>
-      <el-table v-loading="loading" :data="tasks" height="520" highlight-current-row @row-click="(row: any) => selectTask(row.task_id)">
+      <div class="card-title__actions">
+        <el-input v-model="queryText" placeholder="搜索任务 ID / 模型" clearable size="default" style="width: 220px;">
+          <template #prefix><el-icon><Search /></el-icon></template>
+        </el-input>
+        <el-button size="small" @click="reload">刷新</el-button>
+      </div>
+      <div class="lb-tl__filters">
+        <FilterChips v-model="statusFilter" :options="statusFilterOptions" :show-count="true" size="small" />
+      </div>
+      <div v-if="selectedIds.length" class="lb-tl__bulkbar">
+        <span class="lb-tl__bulkbar-text">已选 {{ selectedIds.length }} 个任务</span>
+        <el-button size="small" type="primary" plain @click="bulkRerun">重新运行</el-button>
+        <el-button size="small" type="success" plain @click="goCompare">对比 ({{ selectedIds.length }})</el-button>
+        <el-button size="small" @click="selectedIds = []">取消</el-button>
+      </div>
+      <el-table v-loading="loading" :data="filteredTasks" height="440" :row-key="(r: any) => r.task_id"
+        @selection-change="(rows: TaskLike[]) => (selectedIds = rows.map(r => r.task_id))" highlight-current-row @row-click="(row: any) => selectTask(row.task_id)">
         <el-table-column prop="task_id" label="任务" min-width="210" show-overflow-tooltip />
         <el-table-column prop="model_id" label="模型" width="140" show-overflow-tooltip />
         <el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="statusType(row.status)">{{ row.status }}</el-tag></template></el-table-column>
         <el-table-column label="进度" min-width="180" show-overflow-tooltip><template #default="{ row }">{{ row.progress || '-' }}</template></el-table-column>
       </el-table>
+      <EmptyState
+        v-if="!loading && filteredTasks.length === 0"
+        :title="queryText || statusFilter !== 'all' ? '无匹配任务' : '暂无能力评测任务'"
+        :description="queryText || statusFilter !== 'all' ? '试着清空筛选条件' : '点击左侧表单启动第一次能力评测'"
+        :variant="queryText ? 'search' : 'list'"
+        :action-label="queryText || statusFilter !== 'all' ? '清空筛选' : '开始能力评测'"
+        @action="queryText = ''; statusFilter = 'all';"
+      />
     </el-card>
 
     <el-card class="panel-card detail-card" shadow="never">
-      <template #header><div class="card-title"><span>能力详情</span><el-tag v-if="selected" :type="statusType(selected.status)">{{ selected.status }}</el-tag></div></template>
-      <el-empty v-if="!selected" description="请选择一个能力评测任务" />
+      <EmptyState
+        v-if="!selected"
+        title="尚未选择任务"
+        description="从左侧任务列表选择一个能力任务查看进度、得分与数据集结果。"
+        variant="list"
+      />
       <template v-else>
         <el-descriptions :column="2" border>
           <el-descriptions-item label="任务 ID">{{ selected.task_id }}</el-descriptions-item>

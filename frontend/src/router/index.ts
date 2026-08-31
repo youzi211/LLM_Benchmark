@@ -3,7 +3,13 @@ import { createRouter, createWebHashHistory, type RouteRecordRaw } from "vue-rou
 const routes: RouteRecordRaw[] = [
   {
     path: "/",
-    redirect: "/basic",
+    redirect: "/overview",
+  },
+  {
+    path: "/overview",
+    name: "overview",
+    component: () => import("@/views/OverviewView.vue"),
+    meta: { title: "概览", tab: "overview" },
   },
   {
     path: "/basic",
@@ -35,11 +41,31 @@ const routes: RouteRecordRaw[] = [
     component: () => import("@/views/SchedulesView.vue"),
     meta: { title: "定时任务", auxiliary: true },
   },
+  {
+    path: "/compare",
+    name: "compare",
+    component: () => import("@/views/CompareView.vue"),
+    meta: { title: "任务对比", auxiliary: true },
+  },
+  {
+    path: "/style-guide",
+    name: "style-guide",
+    component: () => import("@/views/StyleGuideView.vue"),
+    meta: { title: "设计系统", auxiliary: true, devOnly: true },
+  },
 ];
 
 const router = createRouter({
   history: createWebHashHistory(),
   routes,
+});
+
+// 开发态独占页面（如 /style-guide）在生产构建中直接重定向到概览。
+router.beforeEach((to, _from, next) => {
+  if (to.meta?.devOnly && !import.meta.env.DEV) {
+    return next({ path: "/overview", replace: true });
+  }
+  next();
 });
 
 export default router;

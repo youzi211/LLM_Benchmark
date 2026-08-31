@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import PageHero from "@/components/layouts/PageHero.vue";
+import StatusTag from "@/components/common/StatusTag.vue";
+import CronPreview from "@/components/schedules/CronPreview.vue";
+import EmptyState from "@/components/common/EmptyState.vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import ScheduleEditorDrawer from "@/components/schedules/ScheduleEditorDrawer.vue";
 import {
@@ -139,58 +143,80 @@ function profileLimitLabel(p?: SuiteProfile | null) {
 
 <template>
   <section class="schedules-page">
-    <div class="page-hero">
-      <div>
-        <p class="eyebrow">Scheduled suites</p>
-        <h1>定时任务</h1>
-        <p class="muted">列表用于观察和触发任务；复杂的创建参数已移到右侧副页，避免页面被数据集配置拉长。</p>
-      </div>
-      <div class="page-hero__actions">
-        <el-button @click="reload">刷新</el-button>
-        <el-button type="primary" @click="drawerVisible = true">新建定时任务</el-button>
-      </div>
-    </div>
+  <PageHero
+    eyebrow="SCHEDULED SUITES"
+    title="定时任务"
+    description="观察与触发定时评测套件; 复杂配置已移至右侧 Drawer, 避免主页被数据集配置拉长。"
+  >
+    <template #actions>
+      <el-button size="small" @click="reload">刷新</el-button>
+      <el-button type="primary" size="small" @click="drawerVisible = true">新建定时任务</el-button>
+    </template>
+  </PageHero>
 
     <div class="view-grid view-grid--two schedules-grid">
       <el-card class="panel-card" shadow="never">
-        <template #header>
-          <div class="card-title"><span>任务列表</span><span class="muted">{{ schedules.length }} 个任务</span></div>
-        </template>
-        <el-table v-loading="loading" :data="schedules" height="620" highlight-current-row @row-click="selectSchedule">
-          <el-table-column prop="name" label="名称" min-width="170" show-overflow-tooltip />
-          <el-table-column label="评测内容" min-width="142">
+        <div class="lb-sched-count">{{ schedules.length }} 个任务</div>
+        <el-table
+          v-loading="loading"
+          :data="schedules"
+          height="580"
+          highlight-current-row
+          :empty-text="''"
+          @row-click="selectSchedule"
+        >
+          <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
+          <el-table-column label="评测内容" min-width="140">
             <template #default="{ row }">
               <div class="lane-tags">
                 <el-tag v-for="lane in scheduleLanes(row)" :key="lane" size="small" effect="plain">{{ lane }}</el-tag>
               </div>
             </template>
           </el-table-column>
-          <el-table-column prop="profile" label="Profile" min-width="138" show-overflow-tooltip />
-          <el-table-column label="状态" width="78">
+          <el-table-column prop="profile" label="Profile" min-width="120" show-overflow-tooltip />
+          <el-table-column label="Cron" min-width="130">
             <template #default="{ row }">
-              <el-tag :type="row.enabled ? 'success' : 'info'" size="small">{{ row.enabled ? "启用" : "停用" }}</el-tag>
+              <code v-if="row.cron || row.cron_expr" class="lb-sched-cron">{{ row.cron || row.cron_expr }}</code>
+              <span v-else class="lb-sched-cron-empty">—</span>
             </template>
           </el-table-column>
-          <el-table-column label="下次运行" min-width="160"><template #default="{ row }">{{ formatDate(row.next_run_at) }}</template></el-table-column>
-          <el-table-column label="操作" width="124">
+          <el-table-column label="状态" width="90">
+            <template #default="{ row }">
+              <StatusTag :status="row.enabled ? 'completed' : 'pending'" :label="row.enabled ? '启用' : '停用'" />
+            </template>
+          </el-table-column>
+          <el-table-column label="下次运行" min-width="150">
+            <template #default="{ row }">
+              <div class="lb-sched-next">
+                <div class="lb-sched-next__time">{{ formatDate(row.next_run_at) }}</div>
+                <div v-if="row.next_run_at" class="lb-sched-next__rel">{{ relativeFromNow(row.next_run_at) }}</div>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="120" fixed="right">
             <template #default="{ row }">
               <el-button size="small" type="primary" plain @click.stop="trigger(row.schedule_id)">触发</el-button>
               <el-button size="small" type="danger" plain @click.stop="remove(row.schedule_id)">删除</el-button>
             </template>
           </el-table-column>
         </el-table>
+        <EmptyState
+          v-if="!loading && schedules.length === 0"
+          title="还没有定时任务"
+          description="新建一个定时任务, 周期性地自动跑评测套件。"
+          variant="list"
+          action-label="新建定时任务"
+          @action="drawerVisible = true"
+        />
       </el-card>
 
       <el-card class="panel-card detail-card" shadow="never">
-        <template #header>
-          <div class="card-title"><span>任务详情</span><el-button size="small" type="primary" plain @click="drawerVisible = true">新建</el-button></div>
-        </template>
-
-        <div v-if="!selected" class="detail-empty">
-          <el-empty description="选择左侧任务查看最近一次运行情况，或新建一个定时任务。">
-            <el-button type="primary" @click="drawerVisible = true">新建定时任务</el-button>
-          </el-empty>
-        </div>
+        <EmptyState
+          v-if="!selected"
+          title="还没有选中任务"
+          description="从左侧任务列表选一个查看 cron 预览, 最近运行情况, 触发或删除。"
+          variant="list"
+        />
 
         <template v-else>
           <div class="schedule-summary-card">
@@ -280,3 +306,11 @@ function profileLimitLabel(p?: SuiteProfile | null) {
     <ScheduleEditorDrawer v-model="drawerVisible" @created="onCreated" />
   </section>
 </template>
+
+<style scoped>
+.lb-sched-count {
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--lb-muted, #909399);
+}
+</style>
