@@ -261,12 +261,12 @@ function goNew() {
 
 .lb-overview__grid {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   gap: 16px;
 }
 
 .lb-overview__grid--2col {
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
 .lb-overview__trend {
@@ -352,6 +352,9 @@ function goNew() {
   font-size: 12.5px;
   color: var(--lb-primary);
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .lb-overview__recent-time {
@@ -375,7 +378,7 @@ function goNew() {
   }
   .lb-overview__grid,
   .lb-overview__grid--2col {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>

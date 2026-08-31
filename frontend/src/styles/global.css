@@ -11,7 +11,7 @@
   --lb-fg: #1f2933;
   --lb-fg-soft: #475569;
   --lb-fg-strong: #0f172a;
-  --lb-muted: #6b7280;
+  --lb-muted: #5b6b83; /* 浅色渐变底上对比度 4.8:1, 满足 WCAG AA (原 #6b7280 仅 4.2:1) */
 
   /* Lines */
   --lb-border: #e5e7eb;
@@ -319,7 +319,7 @@ body,
 
 @media (max-width: 1180px) {
   .view-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -385,7 +385,13 @@ body,
 
 /* 两栏布局（定时任务页） */
 .view-grid--two {
-  grid-template-columns: minmax(360px, 1fr) minmax(0, 1.2fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+}
+
+@media (max-width: 1180px) {
+  .view-grid--two {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* Suite 步骤时间线 */
@@ -982,4 +988,10 @@ html, body, #app,
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Element Plus 表头/空态文字默认 #909399 仅 3.08:1, 提升至 fg-soft 满足 WCAG AA */
+.el-table th.el-table__cell .cell,
+.el-table__empty-text {
+  color: var(--lb-fg-soft);
 }
