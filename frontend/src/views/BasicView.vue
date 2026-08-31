@@ -247,7 +247,7 @@ onMounted(reload);
       <template v-else>
         <div class="lb-detail__head">
           <div class="lb-detail__id">{{ selected.task_id }}</div>
-          <StatusTag :status="selected.status" />
+          <StatusTag :status="selected.status ?? 'pending'" />
         </div>
         <div class="lb-detail__meta">
           <div class="lb-detail__meta-item">

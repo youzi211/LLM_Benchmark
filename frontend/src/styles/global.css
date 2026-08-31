@@ -960,3 +960,26 @@ html, body, #app,
   font-feature-settings: 'tnum' 1;
 }
 .numeric-cell { text-align: right; font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; font-family: var(--font-heading); }
+
+/* =========================================================
+   Accessibility: keyboard focus & reduced motion
+   (ui-ux-pro-max pre-delivery checklist)
+   ========================================================= */
+/* 键盘导航可见焦点: 亮色/暗色下均使用主色描边 */
+:focus-visible {
+  outline: 2px solid var(--lb-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* 尊重系统"减少动效"偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

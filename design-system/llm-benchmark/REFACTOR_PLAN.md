@@ -206,3 +206,4 @@ Phase 4 (4.1 -> 4.2 -> 4.3 -> 4.4)
 
 
 
+| 2026-08-31 | 交付前清单 | styles/global.css, api/evaluations.ts, views/{Basic,Intelligence,Stress,Schedules}View.vue | ui-ux-pro-max Pre-Delivery Checklist 收口: 补 :focus-visible 主色焦点环 + prefers-reduced-motion 全局降级; TaskLike 补 started_at/finished_at 字段对齐后端契约; 补回丢失的 relativeFromNow 工具并修复 SchedulesView 引用; 修复能力/压测 Hero 按钮误绑原始 store action (会传 MouseEvent 当 payload); BasicView 状态兜底 pending. vue-tsc + vite build 通过 |

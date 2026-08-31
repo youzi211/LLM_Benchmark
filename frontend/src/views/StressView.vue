@@ -224,7 +224,7 @@ onUnmounted(() => {
   >
     <template #actions>
       <el-button size="small" @click="reload">刷新</el-button>
-      <el-button type="primary" :loading="submitting" @click="runStress">启动压测</el-button>
+      <el-button type="primary" :loading="submitting" @click="submit">启动压测</el-button>
     </template>
   </PageHero>
   <section class="view-grid">

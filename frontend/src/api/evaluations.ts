@@ -9,6 +9,8 @@ export interface TaskLike {
   created_at?: string;
   updated_at?: string;
   completed_at?: string;
+  started_at?: string;
+  finished_at?: string;
   report_path?: string | null;
   error?: unknown;
   [key: string]: unknown;
@@ -160,6 +162,22 @@ export function formatDate(value?: unknown) {
   const date = new Date(String(value));
   if (Number.isNaN(date.getTime())) return String(value);
   return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+/** 相对时间, 如 "3 分钟后" / "2 小时前". 用于定时任务下次运行提示. */
+export function relativeFromNow(value?: unknown): string {
+  if (!value) return "";
+  const ts = new Date(String(value)).getTime();
+  if (Number.isNaN(ts)) return "";
+  const diffSec = Math.round((ts - Date.now()) / 1000);
+  const abs = Math.abs(diffSec);
+  const future = diffSec >= 0;
+  if (abs < 60) return future ? "即将触发" : "刚刚";
+  let unit: string;
+  if (abs < 3600) unit = `${Math.floor(abs / 60)} 分钟`;
+  else if (abs < 86400) unit = `${Math.floor(abs / 3600)} 小时`;
+  else unit = `${Math.floor(abs / 86400)} 天`;
+  return future ? `${unit}后` : `${unit}前`;
 }
 
 export function parseIntegerList(raw: string): number[] | undefined {
