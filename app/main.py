@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes_evalscope import router as evalscope_router
+from app.api.routes_health import router as health_router
 from app.api.routes_intelligence import router as intelligence_router
 from app.api.routes_jobs import router as jobs_router
 from app.api.routes_metrics import router as metrics_router
@@ -59,6 +60,7 @@ def health():
 
 
 app.include_router(models_router, prefix="/api")
+app.include_router(health_router, prefix="/api")
 app.include_router(metrics_router, prefix="/api")
 app.include_router(overview_router, prefix="/api")
 app.include_router(evalscope_router, prefix="/api")
