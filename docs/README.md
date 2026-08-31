@@ -23,6 +23,7 @@
 |---|---|
 | [系统架构说明](architecture.md) | 模块分层、数据流、存储结构、suite 执行顺序、扩展点和 Codex 快速排查入口。 |
 | [指标测试方法文档](metric-test-methods.md) | 网关 smoke 指标、EvalScope 能力评测、EvalScope 压测和统一报告的测试目标、口径、观测字段和人工关注点。 |
+| [自定义数据集接入指南](custom-dataset-guide.md) | 三种接入方式（通用适配器 / 内置数据集 / 自定义 Adapter）、数据格式、Judge 与沙箱配置、常见问题。 |
 
 ## 关键约定速查
 
