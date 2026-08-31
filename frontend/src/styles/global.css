@@ -19,6 +19,7 @@
   --lb-border-dashed: rgba(148, 163, 184, 0.30);
 
   /* Brand & semantic */
+  --lb-primary: #1e40af;  /* 品牌主色: 导航激活态、关键 CTA、焦点环、强调数字 */
   --lb-accent: #2563eb;
   --lb-accent-soft: rgba(37, 99, 235, 0.10);
   --lb-accent-soft-2: rgba(37, 99, 235, 0.18);
@@ -107,7 +108,8 @@ body,
   padding: 0;
   font-family: var(--font-body);
   color: var(--lb-fg);
-  background:
+  background-color: var(--lb-bg);
+  background-image:
     radial-gradient(circle at 16% 0%, rgba(37, 99, 235, 0.08), transparent 28%),
     linear-gradient(180deg, #f8fbff 0%, var(--lb-bg) 42%, #eef2f7 100%);
   font-size: 14px;
@@ -716,6 +718,7 @@ body,
   --lb-border-dashed: rgba(148, 163, 184, 0.22);
 
   --lb-accent: #60a5fa;
+    --lb-primary: #60a5fa;  /* 暗色品牌主色: 焦点环与激活态在深色表面保持可见 */
   --lb-accent-soft: rgba(96, 165, 250, 0.16);
   --lb-accent-soft-2: rgba(96, 165, 250, 0.24);
   --lb-success: #22c55e;
@@ -742,6 +745,11 @@ body,
   background:
     radial-gradient(circle at 16% 0%, rgba(96, 165, 250, 0.10), transparent 32%),
     linear-gradient(180deg, #0b1220 0%, #060b18 42%, #050912 100%);
+}
+
+/* 暗色 body 显式 background-color 确保对比度检测工具能识别真实背景 */
+:root[data-theme="dark"] body {
+  background-color: #0b1220;
 }
 
 /* 暗色下的 Element Plus 表面: 让卡片 / 抽屉 / 下拉真正变暗 */
@@ -978,6 +986,15 @@ html, body, #app,
   border-radius: 4px;
 }
 
+/* Element Plus 组件焦点环: 原生 input 被 EP 隐藏 outline, 通过 wrapper 传递可见焦点 */
+.el-select__wrapper:focus-visible,
+.el-input__wrapper:focus-visible,
+.el-radio-button__original-radio:focus-visible + .el-radio-button__inner,
+.el-checkbox__original-checkbox:focus-visible + .el-checkbox__inner {
+  outline: 2px solid var(--lb-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 /* 尊重系统"减少动效"偏好 */
 @media (prefers-reduced-motion: reduce) {
   *,
