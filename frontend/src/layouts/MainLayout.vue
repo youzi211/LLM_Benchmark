@@ -114,7 +114,7 @@ onUnmounted(() => {
 const mainTabs = [
   { name: "overview", label: "概览", path: "/overview" },
   { name: "basic", label: "基础评测", path: "/basic" },
-  { name: "stress", label: "压测评评", path: "/stress" },
+  { name: "stress", label: "压测评测", path: "/stress" },
   { name: "intelligence", label: "能力评测", path: "/intelligence" },
 ];
 

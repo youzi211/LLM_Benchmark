@@ -270,7 +270,7 @@ onMounted(() => {
         <div v-show="currentStep === 0">
           <el-form-item label="评测线选择">
             <el-checkbox v-model="form.runGateway">基础评测</el-checkbox>
-            <el-checkbox v-model="form.runStress">压测评评</el-checkbox>
+            <el-checkbox v-model="form.runStress">压测评测</el-checkbox>
             <el-checkbox v-model="form.runIntelligence">能力评测</el-checkbox>
           </el-form-item>
           <el-form-item>
@@ -342,7 +342,7 @@ onMounted(() => {
               <el-col :span="12"><el-form-item label="最大 token"><el-input v-model="form.stressMaxTokens" /></el-form-item></el-col>
             </el-row>
           </template>
-          <EmptyState v-else title="未启用压测评评" description="回到第 1 步勾选压测评评" variant="list" />
+          <EmptyState v-else title="未启用压测评测" description="回到第 1 步勾选压测评测" variant="list" />
         </div>
 
         <!-- Step 3: 临时模型 -->
@@ -364,7 +364,7 @@ onMounted(() => {
           <h3>请确认配置</h3>
           <ul class="lb-suite-confirm__list">
             <li><span>基础评测</span><b>{{ form.runGateway ? '启用' : '跳过' }}</b></li>
-            <li><span>压测评评</span><b>{{ form.runStress ? '启用 · 数据集 ' + (selectedStressDataset || '默认') : '跳过' }}</b></li>
+            <li><span>压测评测</span><b>{{ form.runStress ? '启用 · 数据集 ' + (selectedStressDataset || '默认') : '跳过' }}</b></li>
             <li><span>能力评测</span><b>{{ form.runIntelligence ? '启用 · ' + chosenDatasets.length + ' 个数据集' : '跳过' }}</b></li>
             <li><span>模型</span><b>{{ form.quickMode ? (form.quickModel || '未填') : (store.currentModel?.name || store.currentId || '未选') }}</b></li>
             <li><span>压测并发</span><b>{{ form.stressParallel }}</b></li>

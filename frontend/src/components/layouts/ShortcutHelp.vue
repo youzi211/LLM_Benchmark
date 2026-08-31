@@ -33,7 +33,7 @@ const groups = [
     title: "导航",
     items: [
       { keys: ["G", "B"], desc: "跳到 基础评测" },
-      { keys: ["G", "S"], desc: "跳到 压测评评" },
+      { keys: ["G", "S"], desc: "跳到 压测评测" },
       { keys: ["G", "I"], desc: "跳到 能力评测" },
       { keys: ["G", "O"], desc: "跳到 概览" },
       { keys: ["G", "U"], desc: "跳到 一键完整评测" },

@@ -219,7 +219,7 @@ onUnmounted(() => {
 <template>
   <PageHero
     eyebrow="STRESS TEST"
-    title="压测评评"
+    title="压测评测"
     description="通过并发与限速场景探测模型的吞吐量、延迟分布与稳定性。适合在容量规划或限速策略调整前后做基线对比。"
   >
     <template #actions>

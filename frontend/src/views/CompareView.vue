@@ -168,7 +168,7 @@ function getMetricCount(c: Column) {
           <div class="lb-cmp__col-id">{{ col.id }}</div>
           <el-button text size="small" @click="removeCol(col.id)" :icon="Close" title="移除此列" />
         </div>
-        <div class="lb-cmp__col-type">{{ col.type === "basic" ? "基础评测" : col.type === "stress" ? "压测评评" : "能力评测" }}</div>
+        <div class="lb-cmp__col-type">{{ col.type === "basic" ? "基础评测" : col.type === "stress" ? "压测评测" : "能力评测" }}</div>
 
         <div v-if="col.error" class="lb-cmp__error">{{ col.error }}</div>
         <div v-else-if="col.loading" class="lb-cmp__loading">加载中…</div>
