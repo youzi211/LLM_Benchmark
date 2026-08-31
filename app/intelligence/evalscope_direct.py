@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import re
 import subprocess
 import threading
 from datetime import datetime
@@ -12,22 +13,91 @@ from typing import Any, Callable
 import httpx
 
 from app.evalscope_defaults import (
-    CODE_EXECUTION_DATASETS,
-    DATASET_METADATA,
     DEFAULT_EVAL_BATCH_SIZE,
     DEFAULT_GENERATION_CONFIG,
     DEFAULT_INTELLIGENCE_DATASET_ARGS,
     DEFAULT_INTELLIGENCE_DATASETS,
-    LLM_JUDGE_DATASETS,
 )
 from app.intelligence.schemas import EvalScopeConfig
 from app.reports.markdown import redact_text
 
 DEFAULT_DATASETS = list(DEFAULT_INTELLIGENCE_DATASETS)
-_DATASET_META: dict[str, dict[str, Any]] = {name: dict(meta) for name, meta in DATASET_METADATA.items()}
+
+# ---------------------------------------------------------------------------
+# Dynamic EvalScope benchmark metadata – no more hardcoded DATASET_METADATA.
+# All dataset info (pretty_name, tags, judge/code-exec needs, subsets, …)
+# is read directly from EvalScope's BENCHMARK_REGISTRY at runtime.
+# ---------------------------------------------------------------------------
+
+_evalscope_benchmarks_cache: dict[str, dict[str, Any]] | None = None
+
+
+def _load_evalscope_benchmarks() -> dict[str, dict[str, Any]]:
+    """Import EvalScope once and return a dict of all registered benchmarks.
+
+    Each value contains the fields consumed by the report / API layer.  This
+    is intentionally lazy so that the module is importable even when EvalScope
+    is not installed (e.g. during test collection).
+    """
+    global _evalscope_benchmarks_cache
+    if _evalscope_benchmarks_cache is not None:
+        return _evalscope_benchmarks_cache
+
+    from evalscope.api.registry import BENCHMARK_REGISTRY  # type: ignore
+    from evalscope.constants import Tags  # type: ignore
+
+    def _tag_str(t: Any) -> str:
+        return t.value if hasattr(t, 'value') else str(t)
+
+    result: dict[str, dict[str, Any]] = {}
+    for name, meta in BENCHMARK_REGISTRY.items():
+        tags = [_tag_str(t) for t in (meta.tags or [])]
+        needs_judge = (
+            getattr(meta.data_adapter, 'llm_judge_default', False)
+            if meta.data_adapter
+            else False
+        )
+        needs_code = Tags.CODING in tags
+        # Extract first meaningful line from EvalScope's long description
+        desc = (meta.description or '').strip()
+        short_desc = desc
+        for line in desc.split('\n'):
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                continue
+            short_desc = stripped
+            break
+
+        result[name] = {
+            'name': name,
+            'pretty_name': meta.pretty_name or name,
+            'description': short_desc,
+            'categories': tags,
+            'needs_judge': needs_judge,
+            'needs_code_exec': needs_code,
+            'subsets': list(meta.subset_list or []),
+            'dataset_id': meta.dataset_id,
+            'eval_split': meta.eval_split,
+            'metric_list': list(meta.metric_list or []),
+        }
+    _evalscope_benchmarks_cache = result
+    return result
+
+
+def _dataset_needs_judge(name: str) -> bool:
+    bm = _load_evalscope_benchmarks()
+    meta = bm.get(name)
+    return bool(meta and meta.get('needs_judge'))
+
+
+def _dataset_needs_code_exec(name: str) -> bool:
+    bm = _load_evalscope_benchmarks()
+    meta = bm.get(name)
+    return bool(meta and meta.get('needs_code_exec'))
 
 
 class EvalScopeDirectError(RuntimeError):
+    pass
     pass
 
 
@@ -198,7 +268,7 @@ def _remote_sandbox_execution_smoke(
 
 
 def dataset_metadata(config: EvalScopeConfig) -> dict[str, Any]:
-    datasets = {name: dict(meta) for name, meta in _DATASET_META.items()}
+    datasets = {name: dict(meta) for name, meta in _load_evalscope_benchmarks().items()}
     local = local_dataset_metadata(config).get("datasets", {})
     for name, meta in local.items():
         row = datasets.setdefault(name, {})
@@ -238,9 +308,9 @@ def local_dataset_metadata(config: EvalScopeConfig) -> dict[str, Any]:
     datasets: dict[str, dict[str, Any]] = {}
     if root.exists():
         for child in sorted(root.iterdir()):
-            if not child.is_dir() or child.name.startswith(".") or child.name not in _DATASET_META:
+            if not child.is_dir() or child.name.startswith(".") or child.name not in _load_evalscope_benchmarks():
                 continue
-            base = dict(_DATASET_META.get(child.name, {}))
+            base = dict(_load_evalscope_benchmarks().get(child.name, {}))
             subsets = _local_subset_names(child)
             configured_subsets = _configured_subset_list(config, child.name)
             base.update(
@@ -261,7 +331,7 @@ def local_dataset_metadata(config: EvalScopeConfig) -> dict[str, Any]:
 
 
 def datasets_requiring_judge(datasets: list[str]) -> list[str]:
-    return [dataset for dataset in datasets if dataset in LLM_JUDGE_DATASETS]
+    return [dataset for dataset in datasets if _dataset_needs_judge(dataset)]
 
 
 def judge_config_status(
@@ -599,7 +669,7 @@ class EvalScopeIntelligenceExecutor:
         }
         if self.config.datasets_dir:
             data["dataset_dir"] = str(datasets_root(self.config))
-        if dataset in CODE_EXECUTION_DATASETS:
+        if _dataset_needs_code_exec(dataset):
             if not self.config.sandbox_enabled:
                 raise EvalScopeDirectError(
                     f"sandbox_required:{dataset}; "
@@ -611,7 +681,7 @@ class EvalScopeIntelligenceExecutor:
                 "engine": self.config.sandbox_type or "docker",
                 "manager_config": dict(self.config.sandbox_manager_config or {}),
             }
-        if dataset in LLM_JUDGE_DATASETS and judge_model_args:
+        if _dataset_needs_judge(dataset) and judge_model_args:
             data["judge_strategy"] = "llm"
             data["judge_model_args"] = judge_model_args
             data["judge_worker_num"] = self.config.judge_worker_num
@@ -630,7 +700,7 @@ class EvalScopeIntelligenceExecutor:
         root = datasets_root(self.config)
         if not root.exists():
             return {}
-        return {child.name: str(child) for child in root.iterdir() if child.is_dir() and child.name in _DATASET_META}
+        return {child.name: str(child) for child in root.iterdir() if child.is_dir() and child.name in _load_evalscope_benchmarks()}
 
     def _report_table(self, report_map: dict[str, Any]) -> str | None:
         if not report_map:

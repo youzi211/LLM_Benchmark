@@ -78,7 +78,7 @@ def test_dataset_metadata_includes_local_subsets_and_descriptions(tmp_path):
 
     bbh = data["datasets"]["bbh"]
     assert bbh["available_local"] is True
-    assert bbh["description"] == "Big-Bench Hard 复杂推理"
+    assert bbh["description"] == "BBH (BIG-Bench Hard) is a subset of 23 challenging tasks from the BIG-Bench benchmark that are specifically selected because language models initially struggled with them. These tasks require complex reasoning abilities that benefit from Chain-of-Thought (CoT) prompting."
     assert bbh["subset_count"] == 2
     assert bbh["subsets"] == ["boolean_expressions", "date_understanding"]
 

@@ -7,7 +7,6 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 from app.evalscope_defaults import (
-    CODE_EXECUTION_DATASETS,
     DEFAULT_SCHEDULE_PROFILE,
     DEFAULT_STRESS_DATASET,
     DEFAULT_STRESS_MAX_PROMPT_LENGTH,
@@ -30,6 +29,7 @@ from app.evalscope_defaults import (
     SCHEDULED_LIGHT_STRESS_NUMBER,
     SCHEDULED_LIGHT_STRESS_PARALLEL,
 )
+from app.intelligence.evalscope_direct import _dataset_needs_code_exec
 from app.intelligence.config_store import EvalScopeConfigStore
 from app.storage.file_utils import read_json_file
 from app.suites.schemas import SuiteScheduleCreate, SuiteStressOptions
@@ -158,7 +158,7 @@ def apply_profile_to_schedule_request(
         raise ValueError(f"profile_not_found:{request.profile}")
 
     profile_datasets = set(profile.intelligence_datasets or [])
-    needs_sandbox = profile.requires_sandbox or bool(profile_datasets & CODE_EXECUTION_DATASETS)
+    needs_sandbox = profile.requires_sandbox or any(_dataset_needs_code_exec(d) for d in profile_datasets)
     config = (config_store or EvalScopeConfigStore()).load()
     if needs_sandbox and not config.sandbox_enabled:
         raise ValueError(f"profile_requires_sandbox:{profile.profile_id}")
