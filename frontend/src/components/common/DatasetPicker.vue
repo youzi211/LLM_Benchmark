@@ -53,7 +53,7 @@ const visibleEntries = computed(() => {
     case "judge":
       return entries.filter(([, m]) => Boolean(m.needs_judge));
     case "sandbox":
-      return entries.filter(([, m]) => Array.isArray(m.categories) && m.categories.includes("Code"));
+      return entries.filter(([, m]) => Array.isArray(m.categories) && m.categories.includes("Coding"));
   }
   return entries;
 });
@@ -165,7 +165,7 @@ function effectiveSubsetsList(name: string): string[] {
             <el-tag v-if="defaultDatasets.includes(name)" size="small" type="success" effect="plain">推荐</el-tag>
             <el-tag v-if="meta.available_local" size="small" type="info" effect="plain">本地</el-tag>
             <el-tag v-if="meta.needs_judge" size="small" type="warning" effect="plain">需 Judge</el-tag>
-            <el-tag v-if="meta.categories?.includes('Code')" size="small" type="warning" effect="plain">需 Sandbox</el-tag>
+            <el-tag v-if="meta.categories?.includes('Coding')" size="small" type="warning" effect="plain">需 Sandbox</el-tag>
             <el-tag v-for="c in meta.categories || []" :key="c" size="small" effect="plain">{{ c }}</el-tag>
           </div>
 
