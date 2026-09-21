@@ -1,4 +1,5 @@
 import asyncio
+import json
 import threading
 
 import pytest
@@ -11,6 +12,7 @@ from app.storage.model_store import ModelStore
 from app.storage.stress_task_store import StressTaskStore
 from app.stress import runner as stress_runner_module
 from app.stress.runner import StressRunner
+from app.stress.schemas import StressDefaultRunRequest
 
 
 class FakeStressExecutor:
@@ -27,6 +29,42 @@ class FakeStressExecutor:
     def run(self, *, task_id, payload):
         self.submitted_payload = payload.model_dump(mode="json")
         return {**self.result, "task_id": task_id}
+
+
+def test_stress_progress_reads_evalscope_snapshot_and_tolerates_partial_json(tmp_path):
+    runner = StressRunner.__new__(StressRunner)
+    output_dir = tmp_path / "task" / "run"
+    output_dir.mkdir(parents=True)
+    progress_file = output_dir / "progress.json"
+    progress_file.write_text("{", encoding="utf-8")
+
+    assert runner._load_progress(tmp_path / "task") is None
+
+    progress_file.write_text(json.dumps({
+        "status": "running", "pipeline": "perf", "total_count": 20,
+        "processed_count": 7, "percent": 35.0, "updated_at": "2026-09-21T15:00:00",
+    }), encoding="utf-8")
+
+    progress = runner._load_progress(tmp_path / "task")
+    assert progress.percent == 35.0
+    assert progress.completed_requests == 7
+    assert progress.total_requests == 20
+
+
+def test_stress_progress_derives_current_sweep_run():
+    runner = StressRunner.__new__(StressRunner)
+    progress = stress_runner_module.StressProgress(
+        total_requests=60,
+        completed_requests=15,
+        percent=25,
+    )
+
+    enriched = runner._enrich_progress(progress, {"number": [10, 20, 30]})
+
+    assert enriched.current_run == 2
+    assert enriched.total_runs == 3
+    assert enriched.current_run_completed == 5
+    assert enriched.current_run_total == 20
 
 
 def _model_store(path, protocol="chat_completions"):
@@ -86,6 +124,50 @@ async def test_stress_runner_maps_responses_protocol(tmp_path):
     assert executor.submitted_payload["url"] == "http://model.local/v1/responses"
 
 
+def test_stress_runner_passes_supported_evalscope_advanced_options(tmp_path):
+    runner = StressRunner(
+        model_store=_model_store(tmp_path / "models.json"),
+        task_store=StressTaskStore(tmp_path / "stress_tasks"),
+        executor=FakeStressExecutor(),
+        reports_dir=tmp_path / "reports",
+        run_in_background=False,
+    )
+    options = StressDefaultRunRequest(
+        model_id="m1",
+        open_loop=True,
+        rate=[2.0, 5.0],
+        number=[20, 50],
+        warmup_num=0.1,
+        duration=30,
+        data_source="local",
+        multi_turn=True,
+        min_turns=2,
+        max_turns=6,
+        connect_timeout=3,
+        read_timeout=60,
+        total_timeout=120,
+        temperature=0.2,
+        top_p=0.9,
+        top_k=40,
+        frequency_penalty=0.1,
+        repetition_penalty=1.05,
+        seed=7,
+        stop=["END"],
+        logprobs=True,
+    )
+
+    payload = runner._build_payload(runner.model_store.get("m1"), options)
+    data = payload.model_dump(mode="json", exclude_none=True)
+
+    for key in (
+        "open_loop", "rate", "warmup_num", "duration", "data_source", "multi_turn",
+        "min_turns", "max_turns", "connect_timeout", "read_timeout", "total_timeout",
+        "temperature", "top_p", "top_k", "frequency_penalty", "repetition_penalty",
+        "seed", "stop", "logprobs",
+    ):
+        assert data[key] == getattr(options, key)
+
+
 @pytest.mark.asyncio
 async def test_stress_runner_normalizes_evalscope_perf_raw_mapping(tmp_path):
     executor = FakeStressExecutor(result={
@@ -103,6 +185,9 @@ async def test_stress_runner_normalizes_evalscope_perf_raw_mapping(tmp_path):
                     "avg_latency": 0.25,
                     "avg_ttft": 120.0,
                     "avg_tpot": 11.0,
+                    "avg_itl": 9.0,
+                    "avg_input_tokens": 128.0,
+                    "avg_output_tokens": 32.0,
                 },
                 "percentiles": {
                     "rows": [
@@ -133,6 +218,34 @@ async def test_stress_runner_normalizes_evalscope_perf_raw_mapping(tmp_path):
     assert run.output_throughput == 12.5
     assert run.p95_latency_seconds == 0.4
     assert task.normalized_result.summary["best_output_throughput"] == 12.5
+    report = open(task.report_path, encoding="utf-8").read()
+    assert "ITL(ms)" in report
+    assert "Input Tokens" in report
+
+
+@pytest.mark.asyncio
+async def test_stress_runner_marks_all_failed_workload_as_failed(tmp_path):
+    executor = FakeStressExecutor(result={
+        "status": "completed",
+        "parallel_1_number_1": {
+            "metrics": {"concurrency": 1, "total_requests": 1, "succeed_requests": 0, "failed_requests": 1},
+            "percentiles": {"rows": []},
+        },
+    })
+    runner = StressRunner(
+        model_store=_model_store(tmp_path / "models.json"),
+        task_store=StressTaskStore(tmp_path / "stress_tasks"),
+        executor=executor,
+        reports_dir=tmp_path / "reports",
+        run_in_background=False,
+    )
+
+    task = await runner.submit_default("m1")
+
+    assert task.status == "failed"
+    assert task.normalized_result.status == "failed"
+    assert task.error["type"] == "StressWorkloadError"
+    assert task.normalized_result.errors[0]["failed_requests"] == 1
 
 
 

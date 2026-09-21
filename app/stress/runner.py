@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 from datetime import datetime
@@ -10,6 +11,7 @@ from uuid import uuid4
 from app.core.models import ModelConfig, utc_now
 from app.evalscope_defaults import DEFAULT_STRESS_DATASET, LOCAL_RESOLVABLE_STRESS_DATASETS
 from app.intelligence.config_store import EvalScopeConfigStore
+from app.intelligence.evalscope_direct import outputs_root
 from app.jobs.executor import get_job_executor
 from app.reports.markdown import redact_text
 from app.storage.model_store import ModelStore
@@ -19,6 +21,7 @@ from app.stress.report import write_stress_report
 from app.stress.schemas import (
     StressDefaultRunRequest,
     StressNormalizedResult,
+    StressProgress,
     StressRemoteSubmitPayload,
     StressRunResult,
     StressTask,
@@ -45,6 +48,27 @@ ALLOWED_OPTION_KEYS: tuple[str, ...] = (
     "prefix_length",
     "dataset_args",
     "extra_args",
+    "data_source",
+    "open_loop",
+    "warmup_num",
+    "duration",
+    "multi_turn",
+    "min_turns",
+    "max_turns",
+    "connect_timeout",
+    "read_timeout",
+    "total_timeout",
+    "temperature",
+    "top_p",
+    "top_k",
+    "frequency_penalty",
+    "repetition_penalty",
+    "logprobs",
+    "n_choices",
+    "seed",
+    "stop",
+    "stop_token_ids",
+    "tokenize_prompt",
 )
 
 # 已知会从 ModelScope 下载的真实语料数据集。当 dataset 命中且 data/stress_datasets
@@ -116,6 +140,13 @@ def _parse_parallel_number(label: str) -> tuple[int | None, int | None]:
     return int(match.group(1)), int(match.group(2))
 
 
+def _parse_rate_number(label: str) -> tuple[float | None, int | None]:
+    match = re.search(r"rate_([0-9]+(?:\.[0-9]+)?)_number_(\d+)", label)
+    if not match:
+        return None, None
+    return float(match.group(1)), int(match.group(2))
+
+
 def _percentile_value(rows: Any, percentile: str, key: str) -> Any:
     if not isinstance(rows, list):
         return None
@@ -137,6 +168,8 @@ def _perf_mapping_rows(raw: Any) -> list[dict[str, Any]]:
         if not isinstance(value, dict) or not isinstance(value.get("metrics"), dict):
             continue
         parallel, number = _parse_parallel_number(str(label))
+        rate, rate_number = _parse_rate_number(str(label))
+        number = number if number is not None else rate_number
         metrics = dict(value["metrics"])
         percentile_rows = (value.get("percentiles") or {}).get("rows") if isinstance(value.get("percentiles"), dict) else []
         if parallel is not None:
@@ -144,6 +177,8 @@ def _perf_mapping_rows(raw: Any) -> list[dict[str, Any]]:
             metrics.setdefault("concurrency", parallel)
         if number is not None:
             metrics.setdefault("number", number)
+        if rate is not None:
+            metrics.setdefault("rate", rate)
         metrics.setdefault("total", metrics.get("total_requests"))
         metrics.setdefault("success", metrics.get("succeed_requests", metrics.get("success_requests")))
         metrics.setdefault("failed", metrics.get("failed_requests"))
@@ -152,6 +187,8 @@ def _perf_mapping_rows(raw: Any) -> list[dict[str, Any]]:
         metrics.setdefault("avg_latency_seconds", metrics.get("avg_latency"))
         metrics.setdefault("avg_ttft_ms", metrics.get("avg_ttft"))
         metrics.setdefault("avg_tpot_ms", metrics.get("avg_tpot"))
+        metrics.setdefault("avg_itl_ms", metrics.get("avg_itl"))
+        metrics.setdefault("input_throughput", metrics.get("input_token_throughput"))
         metrics.setdefault("p50_latency_seconds", _percentile_value(percentile_rows, "50%", "latency"))
         metrics.setdefault("p95_latency_seconds", _percentile_value(percentile_rows, "95%", "latency"))
         metrics.setdefault("p99_latency_seconds", _percentile_value(percentile_rows, "99%", "latency"))
@@ -190,8 +227,9 @@ class StressRunner:
             raise ValueError(f"model_disabled:{model_id}")
 
         payload = self._build_payload(model, options)
+        task_id = new_stress_task_id()
         task = StressTask(
-            task_id=new_stress_task_id(),
+            task_id=task_id,
             model_id=model.id,
             model_config_name=model.name,
             upstream_model_name=model.model,
@@ -200,6 +238,7 @@ class StressRunner:
             request_config=self._public_request_config(payload),
             status="pending",
             progress="任务已创建，等待本地 EvalScope 执行",
+            raw_output_dir=str(outputs_root(self.config) / "stress" / task_id),
         )
         task.raw_submit_response = {"mode": IN_PROCESS_EVALSCOPE, "task_id": task.task_id, "status": "pending"}
         self.task_store.save(task)
@@ -236,9 +275,25 @@ class StressRunner:
                 return
             task = latest or task
             task.raw_result = raw_result
-            task.raw_output_dir = raw_result.get("outputs_dir") if isinstance(raw_result.get("outputs_dir"), str) else None
+            task.raw_output_dir = (
+                raw_result.get("outputs_dir")
+                if isinstance(raw_result.get("outputs_dir"), str)
+                else task.raw_output_dir
+            )
             task.normalized_result = self._normalize(task, raw_result)
             task.status = _coerce_status(raw_result.get("status"), "completed")
+            if self._is_all_failed(task.normalized_result):
+                failed_requests = sum(run.failed or 0 for run in task.normalized_result.runs)
+                failure = {
+                    "type": "StressWorkloadError",
+                    "message": "EvalScope 压测请求全部失败",
+                    "failed_requests": failed_requests,
+                }
+                task.status = "failed"
+                task.error = failure
+                task.normalized_result.status = "failed"
+                if not task.normalized_result.errors:
+                    task.normalized_result.errors.append(failure)
             task.completed_at = _parse_dt(raw_result.get("completed_at")) or utc_now()
             task.progress = "压测完成" if task.status == "completed" else "压测失败"
             report_path = write_stress_report(task, self.reports_dir)
@@ -351,7 +406,22 @@ class StressRunner:
         return self.task_store.get(task_id) or task
 
     async def refresh_status(self, task_id: str) -> StressTask | None:
-        return self._maybe_renormalize(self.task_store.get(task_id))
+        task = self._maybe_renormalize(self.task_store.get(task_id))
+        if task is None:
+            return None
+        progress = self._load_progress(Path(task.raw_output_dir)) if task.raw_output_dir else None
+        if progress is not None:
+            progress = self._enrich_progress(progress, task.request_config)
+        if progress is not None and task.progress_detail != progress:
+            task.progress_detail = progress
+            if task.status not in TERMINAL_STATUSES:
+                completed = progress.completed_requests or 0
+                total = progress.total_requests or 0
+                percent = progress.percent if progress.percent is not None else 0
+                task.progress = f"压测进行中：{completed}/{total}（{percent:.1f}%）"
+            task.updated_at = utc_now()
+            self.task_store.save(task)
+        return task
 
     async def fetch_result(self, task_id: str) -> StressTask | None:
         task = self.task_store.get(task_id)
@@ -392,6 +462,59 @@ class StressRunner:
         self.task_store.save(task)
         return task
 
+    def _load_progress(self, output_dir: Path) -> StressProgress | None:
+        """Read EvalScope's atomic progress snapshot without breaking task queries on races."""
+        try:
+            candidates = list(output_dir.rglob("progress.json")) if output_dir.is_dir() else []
+            if not candidates:
+                return None
+            progress_file = max(candidates, key=lambda path: path.stat().st_mtime_ns)
+            raw = json.loads(progress_file.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                return None
+            return StressProgress.model_validate({
+                "status": raw.get("status", "running"),
+                "pipeline": raw.get("pipeline"),
+                "total_requests": raw.get("total_count"),
+                "completed_requests": raw.get("processed_count"),
+                "success_requests": raw.get("success_count"),
+                "failed_requests": raw.get("failed_count"),
+                "percent": raw.get("percent"),
+                "updated_at": raw.get("updated_at"),
+            })
+        except (OSError, ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def _enrich_progress(progress: StressProgress, request_config: dict[str, Any]) -> StressProgress:
+        numbers = request_config.get("number")
+        if not isinstance(numbers, list) or not numbers or not all(isinstance(item, int) and item > 0 for item in numbers):
+            return progress
+        completed = max(0, progress.completed_requests or 0)
+        cumulative = 0
+        current_index = len(numbers) - 1
+        for index, count in enumerate(numbers):
+            if completed < cumulative + count:
+                current_index = index
+                break
+            cumulative += count
+        current_total = numbers[current_index]
+        current_completed = min(current_total, max(0, completed - sum(numbers[:current_index])))
+        return progress.model_copy(update={
+            "current_run": current_index + 1,
+            "total_runs": len(numbers),
+            "current_run_completed": current_completed,
+            "current_run_total": current_total,
+        })
+
+    @staticmethod
+    def _is_all_failed(result: StressNormalizedResult) -> bool:
+        if not result.runs:
+            return False
+        total_success = sum(run.success or 0 for run in result.runs)
+        total_failed = sum(run.failed or 0 for run in result.runs)
+        return total_success == 0 and total_failed > 0
+
     def _normalize(self, task: StressTask, raw_result: dict[str, Any]) -> StressNormalizedResult:
         raw_runs = raw_result.get("runs") or raw_result.get("results") or []
         if not raw_runs:
@@ -429,6 +552,7 @@ class StressRunner:
             success_rate = (success or 0) / total
         return StressRunResult(
             parallel=first("parallel", "concurrency"),
+            rate=first("rate", "request_rate"),
             number=first("number"),
             total=total,
             success=success,
@@ -447,6 +571,15 @@ class StressRunner:
             avg_tpot_ms=first("avg_tpot_ms", "avg_tpot", "tpot_avg"),
             p95_tpot_ms=first("p95_tpot_ms", "p95_tpot", "tpot_p95"),
             p99_tpot_ms=first("p99_tpot_ms", "p99_tpot", "tpot_p99"),
+            avg_itl_ms=first("avg_itl_ms", "avg_itl", "itl_avg"),
+            avg_input_tokens=first("avg_input_tokens", "average_input_tokens"),
+            avg_output_tokens=first("avg_output_tokens", "average_output_tokens"),
+            input_throughput=first("input_throughput", "input_token_throughput"),
+            avg_turns=first("avg_turns", "average_turns"),
+            avg_cached_percent=first("avg_cached_percent", "average_cached_percent"),
+            avg_first_turn_ttft_ms=first("avg_first_turn_ttft_ms", "avg_first_turn_ttft"),
+            avg_subsequent_turn_ttft_ms=first("avg_subsequent_turn_ttft_ms", "avg_subsequent_turn_ttft"),
+            trace_summary=(row.get("raw") or {}).get("trace_summary") if isinstance(row.get("raw"), dict) else None,
         )
 
     def _summary_from_runs(self, runs: list[StressRunResult]) -> dict[str, Any]:

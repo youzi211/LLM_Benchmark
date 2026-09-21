@@ -7,7 +7,7 @@ from app.evalscope_defaults import (
     DEFAULT_STRESS_MIN_PROMPT_LENGTH,
 )
 from app.stress.runner import StressRunner
-from app.stress.schemas import StressRemoteSubmitPayload, StressTask
+from app.stress.schemas import StressDefaultRunRequest, StressRemoteSubmitPayload, StressTask
 
 
 def test_stress_normalizer_accepts_evalscope_perf_mapping_without_service_wrapper():
@@ -24,6 +24,13 @@ def test_stress_normalizer_accepts_evalscope_perf_mapping_without_service_wrappe
                 "failed_requests": 0,
                 "request_throughput": 4.2,
                 "output_token_throughput": 12.5,
+                "avg_itl": 9.0,
+                "avg_input_tokens": 128.0,
+                "avg_output_tokens": 32.0,
+                "input_token_throughput": 512.0,
+                "avg_turns": 3.0,
+                "avg_first_turn_ttft": 140.0,
+                "avg_subsequent_turn_ttft": 80.0,
             },
             "percentiles": {"rows": [{"percentile": "95%", "latency": 0.4, "ttft": 200.0}]},
         },
@@ -35,6 +42,11 @@ def test_stress_normalizer_accepts_evalscope_perf_mapping_without_service_wrappe
     assert result.runs[0].success == 2
     assert result.runs[0].p95_latency_seconds == 0.4
     assert result.summary["best_output_throughput"] == 12.5
+    assert result.runs[0].avg_itl_ms == 9.0
+    assert result.runs[0].avg_input_tokens == 128.0
+    assert result.runs[0].input_throughput == 512.0
+    assert result.runs[0].avg_turns == 3.0
+    assert result.runs[0].avg_first_turn_ttft_ms == 140.0
 
 
 def test_stress_payload_schema_remains_evalscope_arguments_friendly():
@@ -65,3 +77,30 @@ def test_stress_request_rejects_mismatched_parallel_number_lists():
         )
 
     assert "parallel and number must have the same length" in str(exc_info.value)
+
+
+def test_stress_payload_keeps_optional_min_tokens_unset_by_default():
+    payload = StressRemoteSubmitPayload(model="demo", url="http://model/v1/chat/completions")
+
+    assert payload.min_tokens is None
+    assert payload.model_dump(mode="json", exclude_none=True).get("min_tokens") is None
+
+
+def test_open_loop_request_pairs_rate_and_number_instead_of_parallel():
+    request = StressDefaultRunRequest(
+        model_id="m1",
+        open_loop=True,
+        rate=[2.0, 5.0],
+        number=[20, 50],
+        parallel=[100],
+    )
+
+    assert request.open_loop is True
+    assert request.rate == [2.0, 5.0]
+
+
+def test_open_loop_request_rejects_mismatched_rate_number_lists():
+    with pytest.raises(ValidationError) as exc_info:
+        StressDefaultRunRequest(model_id="m1", open_loop=True, rate=[2.0, 5.0], number=[20])
+
+    assert "rate and number must have the same length" in str(exc_info.value)

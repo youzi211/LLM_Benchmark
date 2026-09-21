@@ -20,7 +20,10 @@ class EvalScopeStressExecutor:
         except Exception as exc:  # pragma: no cover - depends on optional local install
             raise RuntimeError(f"evalscope_perf_import_failed:{redact_text(str(exc))}") from exc
 
-        data = payload.model_dump(mode="json")
+        # Preserve EvalScope's own defaults for optional fields.  Passing an
+        # explicit None breaks non-null defaults such as temperature=0.0 and
+        # can also leak unsupported extension fields to upstream gateways.
+        data = payload.model_dump(mode="json", exclude_none=True)
         data["outputs_dir"] = str(outputs_root(self.config) / "stress" / task_id)
         data["enable_progress_tracker"] = True
         args = Arguments(**data)

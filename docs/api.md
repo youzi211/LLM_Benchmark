@@ -21,7 +21,7 @@
 - `GET /ui-vue/`：打开 Vue 重写控制台（构建产物 `app/web_vue/`，源码 `frontend/`）。该挂载仅在 `app/web_vue/` 目录实际存在时生效；当目录缺失（例如未执行 `npm run build`），主服务 `_mount_optional_static(app, "/ui-vue", WEB_VUE_DIR, name="ui-vue")` 会跳过挂载，`/ui-vue/*` 路径返回 404，不影响 `/ui/`。
 - 控制台主界面按三条评测线组织：基础评测、压测评测、能力评测。三条线共用顶部的已保存模型选择器（`GET /api/models`）。
 - 基础评测页调用 `POST /api/tasks/run`、`GET /api/tasks`、`GET /api/tasks/{task_id}` 和 `GET /api/reports/{task_id}`。
-- 压测评测页调用 `GET /api/stress/evalscope/health`、`POST /api/stress/tasks/default`、`GET /api/stress/tasks`、`GET /api/stress/tasks/{task_id}`、`GET /api/stress/tasks/{task_id}/result`、`POST /api/stress/tasks/{task_id}/cancel` 和 `GET /api/stress/reports/{task_id}`。
+- 压测评测页调用 `GET /api/stress/evalscope/health`、`POST /api/stress/tasks/default`、`GET /api/stress/tasks`、`GET /api/stress/tasks/{task_id}`、`GET /api/stress/tasks/{task_id}/result`、`POST /api/stress/tasks/{task_id}/cancel`、`GET /api/stress/tasks/{task_id}/raw-result`、`GET /api/stress/tasks/{task_id}/artifacts`、`GET /api/stress/tasks/{task_id}/artifacts/{artifact_path}` 和 `GET /api/stress/reports/{task_id}`。
 - 能力评测页调用 `GET /api/intelligence/evalscope/health`、`GET /api/intelligence/evalscope/config`、`PUT /api/intelligence/evalscope/config`、`GET /api/intelligence/evalscope/judge-config`、`GET /api/intelligence/evalscope/judge-health`、`GET /api/intelligence/evalscope/sandbox-health`、`GET /api/intelligence/datasets`、`POST /api/intelligence/tasks/default`、`POST /api/intelligence/tasks`、`GET /api/intelligence/tasks`、`GET /api/intelligence/tasks/{task_id}`、`GET /api/intelligence/tasks/{task_id}/progress`、`GET /api/intelligence/tasks/{task_id}/result`、`POST /api/intelligence/tasks/{task_id}/cancel` 和 `GET /api/intelligence/reports/{task_id}`；数据集元信息会展示描述、本地可用状态、本地路径、本地 subset 列表和当前配置的 `subset_list`。
 - 一键完整评测和定时任务作为辅助入口保留，分别调用 `/api/suites/default`、`/api/suites/quick`、`/api/suites`、`/api/suites/{suite_id}/report`、`/api/suites/{suite_id}/cancel` 以及 `/api/suites/schedules*`。
 - 控制台不在浏览器 localStorage 中保存 API Key；临时模型完整评测仍遵循 `/api/suites/quick` 的安全边界，即不把传入 Key 写入 `data/models.json`、suite JSON 或报告。定时任务使用已保存模型配置。
@@ -151,6 +151,10 @@ enabled, declared_context_tokens, declared_max_output_tokens, concurrency_levels
   "status": "ok"
 }
 ```
+
+### GET `/api/health`
+
+返回控制台使用的整体健康快照，包括运行时长、模型配置数量、EvalScope 数据集目录就绪状态和调度器状态；该接口不调用外部模型，适合高频轮询。
 
 ## 5. 模型配置接口
 
@@ -768,16 +772,25 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 | `model_id` | string | 是 | - | 本系统模型配置 ID。 |
 | `parallel` | integer[]/null | 否 | `null` | EvalScope 并发档位；为空时采用 `app/evalscope_defaults.py` 中的 `DEFAULT_STRESS_PARALLEL`（当前 `[1, 5, 10, 20]`）。 |
 | `number` | integer[]/null | 否 | `null` | 每个并发档位请求数；为空时采用 `app/evalscope_defaults.py` 中的 `DEFAULT_STRESS_NUMBER`（当前 `[10, 50, 100, 200]`）。 |
-| `rate` | number[]/null | 否 | `null` | 限速档位，传给 EvalScope。 |
+| `open_loop` | boolean | 否 | `false` | `false` 为闭环并发模式；`true` 为开环速率模式。 |
+| `rate` | number/number[]/null | 否 | `null` | 开环目标请求速率（req/s）；列表长度必须与 `number` 一致。 |
+| `warmup_num` | number/null | 否 | `null` | 预热请求数（>=1）或请求比例（0~1）。 |
+| `duration` | number/null | 否 | `null` | 每个档位的最长执行秒数。 |
 | `dataset` | string/null | 否 | `null` | EvalScope perf 数据集；为空时采用 `app/evalscope_defaults.py` 中的 `DEFAULT_STRESS_DATASET`（当前 `longalpaca`）。 |
 | `dataset_path` | string/null | 否 | `null` | EvalScope perf 数据集路径。命中 `longalpaca` 等会从 ModelScope 下载的数据集、且 `data/stress_datasets/` 下有同名目录、`<name>.json` 或 `<name>.jsonl` 时自动补齐，使 EvalScope 改为本地加载，避免每次评测联网下载。 |
 | `dataset_args` | object/null | 否 | `{}` | 数据集参数，例如自定义 prompt 文件。 |
+| `data_source` | string/null | 否 | `null` | `modelscope`、`huggingface` 或 `local`。 |
 | `min_prompt_length` / `max_prompt_length` | integer/null | 否 | `0` / `131072` | prompt 长度过滤范围，对齐 EvalScope 官方默认。`tokenizer_path` 为空时按字符长度过滤；`max_prompt_length=131072` 超出即丢弃。 |
-| `min_tokens` / `max_tokens` | integer/null | 否 | `512` | 输出 token 范围。 |
+| `min_tokens` / `max_tokens` | integer/null | 否 | `null` / `512` | 输出 token 范围；`min_tokens` 默认不发送，以兼容不支持该扩展字段的 OpenAI 网关。 |
 | `stream` | boolean/null | 否 | `true` | 是否使用流式请求；TTFT 统计通常要求开启。 |
 | `tokenizer_path` | string/null | 否 | `null` | EvalScope tokenizer 路径。为空时按字符长度过滤，适配 longalpaca 这类真实长文本语料。 |
 | `prefix_length` | integer/null | 否 | `0` | 前缀长度，用于后续缓存/前缀压测。 |
 | `extra_args` | object/null | 否 | `{}` | 透传给 EvalScope perf 的扩展参数。 |
+| `multi_turn` / `min_turns` / `max_turns` | boolean / integer / integer | 否 | `false` / `null` / `null` | 多轮会话模式与轮数范围；名称含 `multi_turn` 的数据集必须开启多轮。 |
+| `connect_timeout` / `read_timeout` / `total_timeout` | integer/null | 否 | `null` | 连接、读取和总超时秒数。 |
+| `temperature` / `top_p` / `top_k` | number/null | 否 | `null` | 常用生成参数。 |
+| `frequency_penalty` / `repetition_penalty` / `logprobs` / `n_choices` / `seed` | mixed/null | 否 | `null` | 其他常用生成参数。 |
+| `stop` / `stop_token_ids` / `tokenize_prompt` | mixed/null | 否 | `null` | 停止条件及客户端 tokenize 开关。 |
 
 `POST /api/stress/tasks` 当前与默认入口使用同一请求结构，便于后续扩展。
 
@@ -793,6 +806,7 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 | `protocol` | string/null | `chat_completions` 或 `responses`。 |
 | `evalscope_base_url` | string | 兼容字段；当前固定为 `in-process`。 |
 | `status` | string | `pending`、`running`、`completed`、`failed`、`interrupted`。 |
+| `progress` / `progress_detail` | string / object/null | 中文进度摘要，以及 EvalScope 的请求总数、已完成数、百分比和更新时间。 |
 | `request_config` | object | 已脱敏的压测请求配置，不包含 `api_key`。 |
 | `normalized_result` | object/null | 精简标准化结果，只包含并发档位指标、吞吐、延迟、TTFT/TPOT、汇总和异常摘要；不嵌入完整原始结果。 |
 | `raw_result` | object/null | 任务级完整 EvalScope perf 业务结果归档；大字段只保留这一份，详情通过结果 API 获取。 |
@@ -847,7 +861,7 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 
 #### GET `/api/stress/tasks/{task_id}`
 
-读取本地任务。任务不存在返回 `404 stress_task_not_found`。
+读取本地任务，并容错读取任务输出目录中的 EvalScope `progress.json`。任务不存在返回 `404 stress_task_not_found`。
 
 #### POST `/api/stress/tasks/{task_id}/cancel`
 
@@ -856,6 +870,20 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 #### GET `/api/stress/tasks/{task_id}/result`
 
 获取压测结果。若任务已结束但报告尚未生成，服务会补写 Markdown 报告并返回更新后的 `StressTask`。终态任务的完整 EvalScope perf 业务结果位于任务级 `raw_result`，`raw_output_dir` 提供原始输出目录定位；`normalized_result` 只用于页面、总览和摘要展示。
+
+如果 EvalScope 流程正常结束但所有业务请求都失败，任务状态会改为 `failed`，并写入 `StressWorkloadError`，避免把 0% 成功率误报为完成。
+
+#### GET `/api/stress/tasks/{task_id}/raw-result`
+
+以附件形式下载任务级完整 `raw_result` JSON；不存在时返回 `404 stress_raw_result_not_found`。
+
+#### GET `/api/stress/tasks/{task_id}/artifacts`
+
+递归列出 `raw_output_dir` 内的任务产物，返回相对路径、大小、修改时间和 MIME 类型。不会返回目录外文件。
+
+#### GET `/api/stress/tasks/{task_id}/artifacts/{artifact_path:path}`
+
+下载单个任务产物。实际 URL 中 `{artifact_path:path}` 表示可包含 `/` 的相对路径；该路径必须位于任务输出目录内，目录穿越、绝对路径和符号链接越界会被拒绝。
 
 #### GET `/api/stress/reports/{task_id}`
 
