@@ -246,9 +246,3 @@ class StressTask(BaseModel):
     raw_output_dir: str | None = None
     normalized_result: StressNormalizedResult | None = None
     error: dict[str, Any] | None = None
-
-    @model_validator(mode="after")
-    def derive_duration(self) -> "StressTask":
-        if self.duration_ms is None and self.completed_at is not None:
-            self.duration_ms = max(0.0, (self.completed_at - self.created_at).total_seconds() * 1000)
-        return self

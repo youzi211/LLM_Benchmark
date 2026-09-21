@@ -1,6 +1,7 @@
 import asyncio
 import json
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -76,7 +77,11 @@ def test_stress_task_exposes_duration_ms_from_task_timestamps():
         completed_at="2026-09-21T10:00:02.500000Z",
     )
 
-    assert task.model_dump(mode="json")["duration_ms"] == 2500.0
+    completed = StressRunner._with_completion(task, task.completed_at)
+
+    assert task.duration_ms is None
+    assert completed.duration_ms == 2500.0
+    assert completed.model_dump(mode="json")["duration_ms"] == 2500.0
 
 
 def test_stress_runner_backfills_legacy_result_metrics(tmp_path):
@@ -118,6 +123,11 @@ def test_stress_runner_backfills_legacy_result_metrics(tmp_path):
     assert refreshed.normalized_result.runs[0].avg_input_tokens == 128
     assert refreshed.normalized_result.runs[0].avg_output_tokens == 32
     assert refreshed.normalized_result.runs[0].avg_turns == 3
+    persisted = runner.task_store.get(task.task_id)
+    assert persisted is not None
+    assert persisted.normalized_result.runs[0].avg_itl_ms == 7.5
+    assert persisted.report_path is not None
+    assert Path(persisted.report_path).is_file()
 
 
 def _model_store(path, protocol="chat_completions"):
