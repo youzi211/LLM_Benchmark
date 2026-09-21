@@ -1,4 +1,7 @@
 import math
+from pathlib import Path
+
+import pytest
 
 from fastapi.testclient import TestClient
 
@@ -41,6 +44,9 @@ def test_stress_openapi_paths_present():
     assert "/api/stress/tasks/default" in paths
     assert "/api/stress/tasks/{task_id}/result" in paths
     assert "/api/stress/reports/{task_id}" in paths
+    assert "/api/stress/tasks/{task_id}/raw-result" in paths
+    assert "/api/stress/tasks/{task_id}/artifacts" in paths
+    assert "/api/stress/tasks/{task_id}/artifacts/{artifact_path}" in paths
 
 
 def test_stress_datasets_default_is_available_when_local_default_missing(tmp_path, monkeypatch):
@@ -149,3 +155,61 @@ def test_stress_cancel_route(monkeypatch):
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "interrupted"
     assert client.post("/api/stress/tasks/missing/cancel").status_code == 404
+
+
+def test_stress_raw_result_and_artifact_downloads(tmp_path, monkeypatch):
+    from app.api import routes_stress
+
+    output_dir = tmp_path / "output"
+    nested = output_dir / "run"
+    nested.mkdir(parents=True)
+    (nested / "summary.json").write_text('{"ok": true}', encoding="utf-8")
+    task = StressTask(
+        task_id="stress-task",
+        model_id="m1",
+        evalscope_base_url="in-process",
+        raw_result={"status": "completed", "secret": None},
+        raw_output_dir=str(output_dir),
+    )
+
+    class Store:
+        def get(self, task_id):
+            return task if task_id == task.task_id else None
+
+    monkeypatch.setattr(routes_stress, "StressTaskStore", lambda: Store())
+    client = TestClient(app)
+
+    raw = client.get("/api/stress/tasks/stress-task/raw-result")
+    assert raw.status_code == 200
+    assert raw.json()["status"] == "completed"
+    assert "attachment" in raw.headers["content-disposition"]
+
+    listing = client.get("/api/stress/tasks/stress-task/artifacts")
+    assert listing.status_code == 200
+    assert listing.json()["artifacts"][0]["path"] == "run/summary.json"
+
+    downloaded = client.get("/api/stress/tasks/stress-task/artifacts/run/summary.json")
+    assert downloaded.status_code == 200
+    assert downloaded.json() == {"ok": True}
+
+
+def test_stress_artifact_path_is_confined_to_task_directory(tmp_path):
+    from app.stress.artifacts import resolve_task_artifact
+
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("private", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="outside task output directory"):
+        resolve_task_artifact(output_dir, "../outside.txt")
+    with pytest.raises(ValueError, match="relative"):
+        resolve_task_artifact(output_dir, str(outside.resolve()))
+
+    link = output_dir / "escape.txt"
+    try:
+        link.symlink_to(outside)
+    except OSError:
+        return
+    with pytest.raises(ValueError, match="outside task output directory"):
+        resolve_task_artifact(output_dir, "escape.txt")

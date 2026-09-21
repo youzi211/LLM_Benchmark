@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 from fastapi import APIRouter
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.api.errors import api_error
 from app.evalscope_defaults import (
@@ -16,6 +16,7 @@ from app.intelligence.config_store import EvalScopeConfigStore
 from app.intelligence.evalscope_direct import evalscope_health
 from app.storage.stress_task_store import StressTaskStore
 from app.stress.runner import StressRunner
+from app.stress.artifacts import list_task_artifacts, resolve_task_artifact
 from app.stress.schemas import StressDefaultRunRequest, StressRunRequest
 from app.utils.json_sanitize import make_json_safe
 
@@ -132,6 +133,50 @@ async def get_stress_result(task_id: str):
     if task is None:
         raise api_error(404, "stress_task_not_found", f"Stress task not found: {task_id}")
     return make_json_safe(task)
+
+
+def _task_with_output(task_id: str):
+    task = StressTaskStore().get(task_id)
+    if task is None:
+        raise api_error(404, "stress_task_not_found", f"Stress task not found: {task_id}")
+    if not task.raw_output_dir:
+        raise api_error(404, "stress_artifacts_not_found", f"No raw output directory for stress task: {task_id}")
+    return task
+
+
+@router.get("/tasks/{task_id}/raw-result")
+def download_stress_raw_result(task_id: str):
+    task = StressTaskStore().get(task_id)
+    if task is None:
+        raise api_error(404, "stress_task_not_found", f"Stress task not found: {task_id}")
+    if task.raw_result is None:
+        raise api_error(404, "stress_raw_result_not_found", f"No raw result for stress task: {task_id}")
+    return JSONResponse(
+        content=make_json_safe(task.raw_result),
+        headers={"Content-Disposition": f'attachment; filename="{task_id}-raw-result.json"'},
+    )
+
+
+@router.get("/tasks/{task_id}/artifacts")
+def list_stress_artifacts(task_id: str):
+    task = _task_with_output(task_id)
+    try:
+        artifacts = list_task_artifacts(Path(task.raw_output_dir))
+    except (FileNotFoundError, OSError):
+        raise api_error(404, "stress_artifacts_not_found", f"Raw output directory not found for task: {task_id}")
+    return {"task_id": task_id, "artifacts": artifacts}
+
+
+@router.get("/tasks/{task_id}/artifacts/{artifact_path:path}")
+def download_stress_artifact(task_id: str, artifact_path: str):
+    task = _task_with_output(task_id)
+    try:
+        artifact = resolve_task_artifact(Path(task.raw_output_dir), artifact_path)
+    except ValueError as exc:
+        raise api_error(400, "invalid_stress_artifact_path", str(exc))
+    except (FileNotFoundError, OSError):
+        raise api_error(404, "stress_artifact_not_found", f"Artifact not found: {artifact_path}")
+    return FileResponse(path=artifact, filename=artifact.name)
 
 
 @router.get("/reports/{task_id}")
