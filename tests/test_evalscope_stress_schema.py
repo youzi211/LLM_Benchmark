@@ -24,6 +24,13 @@ def test_stress_normalizer_accepts_evalscope_perf_mapping_without_service_wrappe
                 "failed_requests": 0,
                 "request_throughput": 4.2,
                 "output_token_throughput": 12.5,
+                "avg_itl": 9.0,
+                "avg_input_tokens": 128.0,
+                "avg_output_tokens": 32.0,
+                "input_token_throughput": 512.0,
+                "avg_turns": 3.0,
+                "avg_first_turn_ttft": 140.0,
+                "avg_subsequent_turn_ttft": 80.0,
             },
             "percentiles": {"rows": [{"percentile": "95%", "latency": 0.4, "ttft": 200.0}]},
         },
@@ -35,6 +42,11 @@ def test_stress_normalizer_accepts_evalscope_perf_mapping_without_service_wrappe
     assert result.runs[0].success == 2
     assert result.runs[0].p95_latency_seconds == 0.4
     assert result.summary["best_output_throughput"] == 12.5
+    assert result.runs[0].avg_itl_ms == 9.0
+    assert result.runs[0].avg_input_tokens == 128.0
+    assert result.runs[0].input_throughput == 512.0
+    assert result.runs[0].avg_turns == 3.0
+    assert result.runs[0].avg_first_turn_ttft_ms == 140.0
 
 
 def test_stress_payload_schema_remains_evalscope_arguments_friendly():

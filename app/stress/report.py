@@ -74,21 +74,28 @@ def write_stress_report(task: StressTask, reports_dir: Path | None = None) -> Pa
     lines.append("")
     cfg = dict(task.request_config or {})
     cfg.pop("api_key", None)
-    for key in ["api", "url", "parallel", "number", "rate", "stream", "dataset", "dataset_path", "tokenizer_path", "min_prompt_length", "max_prompt_length", "min_tokens", "max_tokens", "prefix_length", "dataset_args", "extra_args"]:
+    for key in [
+        "api", "url", "parallel", "number", "open_loop", "rate", "warmup_num", "duration",
+        "stream", "dataset", "dataset_path", "data_source", "tokenizer_path", "min_prompt_length",
+        "max_prompt_length", "min_tokens", "max_tokens", "prefix_length", "multi_turn", "min_turns",
+        "max_turns", "connect_timeout", "read_timeout", "total_timeout", "temperature", "top_p",
+        "top_k", "frequency_penalty", "repetition_penalty", "logprobs", "n_choices", "seed", "stop",
+        "stop_token_ids", "tokenize_prompt", "dataset_args", "extra_args",
+    ]:
         if key in cfg:
             lines.append(f"- `{key}`：`{_cell(cfg[key])}`")
 
     lines.append("")
     lines.append("## 3. 并发档位结果")
     lines.append("")
-    lines.append("| 并发 | 请求数 | 成功 | 失败 | 成功率 | RPS | 输出吞吐(tok/s) | 平均延迟(s) | P95延迟(s) | 平均TTFT(ms) | P95 TTFT(ms) | 平均TPOT(ms) |")
-    lines.append("|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+    lines.append("| 并发/速率 | 请求数 | 成功 | 失败 | 成功率 | RPS | 输出吞吐(tok/s) | 平均延迟(s) | P95延迟(s) | 平均TTFT(ms) | P95 TTFT(ms) | 平均TPOT(ms) | ITL(ms) | Avg Input Tokens | Avg Output Tokens | 平均轮数 |")
+    lines.append("|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     if result and result.runs:
         for run in result.runs:
             lines.append(
                 "| "
                 + " | ".join([
-                    _fmt(run.parallel),
+                    _fmt(run.rate if run.rate is not None else run.parallel),
                     _fmt(run.total or run.number),
                     _fmt(run.success),
                     _fmt(run.failed),
@@ -100,11 +107,15 @@ def write_stress_report(task: StressTask, reports_dir: Path | None = None) -> Pa
                     _fmt(run.avg_ttft_ms),
                     _fmt(run.p95_ttft_ms),
                     _fmt(run.avg_tpot_ms),
+                    _fmt(run.avg_itl_ms),
+                    _fmt(run.avg_input_tokens),
+                    _fmt(run.avg_output_tokens),
+                    _fmt(run.avg_turns),
                 ])
                 + " |"
             )
     else:
-        lines.append("| - | - | - | - | - | - | - | - | - | - | - | - |")
+        lines.append("| - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - |")
 
     lines.append("")
     lines.append("## 4. 异常摘要")

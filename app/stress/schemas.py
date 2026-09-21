@@ -163,6 +163,7 @@ class StressRemoteSubmitPayload(BaseModel):
 
 class StressRunResult(BaseModel):
     parallel: int | None = None
+    rate: float | None = None
     number: int | None = None
     total: int | None = None
     success: int | None = None
@@ -181,6 +182,26 @@ class StressRunResult(BaseModel):
     avg_tpot_ms: float | None = None
     p95_tpot_ms: float | None = None
     p99_tpot_ms: float | None = None
+    avg_itl_ms: float | None = None
+    avg_input_tokens: float | None = None
+    avg_output_tokens: float | None = None
+    input_throughput: float | None = None
+    avg_turns: float | None = None
+    avg_cached_percent: float | None = None
+    avg_first_turn_ttft_ms: float | None = None
+    avg_subsequent_turn_ttft_ms: float | None = None
+    trace_summary: dict[str, Any] | None = None
+
+
+class StressProgress(BaseModel):
+    status: str = "running"
+    pipeline: str | None = None
+    total_requests: int | None = None
+    completed_requests: int | None = None
+    success_requests: int | None = None
+    failed_requests: int | None = None
+    percent: float | None = Field(default=None, ge=0, le=100)
+    updated_at: datetime | None = None
 
 
 class StressNormalizedResult(BaseModel):
@@ -205,6 +226,7 @@ class StressTask(BaseModel):
     evalscope_base_url: str
     status: StressTaskStatus = "pending"
     progress: str | None = None
+    progress_detail: StressProgress | None = None
     message: str | None = None
     request_config: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
