@@ -830,15 +830,16 @@ EvalScope 压测不是 `gateway_acceptance_v1` 的同步接入验收指标，而
 }
 ```
 
-3. 调用 `POST /api/stress/tasks/default`，可覆盖 `parallel`、`number`、`stream`、`rate`、`min_prompt_length`、`max_prompt_length`、`min_tokens`、`max_tokens`、`tokenizer_path`。
-4. 轮询 `GET /api/stress/tasks/{task_id}`，完成后调用 `GET /api/stress/tasks/{task_id}/result` 拉取结果并生成报告。
-5. 下载 `GET /api/stress/reports/{task_id}`，人工分析吞吐、延迟、失败率和错误摘要；完整 EvalScope 业务结果从同一任务结果 API 的 `raw_result` 获取，`raw_output_dir` 用于定位原始产物。
+3. 调用 `POST /api/stress/tasks/default`。闭环模式用 `parallel`/`number`；开环模式设置 `open_loop=true` 并用 `rate`/`number`。还可覆盖预热、持续时间、多轮、超时、生成参数、`dataset_args` 和 `extra_args`。
+4. 轮询 `GET /api/stress/tasks/{task_id}`，读取 `progress_detail.percent`、请求总数和已处理数；完成后调用 `GET /api/stress/tasks/{task_id}/result` 拉取结果并生成报告。
+5. 下载 `GET /api/stress/reports/{task_id}` 分析摘要；通过 `GET /api/stress/tasks/{task_id}/raw-result` 下载完整 JSON，通过 `GET /api/stress/tasks/{task_id}/artifacts` 和文件下载接口获取 trace、summary、数据库或 HTML 等原始产物。
 
 ### 压测结果字段
 
 | 字段 | 说明 |
 |---|---|
 | `parallel` | 并发档位。 |
+| `rate` | 开环模式目标请求速率。 |
 | `total` / `number` | 请求总数。 |
 | `success` / `failed` / `success_rate` | 成功、失败和成功率。 |
 | `request_throughput` | 请求吞吐，单位 req/s。 |
@@ -846,6 +847,10 @@ EvalScope 压测不是 `gateway_acceptance_v1` 的同步接入验收指标，而
 | `avg_latency_seconds` / `p50_latency_seconds` / `p95_latency_seconds` / `p99_latency_seconds` | 延迟统计。 |
 | `avg_ttft_ms` / `p95_ttft_ms` / `p99_ttft_ms` | 首 token 时间统计；要求 `stream=true`。 |
 | `avg_tpot_ms` / `p95_tpot_ms` / `p99_tpot_ms` | 输出 token 间隔统计。 |
+| `avg_itl_ms` | 平均 token 间延迟。 |
+| `avg_input_tokens` / `avg_output_tokens` / `input_throughput` | 输入/输出 token 规模与输入吞吐。 |
+| `avg_turns` / `avg_cached_percent` / `avg_first_turn_ttft_ms` / `avg_subsequent_turn_ttft_ms` | 多轮对话与缓存相关指标。 |
+| `trace_summary` | EvalScope 多轮 trace 级分布摘要。 |
 | `summary.max_success_parallel` | 未发现失败的最大并发档位。 |
 | `summary.best_req_throughput` | 最高请求吞吐。 |
 | `summary.first_error_parallel` | 首次出现失败的并发档位。 |
@@ -854,6 +859,9 @@ EvalScope 压测不是 `gateway_acceptance_v1` 的同步接入验收指标，而
 
 - 本项目不设置自动阈值，不给出“通过/不通过”结论；相关人员根据模型用途和压测曲线自行分析。
 - `stream=true` 是 TTFT 可信统计的前提。
+- 短对话可用 `speed_benchmark`/`random`，长上下文使用本地 `longalpaca`/`kontext_bench`，多轮使用 `*_multi_turn` 数据集并设置 `multi_turn=true`。添加数据集只是场景输入；还应匹配输入长度、轮数、负载模式和输出长度参数。
+- `progress.json` 缺失或处于原子替换窗口时，任务查询继续返回最近任务状态，不因进度文件异常失败。
+- 所有请求失败时任务标记为 `failed`，但仍保留报告、原始 JSON 和任务产物用于排查。
 - `prefix_length` 和 `dataset_args.prefix_file` 可用于后续观察前缀/缓存压测，但当前缓存能力基础指标仍由 `cache_behavior` smoke 负责。
 - 压测数据集默认读取 `app/evalscope_defaults.py` 中的 `DEFAULT_STRESS_DATASET`（当前为 `longalpaca`；真实长文本语料可一次性下载到 `data/stress_datasets/longalpaca.json` 或 `.jsonl`，runner 自动补齐 `dataset_path` 指向本地文件，EvalScope 改为 `from local` 加载，不再每次评测从 ModelScope 下载）。长度过滤对齐 EvalScope 官方默认：`min_prompt_length=0`、`max_prompt_length=131072`、`tokenizer_path=null`（按字符长度过滤），避免原先 1024 token 过滤把长文本几乎全部丢弃。若要按 token 长度随机生成 prompt，提交时显式传 `dataset=random` 并设置 `min_prompt_length` / `max_prompt_length` / `tokenizer_path`。
 - `StressTask.normalized_result` 只保留并发档位指标、吞吐、延迟、TTFT/TPOT、汇总和异常摘要；完整 EvalScope perf 返回只保留在任务级 `raw_result`，原始文件目录由 `raw_output_dir` 指向。
