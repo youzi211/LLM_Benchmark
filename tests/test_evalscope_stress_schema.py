@@ -7,7 +7,7 @@ from app.evalscope_defaults import (
     DEFAULT_STRESS_MIN_PROMPT_LENGTH,
 )
 from app.stress.runner import StressRunner
-from app.stress.schemas import StressRemoteSubmitPayload, StressTask
+from app.stress.schemas import StressDefaultRunRequest, StressRemoteSubmitPayload, StressTask
 
 
 def test_stress_normalizer_accepts_evalscope_perf_mapping_without_service_wrapper():
@@ -65,3 +65,30 @@ def test_stress_request_rejects_mismatched_parallel_number_lists():
         )
 
     assert "parallel and number must have the same length" in str(exc_info.value)
+
+
+def test_stress_payload_keeps_optional_min_tokens_unset_by_default():
+    payload = StressRemoteSubmitPayload(model="demo", url="http://model/v1/chat/completions")
+
+    assert payload.min_tokens is None
+    assert payload.model_dump(mode="json", exclude_none=True).get("min_tokens") is None
+
+
+def test_open_loop_request_pairs_rate_and_number_instead_of_parallel():
+    request = StressDefaultRunRequest(
+        model_id="m1",
+        open_loop=True,
+        rate=[2.0, 5.0],
+        number=[20, 50],
+        parallel=[100],
+    )
+
+    assert request.open_loop is True
+    assert request.rate == [2.0, 5.0]
+
+
+def test_open_loop_request_rejects_mismatched_rate_number_lists():
+    with pytest.raises(ValidationError) as exc_info:
+        StressDefaultRunRequest(model_id="m1", open_loop=True, rate=[2.0, 5.0], number=[20])
+
+    assert "rate and number must have the same length" in str(exc_info.value)

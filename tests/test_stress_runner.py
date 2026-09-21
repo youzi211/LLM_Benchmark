@@ -11,6 +11,7 @@ from app.storage.model_store import ModelStore
 from app.storage.stress_task_store import StressTaskStore
 from app.stress import runner as stress_runner_module
 from app.stress.runner import StressRunner
+from app.stress.schemas import StressDefaultRunRequest
 
 
 class FakeStressExecutor:
@@ -84,6 +85,50 @@ async def test_stress_runner_maps_responses_protocol(tmp_path):
 
     assert executor.submitted_payload["api"] == "openai_responses"
     assert executor.submitted_payload["url"] == "http://model.local/v1/responses"
+
+
+def test_stress_runner_passes_supported_evalscope_advanced_options(tmp_path):
+    runner = StressRunner(
+        model_store=_model_store(tmp_path / "models.json"),
+        task_store=StressTaskStore(tmp_path / "stress_tasks"),
+        executor=FakeStressExecutor(),
+        reports_dir=tmp_path / "reports",
+        run_in_background=False,
+    )
+    options = StressDefaultRunRequest(
+        model_id="m1",
+        open_loop=True,
+        rate=[2.0, 5.0],
+        number=[20, 50],
+        warmup_num=0.1,
+        duration=30,
+        data_source="local",
+        multi_turn=True,
+        min_turns=2,
+        max_turns=6,
+        connect_timeout=3,
+        read_timeout=60,
+        total_timeout=120,
+        temperature=0.2,
+        top_p=0.9,
+        top_k=40,
+        frequency_penalty=0.1,
+        repetition_penalty=1.05,
+        seed=7,
+        stop=["END"],
+        logprobs=True,
+    )
+
+    payload = runner._build_payload(runner.model_store.get("m1"), options)
+    data = payload.model_dump(mode="json", exclude_none=True)
+
+    for key in (
+        "open_loop", "rate", "warmup_num", "duration", "data_source", "multi_turn",
+        "min_turns", "max_turns", "connect_timeout", "read_timeout", "total_timeout",
+        "temperature", "top_p", "top_k", "frequency_penalty", "repetition_penalty",
+        "seed", "stop", "logprobs",
+    ):
+        assert data[key] == getattr(options, key)
 
 
 @pytest.mark.asyncio
