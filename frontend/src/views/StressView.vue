@@ -85,6 +85,10 @@ function runsOf(task: TaskLike | null) {
   return Array.isArray(normalized?.runs) ? normalized.runs : [];
 }
 
+function formatMetric(value: unknown) {
+  return value == null || value === "" ? "—" : String(value);
+}
+
 const throughputOption = computed(() => makeLineOption("吞吐", "req/s", runsOf(selected.value), [
   ["request_throughput", "请求吞吐"],
   ["output_throughput", "输出吞吐"],
@@ -490,10 +494,10 @@ onUnmounted(() => {
           <el-table-column prop="p95_latency_seconds" label="P95(s)" width="90" />
           <el-table-column prop="avg_ttft_ms" label="TTFT(ms)" width="105" />
           <el-table-column prop="avg_tpot_ms" label="TPOT(ms)" width="105" />
-          <el-table-column prop="avg_itl_ms" label="ITL(ms)" width="95" />
-          <el-table-column prop="avg_input_tokens" label="输入 Token" width="105" />
-          <el-table-column prop="avg_output_tokens" label="输出 Token" width="105" />
-          <el-table-column prop="avg_turns" label="平均轮数" width="95" />
+          <el-table-column prop="avg_itl_ms" label="ITL(ms)" width="95"><template #default="{ row }">{{ formatMetric(row.avg_itl_ms) }}</template></el-table-column>
+          <el-table-column prop="avg_input_tokens" label="输入 Token" width="105"><template #default="{ row }">{{ formatMetric(row.avg_input_tokens) }}</template></el-table-column>
+          <el-table-column prop="avg_output_tokens" label="输出 Token" width="105"><template #default="{ row }">{{ formatMetric(row.avg_output_tokens) }}</template></el-table-column>
+          <el-table-column prop="avg_turns" label="平均轮数" width="95"><template #default="{ row }">{{ formatMetric(row.avg_turns) }}</template></el-table-column>
         </el-table>
 
         <section class="artifact-panel mt" aria-labelledby="artifact-title">
