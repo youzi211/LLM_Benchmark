@@ -112,6 +112,36 @@ def test_stress_result_sanitizes_non_finite_numbers(monkeypatch):
     assert payload["normalized_result"]["runs"][0]["avg_latency_seconds"] is None
 
 
+def test_stress_result_exposes_duration_and_backfilled_metrics(monkeypatch):
+    from app.api import routes_stress
+
+    task = StressTask(
+        task_id="stress-task-display",
+        model_id="m1",
+        evalscope_base_url="in-process",
+        status="completed",
+        duration_ms=2500.0,
+        normalized_result=StressNormalizedResult(
+            task_id="stress-task-display",
+            runs=[StressRunResult(avg_itl_ms=0.0, avg_input_tokens=128.0, avg_output_tokens=32.0, avg_turns=None)],
+        ),
+    )
+
+    class Runner:
+        async def fetch_result(self, task_id: str):
+            return task if task_id == task.task_id else None
+
+    monkeypatch.setattr(routes_stress, "_runner", lambda: Runner())
+    response = TestClient(app).get(f"/api/stress/tasks/{task.task_id}/result")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["duration_ms"] == 2500.0
+    assert payload["normalized_result"]["runs"][0]["avg_itl_ms"] == 0.0
+    assert payload["normalized_result"]["runs"][0]["avg_input_tokens"] == 128.0
+    assert payload["normalized_result"]["runs"][0]["avg_output_tokens"] == 32.0
+
+
 def test_stress_routes_errors(monkeypatch):
     from app.api import routes_stress
 

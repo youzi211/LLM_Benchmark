@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from datetime import datetime
@@ -26,6 +27,9 @@ from app.stress.schemas import (
     StressRunResult,
     StressTask,
 )
+from app.utils.timing import timestamp_elapsed_ms
+
+logger = logging.getLogger(__name__)
 
 # 压测用本地数据集目录（与智力评测的 data/evalscope_datasets 分开，避免语义混淆）。
 # 仅当用户指定了本地数据集名但未显式给出 dataset_path 时自动填充。
@@ -81,6 +85,12 @@ TERMINAL_STATUSES = {"completed", "failed", "interrupted"}
 ALLOWED_STATUSES = {"pending", "running", "completed", "failed", "interrupted"}
 IN_PROCESS_EVALSCOPE = "in-process"
 SAFE_BUILTIN_STRESS_DATASET = "speed_benchmark"
+LEGACY_DISPLAY_METRIC_FIELDS = (
+    "avg_itl_ms",
+    "avg_input_tokens",
+    "avg_output_tokens",
+    "avg_turns",
+)
 
 
 class StressExecutor(Protocol):
@@ -294,7 +304,7 @@ class StressRunner:
                 task.normalized_result.status = "failed"
                 if not task.normalized_result.errors:
                     task.normalized_result.errors.append(failure)
-            task.completed_at = _parse_dt(raw_result.get("completed_at")) or utc_now()
+            task = self._with_completion(task, _parse_dt(raw_result.get("completed_at")) or utc_now())
             task.progress = "压测完成" if task.status == "completed" else "压测失败"
             report_path = write_stress_report(task, self.reports_dir)
             task.report_path = str(report_path)
@@ -307,7 +317,7 @@ class StressRunner:
             task.status = "failed"
             task.error = _safe_error(exc)
             task.progress = f"压测失败：{task.error['message']}"
-            task.completed_at = utc_now()
+            task = self._with_completion(task, utc_now())
             report_path = write_stress_report(task, self.reports_dir)
             task.report_path = str(report_path)
         finally:
@@ -400,7 +410,7 @@ class StressRunner:
             task.status = "interrupted"
             task.progress = "任务已取消"
             task.error = {"message": "任务已取消", "type": "CancelledError"}
-            task.completed_at = utc_now()
+            task = self._with_completion(task, utc_now())
             task.updated_at = utc_now()
             self.task_store.save(task)
         return self.task_store.get(task_id) or task
@@ -435,6 +445,13 @@ class StressRunner:
             self.task_store.save(task)
         return task
 
+    @staticmethod
+    def _with_completion(task: StressTask, completed_at: datetime) -> StressTask:
+        return task.model_copy(update={
+            "completed_at": completed_at,
+            "duration_ms": timestamp_elapsed_ms(task.created_at, completed_at),
+        })
+
     def _maybe_renormalize(self, task: StressTask | None) -> StressTask | None:
         """对终态任务做展示回填：旧版 executor 返回的 metrics 是 pydantic 对象，
         导致持久化的 normalized_result.runs 为空（档位被解析跳过）。这里在读取时
@@ -443,24 +460,38 @@ class StressRunner:
             return task
         if not task.raw_result:
             return task
-        nr = task.normalized_result
-        if nr is not None and nr.runs:
-            return task
         try:
             fresh = self._normalize(task, task.raw_result)
-        except Exception:  # noqa: BLE001 - 回填失败不应阻断读取
+        except Exception:
+            logger.warning("Stress result normalization failed for task %s", task.task_id, exc_info=True)
             return task
         if not fresh.runs:
             return task
-        task.normalized_result = fresh
-        task.updated_at = utc_now()
+        if task.normalized_result is not None and task.normalized_result.runs:
+            if not self._needs_metric_backfill(task.normalized_result, fresh):
+                return task
+        return self._apply_metric_backfill(task, fresh)
+
+    @staticmethod
+    def _needs_metric_backfill(current: StressNormalizedResult, fresh: StressNormalizedResult) -> bool:
+        if len(current.runs) != len(fresh.runs):
+            return True
+        return any(
+            getattr(existing, field) is None and getattr(updated, field) is not None
+            for existing, updated in zip(current.runs, fresh.runs)
+            for field in LEGACY_DISPLAY_METRIC_FIELDS
+        )
+
+    def _apply_metric_backfill(self, task: StressTask, fresh: StressNormalizedResult) -> StressTask:
+        updated = task.model_copy(update={"normalized_result": fresh, "updated_at": utc_now()})
         try:
-            report_path = write_stress_report(task, self.reports_dir)
-            task.report_path = str(report_path)
-        except Exception:  # noqa: BLE001 - 报告重写失败不阻断读取
-            pass
-        self.task_store.save(task)
-        return task
+            report_path = write_stress_report(updated, self.reports_dir)
+        except Exception:
+            logger.warning("Stress report rewrite failed for task %s", task.task_id, exc_info=True)
+        else:
+            updated = updated.model_copy(update={"report_path": str(report_path)})
+        self.task_store.save(updated)
+        return updated
 
     def _load_progress(self, output_dir: Path) -> StressProgress | None:
         """Read EvalScope's atomic progress snapshot without breaking task queries on races."""

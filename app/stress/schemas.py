@@ -236,6 +236,7 @@ class StressTask(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     completed_at: datetime | None = None
+    duration_ms: float | None = None
     report_path: str | None = None
     raw_submit_response: dict[str, Any] | None = None
     raw_status_response: dict[str, Any] | None = None
