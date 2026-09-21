@@ -49,7 +49,7 @@ const form = ref({
   max_prompt_length: "", min_tokens: "", max_tokens: "", tokenizer_path: "", prefix_length: "",
   warmup_num: "", duration: "", multi_turn: false, min_turns: "", max_turns: "",
   connect_timeout: "", read_timeout: "", total_timeout: "", temperature: "", top_p: "", top_k: "",
-  frequency_penalty: "", repetition_penalty: "", seed: "", logprobs: "", tokenize_prompt: false,
+  frequency_penalty: "", repetition_penalty: "", seed: "", n_choices: "", logprobs: "", tokenize_prompt: false,
   stop: "", dataset_args: "", extra_args: "",
 });
 
@@ -70,6 +70,8 @@ const totals = computed(() => runsOf(selected.value).reduce((acc: any, run: any)
   acc.failed += Number(run.failed || 0);
   return acc;
 }, { total: 0, success: 0, failed: 0 }));
+const progressSuccess = computed(() => progressDetail.value?.success_requests ?? (runsOf(selected.value).length ? totals.value.success : "—"));
+const progressFailed = computed(() => progressDetail.value?.failed_requests ?? (runsOf(selected.value).length ? totals.value.failed : "—"));
 
 function statusType(status?: string) {
   if (status === "completed") return "success";
@@ -157,7 +159,7 @@ function buildPayload() {
   for (const key of [
     "min_prompt_length", "max_prompt_length", "min_tokens", "max_tokens", "prefix_length", "warmup_num",
     "duration", "min_turns", "max_turns", "connect_timeout", "read_timeout", "total_timeout", "temperature",
-    "top_p", "top_k", "frequency_penalty", "repetition_penalty", "seed",
+    "top_p", "top_k", "frequency_penalty", "repetition_penalty", "seed", "n_choices",
   ] as const) {
     const value = toNumber(form.value[key]);
     if (value !== undefined) payload[key] = value;
@@ -384,7 +386,13 @@ onUnmounted(() => {
               <el-col :xs="24" :sm="8"><el-form-item label="temperature"><el-input v-model="form.temperature" /></el-form-item></el-col>
               <el-col :xs="24" :sm="8"><el-form-item label="top_p"><el-input v-model="form.top_p" /></el-form-item></el-col>
               <el-col :xs="24" :sm="8"><el-form-item label="top_k"><el-input v-model="form.top_k" /></el-form-item></el-col>
+              <el-col :xs="24" :sm="8"><el-form-item label="frequency_penalty"><el-input v-model="form.frequency_penalty" /></el-form-item></el-col>
+              <el-col :xs="24" :sm="8"><el-form-item label="repetition_penalty"><el-input v-model="form.repetition_penalty" /></el-form-item></el-col>
+              <el-col :xs="24" :sm="8"><el-form-item label="seed"><el-input v-model="form.seed" /></el-form-item></el-col>
+              <el-col :xs="24" :sm="8"><el-form-item label="n_choices"><el-input v-model="form.n_choices" /></el-form-item></el-col>
+              <el-col :xs="24" :sm="8"><el-form-item label="logprobs"><el-select v-model="form.logprobs" clearable class="full-width"><el-option label="true" value="true" /><el-option label="false" value="false" /></el-select></el-form-item></el-col>
             </el-row>
+            <el-switch v-model="form.tokenize_prompt" active-text="客户端 tokenize prompt" />
             <el-form-item label="停止词（逗号或换行分隔）"><el-input v-model="form.stop" type="textarea" :rows="2" /></el-form-item>
             <el-form-item label="dataset_args (JSON)"><el-input v-model="form.dataset_args" type="textarea" :rows="3" placeholder='{"subset": "..."}' /></el-form-item>
             <el-form-item label="extra_args (JSON)"><el-input v-model="form.extra_args" type="textarea" :rows="3" placeholder='{"ignore_eos": true}' /></el-form-item>
@@ -451,10 +459,11 @@ onUnmounted(() => {
           </div>
           <el-progress :percentage="Number(progressDetail?.percent || 0)" :stroke-width="12" />
           <div class="progress-stats">
+            <span>当前档位 {{ progressDetail?.current_run ?? '—' }}/{{ progressDetail?.total_runs ?? '—' }} · {{ progressDetail?.current_run_completed ?? '—' }}/{{ progressDetail?.current_run_total ?? '—' }}</span>
             <span>已处理 {{ progressDetail?.completed_requests ?? 0 }}</span>
             <span>总请求 {{ progressDetail?.total_requests ?? '—' }}</span>
-            <span>成功 {{ progressDetail?.success_requests ?? totals.success ?? '—' }}</span>
-            <span>失败 {{ progressDetail?.failed_requests ?? totals.failed ?? '—' }}</span>
+            <span>成功 {{ progressSuccess }}</span>
+            <span>失败 {{ progressFailed }}</span>
           </div>
         </div>
         <div class="detail-actions">

@@ -51,6 +51,22 @@ def test_stress_progress_reads_evalscope_snapshot_and_tolerates_partial_json(tmp
     assert progress.total_requests == 20
 
 
+def test_stress_progress_derives_current_sweep_run():
+    runner = StressRunner.__new__(StressRunner)
+    progress = stress_runner_module.StressProgress(
+        total_requests=60,
+        completed_requests=15,
+        percent=25,
+    )
+
+    enriched = runner._enrich_progress(progress, {"number": [10, 20, 30]})
+
+    assert enriched.current_run == 2
+    assert enriched.total_runs == 3
+    assert enriched.current_run_completed == 5
+    assert enriched.current_run_total == 20
+
+
 def _model_store(path, protocol="chat_completions"):
     store = ModelStore(path)
     store.create(ModelConfigCreate(

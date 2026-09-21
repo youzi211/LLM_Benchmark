@@ -200,6 +200,10 @@ class StressProgress(BaseModel):
     completed_requests: int | None = None
     success_requests: int | None = None
     failed_requests: int | None = None
+    current_run: int | None = None
+    total_runs: int | None = None
+    current_run_completed: int | None = None
+    current_run_total: int | None = None
     percent: float | None = Field(default=None, ge=0, le=100)
     updated_at: datetime | None = None
 

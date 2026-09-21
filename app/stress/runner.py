@@ -410,6 +410,8 @@ class StressRunner:
         if task is None:
             return None
         progress = self._load_progress(Path(task.raw_output_dir)) if task.raw_output_dir else None
+        if progress is not None:
+            progress = self._enrich_progress(progress, task.request_config)
         if progress is not None and task.progress_detail != progress:
             task.progress_detail = progress
             if task.status not in TERMINAL_STATUSES:
@@ -482,6 +484,28 @@ class StressRunner:
             })
         except (OSError, ValueError, TypeError):
             return None
+
+    @staticmethod
+    def _enrich_progress(progress: StressProgress, request_config: dict[str, Any]) -> StressProgress:
+        numbers = request_config.get("number")
+        if not isinstance(numbers, list) or not numbers or not all(isinstance(item, int) and item > 0 for item in numbers):
+            return progress
+        completed = max(0, progress.completed_requests or 0)
+        cumulative = 0
+        current_index = len(numbers) - 1
+        for index, count in enumerate(numbers):
+            if completed < cumulative + count:
+                current_index = index
+                break
+            cumulative += count
+        current_total = numbers[current_index]
+        current_completed = min(current_total, max(0, completed - sum(numbers[:current_index])))
+        return progress.model_copy(update={
+            "current_run": current_index + 1,
+            "total_runs": len(numbers),
+            "current_run_completed": current_completed,
+            "current_run_total": current_total,
+        })
 
     @staticmethod
     def _is_all_failed(result: StressNormalizedResult) -> bool:
