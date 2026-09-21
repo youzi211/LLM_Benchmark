@@ -114,6 +114,7 @@ def test_intelligence_executor_enables_remote_sandbox_for_mbpp(tmp_path):
     assert data["sandbox"] == {
         "enabled": True,
         "engine": "docker",
+        "pool_size": None,
         "manager_config": {"base_url": "http://sandbox.local:1234"},
     }
     assert "use_sandbox" not in data

@@ -99,6 +99,11 @@ def test_intelligence_custom_route_passes_dataset_args(monkeypatch):
             return await super().submit_custom(**kwargs)
 
     monkeypatch.setattr(routes_intelligence, "_runner", lambda: CapturingRunner())
+    monkeypatch.setattr(
+        routes_intelligence,
+        "local_dataset_metadata",
+        lambda config: {"total": 1, "datasets": {"bbh": {"pretty_name": "BBH"}}},
+    )
     client = TestClient(app)
 
     response = client.post(
