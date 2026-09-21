@@ -65,6 +65,28 @@ export async function cancelStressTask(taskId: string) {
   return data;
 }
 
+export interface StressArtifact {
+  name: string;
+  path: string;
+  size_bytes: number;
+  modified_at?: string;
+  content_type?: string;
+}
+
+export async function listStressArtifacts(taskId: string): Promise<StressArtifact[]> {
+  const { data } = await http.get(`/stress/tasks/${encodeURIComponent(taskId)}/artifacts`);
+  return Array.isArray(data?.artifacts) ? data.artifacts : [];
+}
+
+export function stressRawResultUrl(taskId: string) {
+  return `/api/stress/tasks/${encodeURIComponent(taskId)}/raw-result`;
+}
+
+export function stressArtifactUrl(taskId: string, artifactPath: string) {
+  const encodedPath = artifactPath.split("/").map(encodeURIComponent).join("/");
+  return `/api/stress/tasks/${encodeURIComponent(taskId)}/artifacts/${encodedPath}`;
+}
+
 
 export interface StressDatasetMeta {
   name: string;
