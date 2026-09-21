@@ -12,7 +12,7 @@ from app.storage.model_store import ModelStore
 from app.storage.stress_task_store import StressTaskStore
 from app.stress import runner as stress_runner_module
 from app.stress.runner import StressRunner
-from app.stress.schemas import StressDefaultRunRequest
+from app.stress.schemas import StressDefaultRunRequest, StressNormalizedResult, StressRunResult, StressTask
 
 
 class FakeStressExecutor:
@@ -65,6 +65,59 @@ def test_stress_progress_derives_current_sweep_run():
     assert enriched.total_runs == 3
     assert enriched.current_run_completed == 5
     assert enriched.current_run_total == 20
+
+
+def test_stress_task_exposes_duration_ms_from_task_timestamps():
+    task = StressTask(
+        task_id="stress_task_duration",
+        model_id="m1",
+        evalscope_base_url="in-process",
+        created_at="2026-09-21T10:00:00Z",
+        completed_at="2026-09-21T10:00:02.500000Z",
+    )
+
+    assert task.model_dump(mode="json")["duration_ms"] == 2500.0
+
+
+def test_stress_runner_backfills_legacy_result_metrics(tmp_path):
+    runner = StressRunner(
+        model_store=_model_store(tmp_path / "models.json"),
+        task_store=StressTaskStore(tmp_path / "stress_tasks"),
+        reports_dir=tmp_path / "reports",
+        run_in_background=False,
+    )
+    task = StressTask(
+        task_id="stress_task_legacy_metrics",
+        model_id="m1",
+        evalscope_base_url="in-process",
+        status="completed",
+        normalized_result=StressNormalizedResult(
+            task_id="stress_task_legacy_metrics",
+            runs=[StressRunResult(parallel=1, number=1, total=1, success=1, failed=0)],
+        ),
+        raw_result={
+            "raw_result": {
+                "parallel_1_number_1": {
+                    "metrics": {
+                        "total_requests": 1,
+                        "succeed_requests": 1,
+                        "failed_requests": 0,
+                        "avg_itl": 7.5,
+                        "avg_input_tokens": 128,
+                        "avg_output_tokens": 32,
+                        "avg_turns": 3,
+                    }
+                }
+            }
+        },
+    )
+
+    refreshed = runner._maybe_renormalize(task)
+
+    assert refreshed.normalized_result.runs[0].avg_itl_ms == 7.5
+    assert refreshed.normalized_result.runs[0].avg_input_tokens == 128
+    assert refreshed.normalized_result.runs[0].avg_output_tokens == 32
+    assert refreshed.normalized_result.runs[0].avg_turns == 3
 
 
 def _model_store(path, protocol="chat_completions"):

@@ -432,7 +432,7 @@ onUnmounted(() => {
           <template #default="{ row }"><StatusTag :status="row.status" /></template>
         </el-table-column>
         <el-table-column label="耗时" width="90">
-          <template #default="{ row }"><span class="lb-tl__num">{{ row.duration_ms ? Math.round(Number(row.duration_ms)) + " ms" : "—" }}</span></template>
+          <template #default="{ row }"><span class="lb-tl__num">{{ row.duration_ms != null ? Math.round(Number(row.duration_ms)) + " ms" : "—" }}</span></template>
         </el-table-column>
       </el-table>
     </el-card>

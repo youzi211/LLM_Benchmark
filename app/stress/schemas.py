@@ -236,6 +236,7 @@ class StressTask(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     completed_at: datetime | None = None
+    duration_ms: float | None = None
     report_path: str | None = None
     raw_submit_response: dict[str, Any] | None = None
     raw_status_response: dict[str, Any] | None = None
@@ -245,3 +246,9 @@ class StressTask(BaseModel):
     raw_output_dir: str | None = None
     normalized_result: StressNormalizedResult | None = None
     error: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def derive_duration(self) -> "StressTask":
+        if self.duration_ms is None and self.completed_at is not None:
+            self.duration_ms = max(0.0, (self.completed_at - self.created_at).total_seconds() * 1000)
+        return self

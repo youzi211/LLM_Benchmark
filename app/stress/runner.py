@@ -445,6 +445,36 @@ class StressRunner:
             return task
         nr = task.normalized_result
         if nr is not None and nr.runs:
+            try:
+                fresh = self._normalize(task, task.raw_result)
+            except Exception:  # noqa: BLE001 - backfill failure must not block reads
+                return task
+            if not fresh.runs:
+                return task
+            metric_fields = (
+                "avg_itl_ms",
+                "avg_input_tokens",
+                "avg_output_tokens",
+                "avg_turns",
+                "avg_cached_percent",
+                "avg_first_turn_ttft_ms",
+                "avg_subsequent_turn_ttft_ms",
+            )
+            needs_backfill = any(
+                getattr(current, field) is None and getattr(updated, field) is not None
+                for current, updated in zip(nr.runs, fresh.runs)
+                for field in metric_fields
+            )
+            if not needs_backfill:
+                return task
+            task.normalized_result = fresh
+            task.updated_at = utc_now()
+            try:
+                report_path = write_stress_report(task, self.reports_dir)
+                task.report_path = str(report_path)
+            except Exception:  # noqa: BLE001 - report rewrite must not block reads
+                pass
+            self.task_store.save(task)
             return task
         try:
             fresh = self._normalize(task, task.raw_result)
