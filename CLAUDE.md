@@ -84,7 +84,9 @@ uv run pytest -q
 
 ## Commit & Pull Request Guidelines
 
-Follow Conventional Commits as used in history, for example `fix: ...`, `docs: ...`, `test: ...`, `refactor: ...`. Stage explicit files only; avoid `git add .` because runtime directories may contain sensitive data. PRs should describe the change, list verification commands, and mention documentation updates when APIs, metrics, architecture, or reports change.
+Follow Conventional Commits as used in history; commit subjects and bodies are written in Chinese (type and scope stay English), for example `fix(stress): 修复压测任务耗时展示`. Stage explicit files only; avoid `git add .` because runtime directories may contain sensitive data. PRs should describe the change, list verification commands, and mention documentation updates when APIs, metrics, architecture, or reports change.
+
+Full branch, commit, sync, and PR rules live in `docs/git-conventions.md`; keep that file as the source of truth.
 
 ## Security & Configuration Tips
 
