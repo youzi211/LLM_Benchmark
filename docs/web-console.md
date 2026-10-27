@@ -14,7 +14,7 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8020
 
 ## 2. 页面信息架构
 
-控制台按照用户理解的三条评测线组织，而不是按照后端存储对象组织：
+左侧导航第一项是**概览**，汇总三条评测线的任务状态和整体健康情况；其后按用户理解的三条评测线组织，而不是按照后端存储对象组织：
 
 1. **基础评测**：网关 smoke / 工程检查。
 2. **压测评测**：EvalScope perf 吞吐、延迟、成功率评测。
@@ -23,8 +23,11 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8020
 顶部提供全局能力：
 
 - 当前模型选择：从 `GET /api/models` 读取已保存模型，三条评测线共用。
-- 系统状态：显示基础服务、EvalScope 压测、EvalScope 能力和 Judge 状态。
-- 辅助入口：一键完整评测、定时任务。
+- 系统状态：显示基础服务、EvalScope 压测、EvalScope 能力和 Judge 状态；连接异常时顶栏会显示脱敏的错误横幅。
+- 辅助入口：一键完整评测、定时任务；开发模式下额外提供“设计系统”页（`/style-guide`，仅 dev 构建可见）。
+- 任务对比：基础评测页和能力评测页选中多个任务后跳转 `/compare` 对比。
+
+控制台界面跟随明暗主题（无手动切换开关，由系统 `prefers-color-scheme` 决定），所有颜色来自 `frontend/src/styles/global.css` 中的 `--lb-*` 设计 token，图表（ECharts）同样通过 `frontend/src/composables/useChartTheme.ts` 读取 token 渲染。
 
 ## 3. 三条评测线
 

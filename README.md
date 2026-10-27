@@ -160,11 +160,20 @@ Windows PowerShell 使用脚本启动（默认只启动主服务）：
 
 启动脚本默认只启动主服务并打印 sandbox 提醒；只有设置 `START_SANDBOX=1` 或传入 `-StartSandbox` 时才会执行 `ms-enclave server`。主服务日志写入 `.tmp/logs/main.*.log`，sandbox 日志写入 `.tmp/logs/sandbox.*.log`。
 
-主服务只提供 `/api/*` JSON 接口，不挂载任何页面（访问 `http://<主服务地址>:8020/` 返回 404）。Web 控制台是 `frontend/` 下的 Vue 工程，本地用 `cd frontend && npm install && npm run dev` 启动，默认 `http://127.0.0.1:5174/`，通过 vite 代理访问 8020 上的 `/api`。控制台支持：
+主服务只提供 `/api/*` JSON 接口，不挂载任何页面（访问 `http://<主服务地址>:8020/` 返回 404）。Web 控制台是 `frontend/` 下的 Vue 3 工程，本地用 `cd frontend && npm install && npm run dev` 启动，默认 `http://127.0.0.1:5174/`，通过 vite 代理访问 8020 上的 `/api`（hash 路由，实际地址形如 `http://127.0.0.1:5174/#/overview`）。页面与导航：
+
+- **概览**（`/overview`）：三条评测线的任务状态、运行中任务和系统健康汇总。
+- **基础评测 / 压测评测 / 能力评测**（`/basic`、`/stress`、`/intelligence`）：分别提交并跟踪网关 smoke、EvalScope perf 压测和 EvalScope 能力评测任务。
+- **一键完整评测 / 定时任务**（`/suites`、`/schedules`）：串起三条线生成统一总览报告；创建一次性或周期性定时评测计划。
+- **任务对比**（`/compare`）：基础评测或能力评测页勾选多个任务后对比。
+- **设计系统**（`/style-guide`）：仅 dev 构建可见的 UI token 与组件示例页。
+
+控制台能力：
 - 控制台支持直接填写 `url`、`key`、`model`、`context_window_tokens`、`max_output_tokens` 后调用 `POST /api/suites/quick`。
 - 控制台也能读取已有模型配置并调用 `POST /api/suites/default`，以及跟踪最近 suite、打开最终总览报告。
 - 控制台支持创建定时一键评测计划：默认“只执行一次”，也可切换为每天/每 N 天周期执行；可为已有模型调用 `POST /api/suites/schedules`，也可将左侧临时模型参数先保存为模型配置再创建定时计划。
 - 选择 suite 后会自动读取关联的 gateway、intelligence、stress 任务结果，展示压测吞吐/延迟/成功率曲线、智力评测分数柱状图和网关 smoke 指标状态。
+- 界面跟随系统明暗主题（无手动切换），颜色统一取自 `--lb-*` 设计 token，ECharts 图表同样读取 token 渲染。
 - 前端不会使用 localStorage 保存 Key；quick suite 的 Key 仍只随本次请求发送，服务端也不会写入 `data/models.json`。但如果在“定时一键评测”中选择保存左侧模型参数，Key 会随模型配置写入本机 `data/models.json`，用于后续定时执行。
 
 ### 5. 健康检查和部署检查
