@@ -22,6 +22,9 @@ __pycache__/
 # Playwright browser-verification screenshots and snapshots
 /.playwright-mcp/
 
+# Local Claude Code skills / settings
+/.claude/
+
 # Mimocode agents
 /.mimocode/
 
