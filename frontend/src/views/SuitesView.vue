@@ -265,7 +265,6 @@ onMounted(() => {
 
     <section class="view-grid">
     <el-card class="panel-card" shadow="never">
-      <p class="muted">串起基础 / 压测 / 能力三条评测线，生成统一总览报告。可按需勾选评测线。</p>
       <el-form label-position="top">
         <!-- Step 0: 选择评测线 + 模型 -->
         <div v-show="currentStep === 0">

@@ -159,10 +159,8 @@ onMounted(reload);
       <el-button type="primary" :loading="submitting" @click="submit">开始基础评测</el-button>
     </template>
   </PageHero>
-
   <section class="view-grid">
     <el-card class="panel-card" shadow="never">
-      <p class="muted">验证服务连通、协议兼容、usage、错误结构、上下文和缓存等基础能力。</p>
       <el-form label-position="top">
         <el-form-item label="当前模型">
           <el-input :model-value="store.currentModel?.name || store.currentId || '未选择模型'" disabled />
@@ -175,7 +173,6 @@ onMounted(reload);
         <el-form-item label="指定指标 (可选, 逗号分隔)">
           <el-input v-model="metricIds" placeholder="connectivity, usage" />
         </el-form-item>
-        <el-button type="primary" :loading="submitting" @click="submit">开始基础评测</el-button>
       </el-form>
     </el-card>
 

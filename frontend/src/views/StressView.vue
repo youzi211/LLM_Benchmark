@@ -449,8 +449,6 @@ onUnmounted(() => {
   </PageHero>
   <section class="view-grid">
     <el-card class="panel-card" shadow="never">
-      <p class="muted">验证吞吐、延迟、TTFT / TPOT、成功率和不同并发档位表现。</p>
-
       <el-form label-position="top">
         <el-form-item label="当前模型"><el-input :model-value="store.currentModel?.name || store.currentId || '未选择模型'" disabled /></el-form-item>
         <el-form-item><el-switch v-model="custom" active-text="自定义压测参数" inactive-text="使用默认参数" /></el-form-item>
