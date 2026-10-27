@@ -174,7 +174,8 @@ async function reload() {
       resolveGroupSelection();
       await refreshGroupProgress();
     } else if (selected.value) {
-      await selectTask(selected.value.task_id, false);
+      // 选中的是单个任务：列表已刷新，只补详情，不再重拉 artifacts。
+      await refreshSelected();
     }
   } finally {
     loading.value = false;
@@ -423,10 +424,9 @@ onMounted(() => {
   loadDatasets();
   reload();
   refreshTimer = window.setInterval(() => {
-    if (document.visibilityState !== "visible") return;
+    if (document.visibilityState !== "visible" || loading.value) return; // 上一轮未完成时跳过，避免请求叠加
     if (tasks.value.some((task) => !finalStatus(task.status)) || (selected.value && !finalStatus(selected.value.status))) {
-      reload();
-      refreshSelected();
+      reload(); // reload 内部已按分组/单任务分别刷新进度或详情
     }
   }, 5000);
 });

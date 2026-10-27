@@ -6,6 +6,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useModelsStore } from "@/stores/models";
+import { useHealthStore } from "@/stores/health";
 import { useToast } from "@/composables/useToast";
 import PageHero from "@/components/layouts/PageHero.vue";
 import KpiCard from "@/components/overview/KpiCard.vue";
@@ -15,7 +16,7 @@ import RunningTasks from "@/components/overview/RunningTasks.vue";
 import StatusDot from "@/components/common/StatusDot.vue";
 import { ArrowRight, Clock, Refresh, Aim } from "@element-plus/icons-vue";
 import { formatDate } from "@/api/evaluations";
-import { listBasicTasks, listStressTasks, listIntelligenceTasks, getHealth, type HealthStatus, type TaskLike } from "@/api/evaluations";
+import { listBasicTasks, listStressTasks, listIntelligenceTasks, type TaskLike } from "@/api/evaluations";
 
 const router = useRouter();
 const store = useModelsStore();
@@ -26,12 +27,8 @@ const basic = ref<TaskLike[]>([]);
 const stress = ref<TaskLike[]>([]);
 const intel = ref<TaskLike[]>([]);
 
-const health = ref<HealthStatus | null>(null);
-let healthTimer: number | undefined;
-
-async function refreshHealth() {
-  try { health.value = await getHealth(); } catch { health.value = null; }
-}
+// /health 由 MainLayout 统一轮询，概览页只读取结果。
+const health = computed(() => useHealthStore().status);
 
 async function reload() {
   loading.value = true;
@@ -54,12 +51,6 @@ async function reload() {
 onMounted(() => {
   store.load().catch(() => {});
   reload();
-  refreshHealth();
-  healthTimer = window.setInterval(refreshHealth, 10000);
-});
-
-onUnmounted(() => {
-  if (healthTimer !== undefined) window.clearInterval(healthTimer);
 });
 
 const allTasks = computed(() => [...basic.value, ...stress.value, ...intel.value]);
@@ -211,7 +202,7 @@ function goNew() {
 
     <!-- 运行中 + 最近活动 -->
     <section class="lb-overview__grid lb-overview__grid--2col">
-      <RunningTasks @click="(t) => router.push(t.type === 'basic' ? '/basic' : t.type === 'stress' ? '/stress' : '/intelligence')" />
+      <RunningTasks />
 
       <div class="lb-overview__recent">
         <div class="lb-overview__panel-head">

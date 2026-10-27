@@ -33,6 +33,8 @@
   --lb-success-tint: rgba(22, 163, 74, 0.10);
   --lb-success-tint-2: rgba(22, 163, 74, 0.32);
   --lb-neutral-tint: rgba(107, 114, 128, 0.10);
+  --lb-info: #2563eb;
+  --lb-cta: #7c3aed;
 
   /* Shape & elevation */
   --lb-radius: 12px;
@@ -731,6 +733,8 @@ body,
   --lb-success-tint: rgba(34, 197, 94, 0.12);
   --lb-success-tint-2: rgba(34, 197, 94, 0.32);
   --lb-neutral-tint: rgba(148, 163, 184, 0.12);
+  --lb-info: #60a5fa;
+  --lb-cta: #a78bfa;
 
   --lb-shadow: 0 12px 36px rgba(0, 0, 0, 0.32);
   --lb-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.32);
