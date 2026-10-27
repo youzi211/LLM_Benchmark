@@ -144,16 +144,16 @@ function profileLimitLabel(p?: SuiteProfile | null) {
 
 <template>
   <section class="schedules-page">
-  <PageHero
-    eyebrow="SCHEDULED SUITES"
-    title="定时任务"
-    description="观察与触发定时评测套件; 复杂配置已移至右侧 Drawer, 避免主页被数据集配置拉长。"
-  >
-    <template #actions>
-      <el-button size="small" @click="reload">刷新</el-button>
-      <el-button type="primary" size="small" @click="drawerVisible = true">新建定时任务</el-button>
-    </template>
-  </PageHero>
+    <PageHero
+      eyebrow="SCHEDULED SUITES"
+      title="定时任务"
+      description="观察与触发定时评测套件; 复杂配置已移至右侧 Drawer, 避免主页被数据集配置拉长。"
+    >
+      <template #actions>
+        <el-button size="small" @click="reload">刷新</el-button>
+        <el-button type="primary" size="small" @click="drawerVisible = true">新建定时任务</el-button>
+      </template>
+    </PageHero>
 
     <div class="view-grid view-grid--two schedules-grid">
       <el-card class="panel-card" shadow="never">
@@ -274,7 +274,7 @@ function profileLimitLabel(p?: SuiteProfile | null) {
           <div class="section-title">上次运行详情</div>
           <el-descriptions :column="2" border>
             <el-descriptions-item label="上次状态">
-              <el-tag v-if="lastRun?.last_suite_status" :type="statusType(lastRun.last_suite_status)">{{ lastRun.last_suite_status }}</el-tag>
+              <StatusTag v-if="lastRun?.last_suite_status" :status="lastRun.last_suite_status" compact />
               <span v-else>-</span>
             </el-descriptions-item>
             <el-descriptions-item label="当前步骤">{{ lastRun?.last_suite_current_step || '-' }}</el-descriptions-item>
@@ -288,7 +288,8 @@ function profileLimitLabel(p?: SuiteProfile | null) {
               :type="step.status === 'completed' ? 'success' : step.status === 'failed' || step.status === 'interrupted' ? 'danger' : step.status === 'running' ? 'warning' : 'info'"
               :timestamp="formatDate(step.completed_at || step.started_at)"
             >
-              <span>{{ step.title }} — {{ step.status }}</span>
+              <span>{{ step.title }}</span>
+              <StatusTag :status="step.status" compact />
               <span v-if="step.message" class="muted"> ({{ step.message }})</span>
             </el-timeline-item>
           </el-timeline>

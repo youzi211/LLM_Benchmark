@@ -290,7 +290,7 @@ onUnmounted(() => {
         @selection-change="(rows: TaskLike[]) => (selectedIds = rows.map(r => r.task_id))" highlight-current-row @row-click="(row: any) => selectTask(row.task_id)">
         <el-table-column prop="task_id" label="任务" min-width="210" show-overflow-tooltip />
         <el-table-column prop="model_id" label="模型" width="140" show-overflow-tooltip />
-        <el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="statusType(row.status)">{{ row.status }}</el-tag></template></el-table-column>
+        <el-table-column label="状态" width="110"><template #default="{ row }"><StatusTag :status="row.status" /></template></el-table-column>
         <el-table-column label="进度" min-width="180" show-overflow-tooltip><template #default="{ row }">{{ row.progress || '-' }}</template></el-table-column>
       </el-table>
       <EmptyState

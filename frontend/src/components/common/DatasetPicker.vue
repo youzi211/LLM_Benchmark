@@ -250,16 +250,16 @@ function effectiveSubsetsList(name: string): string[] {
 }
 
 .dataset-picker__row {
-  border: 1px solid rgba(148, 163, 184, 0.24);
+  border: 1px solid var(--lb-border);
   border-radius: 10px;
   padding: 10px 12px;
-  background: #ffffff;
+  background: var(--lb-surface);
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .dataset-picker__row--active {
-  border-color: #2563eb;
-  background: linear-gradient(180deg, rgba(37, 99, 235, 0.05), #ffffff);
+  border-color: var(--lb-primary);
+  background: var(--lb-surface-soft);
 }
 
 .dataset-picker__empty {
@@ -282,7 +282,7 @@ function effectiveSubsetsList(name: string): string[] {
 
 .row-name {
   font-weight: 650;
-  color: #0f172a;
+  color: var(--lb-fg-strong);
   margin-left: 2px;
 }
 
@@ -296,7 +296,7 @@ function effectiveSubsetsList(name: string): string[] {
 
 .row-chevron {
   transition: transform 0.15s ease;
-  color: #6b7280;
+  color: var(--lb-muted);
   flex: 0 0 auto;
 }
 
@@ -306,14 +306,14 @@ function effectiveSubsetsList(name: string): string[] {
 
 .row-desc {
   margin: 6px 0 2px;
-  color: #475569;
+  color: var(--lb-fg-soft);
   font-size: 13px;
   line-height: 1.5;
 }
 
 .row-path {
   display: block;
-  color: #6b7280;
+  color: var(--lb-muted);
   font-size: 12px;
   line-height: 1.45;
   word-break: break-all;
@@ -323,7 +323,7 @@ function effectiveSubsetsList(name: string): string[] {
 .row-subsets {
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px dashed rgba(148, 163, 184, 0.3);
+  border-top: 1px dashed var(--lb-border);
   display: grid;
   gap: 8px;
 }
@@ -344,7 +344,7 @@ function effectiveSubsetsList(name: string): string[] {
 }
 
 .subset-title {
-  color: #475569;
+  color: var(--lb-fg-soft);
   font-size: 12px;
 }
 

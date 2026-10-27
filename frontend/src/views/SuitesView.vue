@@ -6,6 +6,7 @@ import DatasetPicker from "@/components/common/DatasetPicker.vue";
 import PageHero from "@/components/layouts/PageHero.vue";
 import Stepper from "@/components/layouts/Stepper.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
+import StatusTag from "@/components/common/StatusTag.vue";
 import {
   cancelSuite,
   fetchDatasets,
@@ -402,7 +403,7 @@ onMounted(() => {
         <el-table-column prop="suite_id" label="Suite" min-width="210" show-overflow-tooltip />
         <el-table-column prop="model_id" label="模型" width="130" show-overflow-tooltip />
         <el-table-column label="状态" width="100">
-          <template #default="{ row }"><el-tag :type="statusType(row.status)">{{ row.status }}</el-tag></template>
+          <template #default="{ row }"><StatusTag :status="row.status" /></template>
         </el-table-column>
         <el-table-column label="更新" width="170"><template #default="{ row }">{{ formatDate(row.updated_at) }}</template></el-table-column>
       </el-table>
@@ -420,7 +421,7 @@ onMounted(() => {
           <el-descriptions-item label="Suite ID">{{ selected.suite_id }}</el-descriptions-item>
           <el-descriptions-item label="模型">{{ selected.model_id }}</el-descriptions-item>
           <el-descriptions-item label="状态">
-            <el-tag :type="statusType(selected.status)">{{ selected.status }}</el-tag>
+            <StatusTag :status="selected.status" />
           </el-descriptions-item>
           <el-descriptions-item label="当前步骤">{{ selected.current_step || '-' }}</el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ formatDate(selected.created_at) }}</el-descriptions-item>
@@ -436,7 +437,7 @@ onMounted(() => {
           >
             <div class="step-head">
               <span class="step-title">{{ step.title }}</span>
-              <el-tag size="small" :type="stepStatusType(step.status)">{{ step.status }}</el-tag>
+              <StatusTag :status="step.status" compact />
             </div>
             <p v-if="step.message" class="muted step-msg">{{ step.message }}</p>
             <el-link v-if="step.task_id && step.name === 'gateway'" type="primary" :href="`/api/reports/${step.task_id}`" target="_blank">查看网关报告</el-link>

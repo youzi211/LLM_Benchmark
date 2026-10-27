@@ -576,10 +576,18 @@ onUnmounted(() => {
           <template #default="{ row }"><span class="lb-tl__num">{{ row.duration_ms != null ? Math.round(Number(row.duration_ms)) + " ms" : "—" }}</span></template>
         </el-table-column>
       </el-table>
+      <EmptyState
+        v-if="!loading && filteredTasks.length === 0"
+        :title="queryText || statusFilter !== 'all' ? '无匹配任务' : '暂无压测任务'"
+        :description="queryText || statusFilter !== 'all' ? '试着清空筛选条件或在左侧表单启动一次压测' : '点击左侧表单启动第一次压测'"
+        :variant="queryText ? 'search' : 'list'"
+        :action-label="queryText || statusFilter !== 'all' ? '清空筛选' : '开始压测'"
+        @action="queryText = ''; statusFilter = 'all';"
+      />
     </el-card>
 
     <el-card class="panel-card detail-card" shadow="never">
-      <template #header><div class="card-title"><span>压测详情</span><el-tag v-if="selected" :type="statusType(selected.status)">{{ selected.status }}</el-tag></div></template>
+      <template #header><div class="card-title"><span>压测详情</span><StatusTag v-if="selected" :status="selected.status ?? 'pending'" /></div></template>
       <EmptyState
         v-if="!selected"
         title="尚未选择任务"

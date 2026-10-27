@@ -29,12 +29,17 @@ const palette: Record<string, { color: string; bg: string }> = {
 };
 
 const colorOf = (s: string) => palette[s] ?? { color: "var(--lb-muted)", bg: "rgba(100, 116, 139, 0.10)" };
+
+const LABELS: Record<string, string> = {
+  completed: "已完成", partial: "部分完成", running: "运行中", pending: "等待中",
+  queued: "排队中", failed: "失败", error: "错误", interrupted: "已中断",
+};
 </script>
 
 <template>
   <span class="lb-status-tag" :class="{ 'lb-status-tag--compact': compact }" :style="{ color: colorOf(status).color, background: colorOf(status).bg }">
     <span v-if="showDot" class="lb-status-tag__dot" :style="{ background: colorOf(status).color }" />
-    <span>{{ label ?? status }}</span>
+    <span>{{ label ?? LABELS[status] ?? status }}</span>
   </span>
 </template>
 

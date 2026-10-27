@@ -13,6 +13,7 @@ import KpiCard from "@/components/overview/KpiCard.vue";
 import ServiceHealth from "@/components/overview/ServiceHealth.vue";
 import RunningTasks from "@/components/overview/RunningTasks.vue";
 import StatusDot from "@/components/common/StatusDot.vue";
+import StatusTag from "@/components/common/StatusTag.vue";
 import { ArrowRight, Clock, Refresh, Aim } from "@element-plus/icons-vue";
 import { formatDate } from "@/api/evaluations";
 import { listBasicTasks, listStressTasks, listIntelligenceTasks, type TaskLike } from "@/api/evaluations";
@@ -117,17 +118,6 @@ function statusType(s?: string): "success" | "warning" | "danger" | "info" {
   return "info";
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  completed: "已完成",
-  partial: "部分完成",
-  running: "运行中",
-  pending: "等待中",
-  queued: "排队中",
-  failed: "失败",
-  error: "错误",
-  interrupted: "已中断",
-};
-
 const recentItems = computed(() =>
   recentTasks.value.map((t) => ({
     task: t,
@@ -172,7 +162,7 @@ function goNew() {
         caption="已完成任务中"
       />
       <KpiCard
-        label="平均延迟"
+        label="平均耗时"
         :value="avgLatency !== null ? avgLatency + 'ms' : '—'"
         variant="warning"
         :loading="loading"
@@ -214,7 +204,7 @@ function goNew() {
             class="lb-overview__recent-item"
             @click="router.push(item.lane.path)"
           >
-            <StatusDot :state="statusType(item.task.status) === 'success' ? 'ok' : statusType(item.task.status) === 'warning' ? 'pending' : statusType(item.task.status) === 'danger' ? 'fail' : 'off'" :size="7" />
+            <StatusDot :state="statusType(item.task.status) === 'success' ? 'ok' : statusType(item.task.status) === 'danger' ? 'fail' : 'pending'" :size="7" />
             <div class="lb-overview__recent-meta">
               <div class="lb-overview__recent-id">
                 <span class="lb-overview__recent-lane">{{ item.lane.label }}</span>
@@ -225,7 +215,7 @@ function goNew() {
                 {{ formatDate(item.task.finished_at || item.task.updated_at) }}
               </div>
             </div>
-            <el-tag :type="statusType(item.task.status)" size="small" effect="light" round>{{ STATUS_LABELS[String(item.task.status)] ?? item.task.status }}</el-tag>
+            <StatusTag :status="String(item.task.status)" compact />
           </li>
         </ul>
         <div v-else class="lb-overview__recent-empty">
