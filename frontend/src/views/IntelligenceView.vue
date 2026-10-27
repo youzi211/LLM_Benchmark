@@ -63,7 +63,7 @@ const scoreOption = computed(() => {
     grid: { left: 80, right: 24, top: 64, bottom: 60 },
     xAxis: { type: "category", data: rows.map((r: any) => r.pretty_name || r.dataset), axisLabel: { rotate: 25 } },
     yAxis: { type: "value", max: 100 },
-    series: [{ type: "bar", data: rows.map((r: any) => normalizeScore(r.score)), itemStyle: { color: "#409eff" } }],
+    series: [{ type: "bar", data: rows.map((r: any) => normalizeScore(r.score)) }],
   };
 });
 
