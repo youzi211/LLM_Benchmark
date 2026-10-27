@@ -10,7 +10,6 @@ import { useHealthStore } from "@/stores/health";
 import { useToast } from "@/composables/useToast";
 import PageHero from "@/components/layouts/PageHero.vue";
 import KpiCard from "@/components/overview/KpiCard.vue";
-import TrendChart from "@/components/overview/TrendChart.vue";
 import ServiceHealth from "@/components/overview/ServiceHealth.vue";
 import RunningTasks from "@/components/overview/RunningTasks.vue";
 import StatusDot from "@/components/common/StatusDot.vue";
@@ -190,21 +189,6 @@ function goNew() {
 
     <!-- 趋势 + 健康 + 运行中 -->
     <section class="lb-overview__grid">
-      <div class="lb-overview__trend">
-        <div class="lb-overview__panel-head">
-          <h3>7 日趋势</h3>
-          <div class="lb-overview__legend">
-            <span class="lb-overview__legend-item">
-              <span class="lb-overview__legend-dot" style="background:#1E40AF"></span>通过率
-            </span>
-            <span class="lb-overview__legend-item">
-              <span class="lb-overview__legend-dot" style="background:#F59E0B"></span>平均延迟
-            </span>
-          </div>
-        </div>
-        <TrendChart :loading="loading" height="260px" />
-      </div>
-
       <ServiceHealth
   :services="healthServices"
   @configure="(k) => toast.info(`打开配置: ${k}`)"
@@ -213,7 +197,7 @@ function goNew() {
     </section>
 
     <!-- 运行中 + 最近活动 -->
-    <section class="lb-overview__grid lb-overview__grid--2col">
+    <section class="lb-overview__grid">
       <RunningTasks />
 
       <div class="lb-overview__recent">
@@ -267,20 +251,8 @@ function goNew() {
 
 .lb-overview__grid {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-  gap: 16px;
-}
-
-.lb-overview__grid--2col {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-}
-
-.lb-overview__trend {
-  padding: 18px 20px;
-  border: 1px solid var(--lb-border);
-  border-radius: var(--lb-radius);
-  background: var(--lb-surface);
-  box-shadow: var(--lb-shadow);
+  gap: 16px;
 }
 
 .lb-overview__panel-head {
@@ -296,25 +268,6 @@ function goNew() {
   font-size: 14px;
   font-weight: 600;
   color: var(--lb-fg-strong);
-}
-
-.lb-overview__legend {
-  display: flex;
-  gap: 14px;
-}
-
-.lb-overview__legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--lb-muted);
-}
-
-.lb-overview__legend-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
 }
 
 .lb-overview__recent {
@@ -392,8 +345,7 @@ function goNew() {
   .lb-overview__kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .lb-overview__grid,
-  .lb-overview__grid--2col {
+  .lb-overview__grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
