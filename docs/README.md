@@ -28,7 +28,7 @@
 ## 关键约定速查
 
 - **主服务端口**：默认 `8020`（启动脚本 `MAIN_PORT` / `PORT` 默认 `8020`，可用环境变量覆盖）。
-- **服务地址**：`http://<主服务地址>:8020`，所有业务接口前缀 `/api`，Web 控制台 `/ui`。
+- **服务地址**：`http://<主服务地址>:8020`，所有业务接口前缀 `/api`；页面由 `frontend/` 的 vite dev server（5174）提供，8020 不挂载页面。
 - **suite 执行顺序**：网关接入验收 → EvalScope 压测 → EvalScope 能力评测 → 统一总览报告（先跑压测拿到性能数据，再跑智力评测，避免长时智力评测卡死整条 suite 时丢掉性能结果）。总览报告章节顺序与之一致。
 - **`intelligence_limit`**：能力评测每个数据集取前 N 条样本截断；`null` 不限制。**定时计划默认 `200`**（`DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT`），手动 `POST /api/suites/default` 和 `POST /api/suites/quick` 默认不限。
 - **不提交**：`data/models.json`（可能含明文 API Key）、`data/evalscope.json`、`data/evalscope_datasets/`、各 `data/*_tasks/`、`reports/`、`outputs/`、`.env`、`.venv/`。提交前用 `git diff-tree --no-commit-id --name-only -r HEAD` 核对。

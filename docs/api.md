@@ -14,18 +14,15 @@
 
 ### 1.1 可视化控制台
 
-主服务内置一个轻量 Web 控制台，随 FastAPI 进程一起提供静态资源，不需要单独启动前端服务；并行提供一个由 Vue 3 + Vite 重写的控制台（`/ui-vue/`）作为交叉验证入口：
+主服务只提供 `/api/*` JSON 接口，不挂载任何页面（`GET /`、`GET /ui/` 均返回 404）。Web 控制台源码在 `frontend/`（Vue 3 + Vite），本地用 `npm run dev` 启动在 5174 端口，通过 vite 代理访问 8020 的 `/api`。
 
-- `GET /`：浏览器访问时跳转到 `/ui/`。
-- `GET /ui/`：打开主控制台页面（静态源 `app/web/`）。
-- `GET /ui-vue/`：打开 Vue 重写控制台（构建产物 `app/web_vue/`，源码 `frontend/`）。该挂载仅在 `app/web_vue/` 目录实际存在时生效；当目录缺失（例如未执行 `npm run build`），主服务 `_mount_optional_static(app, "/ui-vue", WEB_VUE_DIR, name="ui-vue")` 会跳过挂载，`/ui-vue/*` 路径返回 404，不影响 `/ui/`。
 - 控制台主界面按三条评测线组织：基础评测、压测评测、能力评测。三条线共用顶部的已保存模型选择器（`GET /api/models`）。
 - 基础评测页调用 `POST /api/tasks/run`、`GET /api/tasks`、`GET /api/tasks/{task_id}` 和 `GET /api/reports/{task_id}`。
 - 压测评测页调用 `GET /api/stress/evalscope/health`、`POST /api/stress/tasks/default`、`GET /api/stress/tasks`、`GET /api/stress/tasks/{task_id}`、`GET /api/stress/tasks/{task_id}/result`、`POST /api/stress/tasks/{task_id}/cancel`、`GET /api/stress/tasks/{task_id}/raw-result`、`GET /api/stress/tasks/{task_id}/artifacts`、`GET /api/stress/tasks/{task_id}/artifacts/{artifact_path}` 和 `GET /api/stress/reports/{task_id}`。
 - 能力评测页调用 `GET /api/intelligence/evalscope/health`、`GET /api/intelligence/evalscope/config`、`PUT /api/intelligence/evalscope/config`、`GET /api/intelligence/evalscope/judge-config`、`GET /api/intelligence/evalscope/judge-health`、`GET /api/intelligence/evalscope/sandbox-health`、`GET /api/intelligence/datasets`、`POST /api/intelligence/tasks/default`、`POST /api/intelligence/tasks`、`GET /api/intelligence/tasks`、`GET /api/intelligence/tasks/{task_id}`、`GET /api/intelligence/tasks/{task_id}/progress`、`GET /api/intelligence/tasks/{task_id}/result`、`POST /api/intelligence/tasks/{task_id}/cancel` 和 `GET /api/intelligence/reports/{task_id}`；数据集元信息会展示描述、本地可用状态、本地路径、本地 subset 列表和当前配置的 `subset_list`。
 - 一键完整评测和定时任务作为辅助入口保留，分别调用 `/api/suites/default`、`/api/suites/quick`、`/api/suites`、`/api/suites/{suite_id}/report`、`/api/suites/{suite_id}/cancel` 以及 `/api/suites/schedules*`。
 - 控制台不在浏览器 localStorage 中保存 API Key；临时模型完整评测仍遵循 `/api/suites/quick` 的安全边界，即不把传入 Key 写入 `data/models.json`、suite JSON 或报告。定时任务使用已保存模型配置。
-- Vue 重写控制台 (`/ui-vue/`) 与主控制台 (`/ui/`) 复用同一组 `/api/*` JSON 接口；前端通过 `vite.config.ts` 中的 `/api` 代理在开发期访问 8020 端口，生产期静态产物继续通过 `http://<主服务>:8020/api/*` 访问同一份后端，接口契约保持不变。
+- 控制台前端通过 `vite.config.ts` 中的 `/api` 代理访问 8020 端口，接口契约与本文一致。
 
 ## 2. 通用错误格式
 

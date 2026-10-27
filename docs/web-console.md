@@ -1,17 +1,16 @@
 # Web 控制台操作说明
 
-> 本文档说明内置 Web 控制台的功能、访问方式和它调用的后端接口。主控制台是纯客户端单页应用（`app/web/index.html` + `app/web/app.js` + `app/web/styles.css`），由 FastAPI 主服务以静态文件方式提供，**没有独立前端后端**，所有操作都复用 `/api` 下的 JSON 接口。`/ui-vue/` 下的 Vue 3 + Vite 重写版本（源码在 `frontend/`，构建产物在 `app/web_vue/`）作为并行验证入口，未编译该目录时主服务会跳过该挂载，不影响 `/ui/` 正常使用。
+> 本文档说明 Web 控制台的功能、访问方式和它调用的后端接口。控制台是 `frontend/` 下的 Vue 3 + Vite 单页应用，**没有独立前端后端**，所有操作都复用 `/api` 下的 JSON 接口。主服务（8020）只提供 API，不挂载页面。
 
 ## 1. 访问方式
 
-主服务启动后，浏览器访问 `http://<主服务地址>:8020/` 会自动跳转到 `http://<主服务地址>:8020/ui/`。
+本地开发用 `cd frontend && npm install && npm run dev` 启动 vite dev server（默认 `http://127.0.0.1:5174/`），它把 `/api/*` 代理到 `http://127.0.0.1:8020`。主服务侧对应命令：
 
-- 静态挂载点：
-  - `/ui`（`app/main.py` 中 `app.mount("/ui", StaticFiles(directory=WEB_DIR, html=True))`），主控制台；
-  - `/ui-vue`（`_mount_optional_static(app, "/ui-vue", WEB_VUE_DIR, name="ui-vue")`），Vue 3 + Vite 重写版本，与 `/ui` 并行提供交叉验证。
-- 根路径 `/`：返回重定向到 `/ui/`。
-- 主控制台 (`/ui`) 不需要额外前端构建步骤或 Node 服务，刷新即生效。
-- `/ui-vue` 的产物来自 `frontend/`（Vite `build.outDir = "../app/web_vue"`）。只有当 `app/web_vue/` 目录实际存在（即已经执行过 `npm run build`）时，主服务才会挂载 `/ui-vue`；目录缺失时挂载被安全跳过，避免在主服务启动阶段崩溃。
+```powershell
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8020
+```
+
+`GET /`、`GET /ui/`、`GET /ui-vue/` 在 8020 上均返回 404；`tests/test_web_console.py::test_public_app_is_api_only` 覆盖了这一点。
 
 ## 2. 页面信息架构
 
@@ -135,14 +134,8 @@
 - API 响应、suite JSON 和报告中的错误信息都会脱敏。
 - `data/models.json` 属于本地敏感配置，不提交 Git。
 
-## 6. Vue 重写控制台（`/ui-vue`，并行验证）
+## 6. 前端工程
 
-`frontend/` 是用 Vue 3 + Vite + Element Plus + ECharts 重写的控制台工程；构建后产物输出到 `app/web_vue/`，主服务以只读静态目录方式把它挂载到 `/ui-vue`。
-
-- URL：`http://<主服务地址>:8020/ui-vue/`；`index.html` 中脚本与样式采用相对路径，可在任意 URL 前缀下正常加载。
-- 触发构建：`cd frontend && npm install && npm run build`（`vite.config.ts` 中 `build.outDir = "../app/web_vue"`）。
-- 运行时数据流：开发期 `vite.config.ts` 把 `/api/*` 反代到 `http://127.0.0.1:8020`；生产模式下静态产物仍通过 `http://<主服务地址>:8020/api/*` 调用同一份后端，所有现有接口契约保持不变。
-- 与 `/ui` 的关系：两套前端互不耦合。`/ui`（`app/web/`）继续维护作为对照基线，`/ui-vue` 用于在不影响基线的前提下逐步替换 UI；当 `/ui-vue` 可独立交付时，再决定是否把默认跳转切到 `/ui-vue/`。
-- 缺失安全：当 `app/web_vue/` 目录不存在（例如未执行过 `npm run build`，或在只部署后端的场景下），主服务 `app/main.py` 中的 `_mount_optional_static` 会跳过挂载，`/ui-vue` 路径返回 404，`/ui` 不受影响。`tests/test_web_console.py::test_public_app_serves_legacy_ui_and_optional_vue_mount` 与 `test_web_vue_optional_mount_helper_skips_when_directory_missing` 覆盖了这种行为。
+`frontend/` 用 Vue 3 + Vite + Element Plus + ECharts 实现控制台，`npm run dev` 运行开发服务器，`npm run build` 只用于产出静态资源（`app/web_vue/`，不入库）；主服务不再挂载该产物。详见 `frontend/README.md`。
 
 接口契约详见 [API 接口文档](api.md)；评测口径详见 [指标测试方法文档](metric-test-methods.md)。

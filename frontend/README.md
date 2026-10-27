@@ -1,10 +1,9 @@
 # LLM Benchmark · Vue 控制台
 
-这个目录是新版 Web 控制台源码，使用 Vue 3 + Vite + Element Plus + ECharts，对原 `app/web/` 原生静态页做并行重构。
+控制台源码，使用 Vue 3 + Vite + Element Plus + ECharts。后端（8020）只提供 `/api`，页面由 vite dev server 提供。
 
-- 旧控制台仍挂载在 `/ui/`。
-- Vue 控制台构建产物输出到 `app/web_vue/`，后端在该目录存在时挂载到 `/ui-vue/`。
-- `app/web_vue/` 是构建产物，不入库；部署或本地预览前需要先执行 `npm run build`。
+- 本地开发：`npm run dev`，默认 `http://127.0.0.1:5174/`，`/api` 代理到 `http://127.0.0.1:8020`。
+- `npm run build` 产物输出到 `app/web_vue/`，不入库，主服务也不挂载。
 
 ## 启动与构建
 
@@ -15,7 +14,7 @@ npm install
 # 开发期：Vite dev server，/api 代理到本地 FastAPI :8020
 npm run dev
 
-# 生产构建：输出到 ../app/web_vue/
+# 构建产物输出到 ../app/web_vue/（不入库，主服务不挂载）
 npm run build
 ```
 
@@ -26,10 +25,7 @@ $env:LLM_BENCHMARK_SCHEDULER_DISABLED='1'
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8020
 ```
 
-访问入口：
-
-- 旧控制台：`http://127.0.0.1:8020/ui/`
-- Vue 控制台：`http://127.0.0.1:8020/ui-vue/`（需要先构建生成 `app/web_vue/index.html`）
+访问入口：`http://127.0.0.1:5174/`。
 
 ## 当前页面结构
 
@@ -54,7 +50,7 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8020
 frontend/
 ├── index.html
 ├── package.json
-├── vite.config.ts          # base = "./"，outDir = ../app/web_vue
+├── vite.config.ts          # dev 端口 5174，/api 代理到 8020，outDir = ../app/web_vue
 ├── tsconfig.json
 ├── tsconfig.node.json
 ├── env.d.ts
@@ -84,5 +80,5 @@ frontend/
 - 不在浏览器存储 API Key；模型配置仍以服务端 `/api/models` 为准。
 - 能力评测数据集只展示后端返回的 `available_local=true` 数据集，避免用户选择本地不存在的数据集导致 EvalScope 远程下载或运行失败。
 - 数据集有子集时在卡片中展示 `subsets`，并高亮 `configured_subset_list`，帮助用户理解默认运行范围。
-- `/ui-vue/` 使用 hash 路由，静态托管路径变化时不需要后端 fallback。
+- 使用 hash 路由。
 - `app/web_vue/`、`node_modules/`、自动生成声明文件和 TypeScript buildinfo 都不提交。

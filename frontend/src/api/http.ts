@@ -1,7 +1,6 @@
 import axios, { AxiosError, type AxiosInstance } from "axios";
 
-// 后端 /api 前缀由 Vite dev server 代理到 http://127.0.0.1:8020；
-// 产物部署后由同源 FastAPI（/ui-vue/）直接服务静态资源。
+// 后端 /api 前缀由 Vite dev server 代理到 http://127.0.0.1:8020。
 export const http: AxiosInstance = axios.create({
   baseURL: "/api",
   timeout: 30_000,

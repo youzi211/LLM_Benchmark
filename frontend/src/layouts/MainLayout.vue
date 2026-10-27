@@ -246,7 +246,7 @@ watch(() => store.error, (err, prev) => {
     <MobileTabs />
 
     <footer class="lb-footer">
-      <small>Vue 3 · Vite · Element Plus · ECharts — 并行验证中，旧控制台仍挂在 /ui/</small>
+      <small>Vue 3 · Vite · Element Plus · ECharts</small>
     </footer>
 
     <ModelCreateDrawer v-model="modelDrawerVisible" @created="onModelCreated" />

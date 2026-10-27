@@ -160,9 +160,7 @@ Windows PowerShell 使用脚本启动（默认只启动主服务）：
 
 启动脚本默认只启动主服务并打印 sandbox 提醒；只有设置 `START_SANDBOX=1` 或传入 `-StartSandbox` 时才会执行 `ms-enclave server`。主服务日志写入 `.tmp/logs/main.*.log`，sandbox 日志写入 `.tmp/logs/sandbox.*.log`。
 
-主服务启动后会同时提供一个轻量 Web 控制台，不需要额外前端构建或 Node 服务：
-
-- 访问 `http://<主服务地址>:8020/` 会跳转到 `http://<主服务地址>:8020/ui/`。
+主服务只提供 `/api/*` JSON 接口，不挂载任何页面（访问 `http://<主服务地址>:8020/` 返回 404）。Web 控制台是 `frontend/` 下的 Vue 工程，本地用 `cd frontend && npm install && npm run dev` 启动，默认 `http://127.0.0.1:5174/`，通过 vite 代理访问 8020 上的 `/api`。控制台支持：
 - 控制台支持直接填写 `url`、`key`、`model`、`context_window_tokens`、`max_output_tokens` 后调用 `POST /api/suites/quick`。
 - 控制台也能读取已有模型配置并调用 `POST /api/suites/default`，以及跟踪最近 suite、打开最终总览报告。
 - 控制台支持创建定时一键评测计划：默认“只执行一次”，也可切换为每天/每 N 天周期执行；可为已有模型调用 `POST /api/suites/schedules`，也可将左侧临时模型参数先保存为模型配置再创建定时计划。
