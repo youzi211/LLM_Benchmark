@@ -864,17 +864,13 @@ html, body, #app,
   .lb-subtitle { display: none; }
   .lb-brand h1 { font-size: 16px; }
   .lb-model-control { gap: 6px; }
-  .lb-model-control :deep(.el-select) { min-width: 0 !important; flex: 1 1 160px; max-width: 220px; }
-  .lb-running-pill { font-size: 11px; padding: 2px 8px; }
+  .lb-model-control .el-select { min-width: 0 !important; flex: 1 1 160px; max-width: 220px; }
 
   /* Tabs: 横向滚动, 隐藏辅助入口 dropdown 文字 */
   .lb-tabs-inner { padding: 6px 14px; gap: 8px; }
   .lb-main-tabs { overflow-x: auto; flex: 1 1 auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .lb-main-tabs::-webkit-scrollbar { display: none; }
-  .lb-main-tabs :deep(.el-radio-button__inner) { padding: 8px 12px !important; font-size: 13px; }
-
-  /* 隐藏 running pill (移动端太挤) */
-  .lb-running-pill { display: none; }
+  .lb-main-tabs .el-radio-button__inner { padding: 8px 12px !important; font-size: 13px; }
 
   /* Connection banner 简化为单行 */
   .lb-conn-banner { padding: 6px 14px; font-size: 12.5px; }
@@ -885,13 +881,13 @@ html, body, #app,
   .lb-main { padding: 12px 12px 24px; }
 
   /* 顶部 status dot 紧凑 */
-  :deep(.el-radio-button + .el-radio-button) { margin-left: 0 !important; }
+  .lb-main-tabs .el-radio-button + .el-radio-button { margin-left: 0 !important; }
 }
 
 @media (max-width: 480px) {
   .lb-brand h1 { font-size: 14px; }
   .lb-topbar-inner { padding: 10px 12px 6px; gap: 8px; }
-  .lb-model-control :deep(.el-button) { padding: 5px 10px; font-size: 12px; }
+  .lb-model-control .el-button { padding: 5px 10px; font-size: 12px; }
   .lb-tabs-inner { padding: 4px 10px; }
 
   /* 主区 card 内部 padding 收紧 */
