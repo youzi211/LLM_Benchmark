@@ -60,14 +60,14 @@ const healthServices = computed(() => {
   const h = health.value;
   if (!h) {
     return [
-      { key: "api",       name: "FastAPI 网关", state: "ok" as const, detail: "127.0.0.1:8020", latencyMs: 12 },
-      { key: "models",    name: "模型 API",     state: "ok" as const, detail: "已配置 0 个" },
-      { key: "evalscope", name: "EvalScope",    state: "off" as const, detail: "等待健康检查" },
-      { key: "scheduler", name: "调度服务",     state: "ok" as const, detail: "APScheduler" },
+      { key: "api",       name: "FastAPI 网关", state: "fail" as const, detail: "健康端点不可达" },
+      { key: "models",    name: "模型 API",     state: "fail" as const, detail: "健康端点不可达" },
+      { key: "evalscope", name: "EvalScope",    state: "off" as const, detail: "健康端点不可达" },
+      { key: "scheduler", name: "调度服务",     state: "off" as const, detail: "健康端点不可达" },
     ];
   }
   return [
-    { key: "api",       name: "FastAPI 网关",  state: "ok" as const, detail: "127.0.0.1:8020", latencyMs: 12 },
+    { key: "api",       name: "FastAPI 网关",  state: "ok" as const, detail: `运行 ${Math.round(h.uptime_s / 60)} 分钟` },
     { key: "models",    name: "模型 API",      state: h.models.ok ? ("ok" as const) : ("fail" as const), detail: `已配置 ${h.models.count} 个` },
     { key: "evalscope", name: "EvalScope",     state: h.evalscope.ok ? ("ok" as const) : ("warn" as const), detail: h.evalscope.state === "ready" ? "数据集目录就绪" : h.evalscope.state },
     { key: "scheduler", name: "调度服务",      state: h.scheduler.ok ? ("ok" as const) : ("warn" as const), detail: h.scheduler.state === "running" ? "APScheduler" : "已禁用" },
@@ -118,6 +118,26 @@ function statusType(s?: string): "success" | "warning" | "danger" | "info" {
   return "info";
 }
 
+const STATUS_LABELS: Record<string, string> = {
+  completed: "已完成",
+  partial: "部分完成",
+  running: "运行中",
+  pending: "等待中",
+  queued: "排队中",
+  failed: "失败",
+  error: "错误",
+  interrupted: "已中断",
+};
+
+const recentItems = computed(() =>
+  recentTasks.value.map((t) => ({
+    task: t,
+    lane: t.task_id.startsWith("stress_task_") ? { label: "压测", path: "/stress" }
+      : t.task_id.startsWith("intel_task_") ? { label: "能力", path: "/intelligence" }
+      : { label: "基础", path: "/basic" },
+  })),
+);
+
 function goNew() {
   router.push("/basic");
 }
@@ -141,8 +161,6 @@ function goNew() {
       <KpiCard
         label="今日评测"
         :value="todayCount"
-        :trend="12.5"
-        trend-label="较昨日"
         variant="primary"
         :loading="loading"
         caption="含基础 / 压测 / 能力"
@@ -150,8 +168,6 @@ function goNew() {
       <KpiCard
         label="通过率"
         :value="passRate !== null ? passRate + '%' : '—'"
-        :trend="2.1"
-        trend-label="较昨日"
         variant="success"
         :loading="loading"
         caption="已完成任务中"
@@ -159,17 +175,13 @@ function goNew() {
       <KpiCard
         label="平均延迟"
         :value="avgLatency !== null ? avgLatency + 'ms' : '—'"
-        :trend="-3.8"
-        trend-label="较昨日"
         variant="warning"
         :loading="loading"
-        caption="P50 估算"
+        caption="任务平均时长"
       />
       <KpiCard
         label="在线模型"
         :value="onlineModels"
-        :trend="0"
-        trend-label="已配置"
         variant="info"
         :loading="loading"
         caption="可在右上选择"
@@ -213,20 +225,23 @@ function goNew() {
         </div>
         <ul v-if="recentTasks.length" class="lb-overview__recent-list">
           <li
-            v-for="t in recentTasks"
-            :key="t.task_id"
+            v-for="item in recentItems"
+            :key="item.task.task_id"
             class="lb-overview__recent-item"
-            @click="router.push('/basic')"
+            @click="router.push(item.lane.path)"
           >
-            <StatusDot :state="statusType(t.status) === 'success' ? 'ok' : statusType(t.status) === 'warning' ? 'pending' : statusType(t.status) === 'danger' ? 'fail' : 'off'" :size="7" />
+            <StatusDot :state="statusType(item.task.status) === 'success' ? 'ok' : statusType(item.task.status) === 'warning' ? 'pending' : statusType(item.task.status) === 'danger' ? 'fail' : 'off'" :size="7" />
             <div class="lb-overview__recent-meta">
-              <div class="lb-overview__recent-id">{{ t.task_id }}</div>
+              <div class="lb-overview__recent-id">
+                <span class="lb-overview__recent-lane">{{ item.lane.label }}</span>
+                {{ item.task.task_id }}
+              </div>
               <div class="lb-overview__recent-time">
                 <el-icon><Clock /></el-icon>
-                {{ formatDate(t.finished_at || t.updated_at) }}
+                {{ formatDate(item.task.finished_at || item.task.updated_at) }}
               </div>
             </div>
-            <el-tag :type="statusType(t.status)" size="small" effect="light" round>{{ t.status }}</el-tag>
+            <el-tag :type="statusType(item.task.status)" size="small" effect="light" round>{{ STATUS_LABELS[String(item.task.status)] ?? item.task.status }}</el-tag>
           </li>
         </ul>
         <div v-else class="lb-overview__recent-empty">
@@ -346,6 +361,16 @@ function goNew() {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.lb-overview__recent-lane {
+  margin-right: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--lb-neutral-tint);
+  color: var(--lb-fg-soft);
+  font-family: inherit;
+  font-size: 11px;
 }
 
 .lb-overview__recent-time {

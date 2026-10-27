@@ -93,7 +93,7 @@ const trendText = computed(() => {
 
 .lb-kpi:hover {
   transform: translateY(-2px);
-  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.10);
+  box-shadow: var(--lb-shadow-hover);
 }
 
 .lb-kpi__head {

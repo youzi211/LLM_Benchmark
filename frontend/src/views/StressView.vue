@@ -670,7 +670,7 @@ onUnmounted(() => {
 .progress-card__head { margin-bottom: 10px; }
 .progress-stats { flex-wrap: wrap; margin-top: 8px; color: var(--el-text-color-secondary); font-size: 12px; }
 .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.metric-tile { display: grid; gap: 5px; padding: 14px; border: 1px solid var(--el-border-color-lighter); border-radius: 10px; background: var(--el-bg-color); }
+.metric-tile { display: grid; gap: 5px; padding: 14px; border: 1px solid var(--el-border-color-lighter); border-radius: 10px; background: var(--lb-surface); }
 .metric-tile span, .metric-tile small { color: var(--el-text-color-secondary); }
 .metric-tile strong { font-size: 24px; font-variant-numeric: tabular-nums; }
 .metric-tile--danger strong { color: var(--el-color-danger); }
