@@ -16,6 +16,7 @@ import {
   fetchStressDatasets,
   finalStatus,
   formatDate,
+  getStressProgress,
   getStressTask,
   listStressArtifacts,
   listStressTasks,
@@ -131,12 +132,47 @@ async function loadDatasets() {
   }
 }
 
+// 运行中的分组只认组内任务，避免列表刷新后 group_key 重复或消失导致选中错位。
+function resolveGroupSelection() {
+  const key = selectedGroupKey.value;
+  const current = selected.value as any;
+  const still = groupedTasks.value.find((task: any) => task.group_key === key);
+  if (!still) { selected.value = null; return; }
+  selected.value = current?.progress_detail ? { ...still, progress_detail: current.progress_detail } : still;
+}
+
+let detailRequests = 0;
+let progressRequests = 0;
+// 选中任务在跑时只拉详情拿 progress_detail；用计数防止慢请求互相覆盖。
+async function refreshSelected() {
+  const selectedAny = selected.value as any;
+  if (!selectedAny || selectedAny.grouped || finalStatus(selectedAny.status)) return;
+  const request = ++detailRequests;
+  try {
+    const detail = await getStressTask(String(selectedAny.task_id), false);
+    if (request === detailRequests && !selectedGroupKey.value) selected.value = detail;
+  } catch { /* 单次轮询失败保持旧数据 */ }
+}
+
+async function refreshGroupProgress() {
+  const selectedAny = selected.value as any;
+  if (!selectedAny?.grouped || finalStatus(selectedAny.status)) return;
+  const running = tasks.value.find((task) => groupKey(task) === selectedGroupKey.value && !finalStatus(task.status));
+  if (!running) return;
+  const request = ++progressRequests;
+  try {
+    const progress = await getStressProgress(running.task_id);
+    if (request === progressRequests && selected.value) selected.value = { ...(selected.value as any), progress_detail: progress };
+  } catch { /* 单次轮询失败保持旧数据 */ }
+}
+
 async function reload() {
   loading.value = true;
   try {
     tasks.value = await listStressTasks();
     if (selectedGroupKey.value) {
-      selected.value = groupedTasks.value.find((task: any) => task.group_key === selectedGroupKey.value) || null;
+      resolveGroupSelection();
+      await refreshGroupProgress();
     } else if (selected.value) {
       await selectTask(selected.value.task_id, false);
     }
@@ -387,8 +423,10 @@ onMounted(() => {
   loadDatasets();
   reload();
   refreshTimer = window.setInterval(() => {
+    if (document.visibilityState !== "visible") return;
     if (tasks.value.some((task) => !finalStatus(task.status)) || (selected.value && !finalStatus(selected.value.status))) {
       reload();
+      refreshSelected();
     }
   }, 5000);
 });

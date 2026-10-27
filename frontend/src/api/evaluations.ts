@@ -55,9 +55,15 @@ export async function listStressTasks(limit = 50): Promise<TaskLike[]> {
   return Array.isArray(data) ? data : [];
 }
 
+// 运行中的任务用不带 /result 的详情接口，它每次都会刷新 progress_detail。
 export async function getStressTask(taskId: string, result = false): Promise<TaskLike> {
   const { data } = await http.get(`/stress/tasks/${encodeURIComponent(taskId)}${result ? "/result" : ""}`);
   return data;
+}
+
+export async function getStressProgress(taskId: string): Promise<unknown> {
+  const { data } = await http.get(`/stress/tasks/${encodeURIComponent(taskId)}`);
+  return data?.progress_detail ?? null;
 }
 
 export async function cancelStressTask(taskId: string) {
