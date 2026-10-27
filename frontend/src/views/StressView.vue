@@ -34,6 +34,8 @@ const loading = ref(false);
 const submitting = ref(false);
 const tasks = ref<TaskLike[]>([]);
 const selected = ref<TaskLike | null>(null);
+const groupByConfig = ref(true);
+const selectedGroupKey = ref<string | null>(null);
 let refreshTimer: number | undefined;
 const custom = ref(false);
 const datasetsLoading = ref(false);
@@ -133,7 +135,11 @@ async function reload() {
   loading.value = true;
   try {
     tasks.value = await listStressTasks();
-    if (selected.value) await selectTask(selected.value.task_id, false);
+    if (selectedGroupKey.value) {
+      selected.value = groupedTasks.value.find((task: any) => task.group_key === selectedGroupKey.value) || null;
+    } else if (selected.value) {
+      await selectTask(selected.value.task_id, false);
+    }
   } finally {
     loading.value = false;
   }
@@ -225,8 +231,90 @@ const statusFilter = ref<string>("all");
 const queryText = ref<string>("");
 const selectedIds = ref<string[]>([]);
 
+function stableJson(value: any): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function groupKey(task: TaskLike): string {
+  const config = { ...((task.request_config as Record<string, unknown>) || {}) };
+  delete config.parallel;
+  delete config.number;
+  return `${task.model_id || ""}:${stableJson(config)}`;
+}
+
+function scenarioLabel(task: TaskLike): string {
+  const config = (task.request_config || {}) as Record<string, any>;
+  const dataset = String(config.dataset || "压测");
+  if (config.dataset_args?.target_input_len) return `短回答 · ${config.dataset_args.target_input_len} 输入`;
+  if (Number(config.max_tokens) >= 4096) return `长回答 · ${dataset}`;
+  if (dataset === "longalpaca") return `长文本 · ${dataset}`;
+  return `${dataset} · max ${config.max_tokens ?? "默认"}`;
+}
+
+const groupedTasks = computed(() => {
+  const buckets = new Map<string, TaskLike[]>();
+  for (const task of tasks.value) {
+    const key = groupKey(task);
+    const bucket = buckets.get(key) || [];
+    bucket.push(task);
+    buckets.set(key, bucket);
+  }
+  return Array.from(buckets, ([key, bucket]) => {
+    const included = bucket.filter((task) => runsOf(task).length || ["running", "pending"].includes(String(task.status)));
+    if (!included.length) return null;
+    const latest = [...included].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))[0];
+    const statuses = included.map((task) => String(task.status || ""));
+    const config = (latest.request_config || {}) as Record<string, any>;
+    const status = statuses.includes("running") ? "running"
+      : statuses.includes("pending") ? "pending"
+        : statuses.includes("completed") ? "completed"
+          : statuses.includes("failed") ? "failed" : "interrupted";
+    const runs = included.flatMap((task) => runsOf(task));
+    const normalized = {
+      task_id: `group:${key}`,
+      model: latest.model_id,
+      status,
+      summary: {
+        best_req_throughput: Math.max(0, ...runs.map((run: any) => Number(run.request_throughput) || 0)),
+        best_output_throughput: Math.max(0, ...runs.map((run: any) => Number(run.output_throughput) || 0)),
+        max_success_parallel: Math.max(0, ...runs.filter((run: any) => Number(run.success_rate) >= 1).map((run: any) => Number(run.parallel) || 0)),
+        first_error_parallel: runs.filter((run: any) => Number(run.failed) > 0).map((run: any) => Number(run.parallel) || 0).sort((a: number, b: number) => a - b)[0] ?? null,
+      },
+      runs: [...runs].sort((a: any, b: any) => (Number(a.parallel) || 0) - (Number(b.parallel) || 0)),
+      errors: included.flatMap((task) => (task.normalized_result as any)?.errors || []),
+    };
+    return {
+      ...latest,
+      task_id: `group:${key}`,
+      group_key: key,
+      group_label: scenarioLabel(latest),
+      group_config: [
+        `数据集 ${config.dataset || "默认"}`,
+        config.dataset_args?.target_input_len ? `输入目标 ${config.dataset_args.target_input_len}` : null,
+        `max_tokens ${config.max_tokens ?? "默认"}`,
+        config.stream === false ? "非流式" : "流式",
+      ].filter(Boolean).join(" · "),
+      group_count: included.length,
+      grouped: true,
+      status,
+      progress: `${bucket.length} 条同配置记录 · ${runs.length} 个并发档位`,
+      duration_ms: included.reduce((sum, task) => sum + (Number(task.duration_ms) || 0), 0),
+      normalized_result: normalized,
+      raw_result: null,
+      raw_output_dir: null,
+      report_path: null,
+    } as TaskLike;
+  }).filter(Boolean) as TaskLike[];
+});
+
+const displayTasks = computed(() => groupByConfig.value ? groupedTasks.value : tasks.value);
+
 const statusFilterOptions = computed(() => {
-  const t = tasks.value;
+  const t = displayTasks.value;
   return [
     { value: "all",       label: "全部",     count: t.length },
     { value: "running",   label: "运行中",   count: t.filter(x => x.status === "running").length },
@@ -236,7 +324,7 @@ const statusFilterOptions = computed(() => {
 });
 
 const filteredTasks = computed(() => {
-  let out = tasks.value;
+  let out = displayTasks.value;
   if (statusFilter.value !== "all") {
     if (statusFilter.value === "failed") {
       out = out.filter(t => ["failed", "error", "interrupted"].includes(String(t.status)));
@@ -246,7 +334,7 @@ const filteredTasks = computed(() => {
   }
   if (queryText.value.trim()) {
     const q = queryText.value.toLowerCase();
-    out = out.filter(t => String(t.task_id).toLowerCase().includes(q) || String(t.model_id).toLowerCase().includes(q));
+    out = out.filter(t => String((t as any).group_label || t.task_id).toLowerCase().includes(q) || String(t.model_id).toLowerCase().includes(q));
   }
   return out;
 });
@@ -265,6 +353,7 @@ function bulkRerun() {
 }
 async function selectTask(taskId: string, refreshList = true) {
   if (refreshList) await reload();
+  selectedGroupKey.value = null;
   const cached = tasks.value.find((t) => t.task_id === taskId);
   selected.value = await getStressTask(taskId, finalStatus(cached?.status));
   artifacts.value = [];
@@ -273,6 +362,12 @@ async function selectTask(taskId: string, refreshList = true) {
     try { artifacts.value = await listStressArtifacts(taskId); } catch { artifacts.value = []; }
     finally { artifactsLoading.value = false; }
   }
+}
+
+function selectGroup(task: TaskLike) {
+  selectedGroupKey.value = String((task as any).group_key);
+  selected.value = task;
+  artifacts.value = [];
 }
 
 async function cancelTask(taskId: string) {
@@ -409,7 +504,8 @@ onUnmounted(() => {
 
     <el-card class="panel-card" shadow="never">
       <div class="card-title__actions">
-        <el-input v-model="queryText" placeholder="搜索任务 ID / 模型" clearable size="default" style="width: 220px;">
+        <el-switch v-model="groupByConfig" active-text="按方案归组" inactive-text="逐条任务" @change="selectedIds = []" />
+        <el-input v-model="queryText" :placeholder="groupByConfig ? '搜索方案 / 模型' : '搜索任务 ID / 模型'" clearable size="default" style="width: 220px;">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
         <el-button size="small" @click="reload">刷新</el-button>
@@ -417,7 +513,7 @@ onUnmounted(() => {
       <div class="lb-tl__filters">
         <FilterChips v-model="statusFilter" :options="statusFilterOptions" :show-count="true" size="small" />
       </div>
-      <div v-if="selectedIds.length" class="lb-tl__bulkbar">
+      <div v-if="selectedIds.length && !groupByConfig" class="lb-tl__bulkbar">
         <span class="lb-tl__bulkbar-text">已选 {{ selectedIds.length }} 个任务</span>
         <el-button size="small" type="primary" plain @click="bulkRerun">重新运行</el-button>
         <el-button size="small" type="success" plain @click="goCompare">对比 ({{ selectedIds.length }})</el-button>
@@ -425,11 +521,14 @@ onUnmounted(() => {
       </div>
       <el-table v-loading="loading" :data="filteredTasks" height="440" :row-key="(r: any) => r.task_id" highlight-current-row
         @selection-change="(rows: TaskLike[]) => (selectedIds = rows.map(r => r.task_id))"
-        @row-click="(row: any) => selectTask(row.task_id)"
+        @row-click="(row: any) => row.grouped ? selectGroup(row) : selectTask(row.task_id)"
         empty-text="">
-        <el-table-column type="selection" width="40" />
+        <el-table-column v-if="!groupByConfig" type="selection" width="40" />
         <el-table-column prop="task_id" label="任务" min-width="160" show-overflow-tooltip>
-          <template #default="{ row }"><span class="lb-tl__id">{{ row.task_id }}</span></template>
+          <template #default="{ row }">
+            <span v-if="row.grouped"><strong>{{ row.group_label }}</strong><small class="group-subtitle">{{ row.group_count }} 条记录 · {{ runsOf(row as any).length }} 个档位</small></span>
+            <span v-else class="lb-tl__id">{{ row.task_id }}</span>
+          </template>
         </el-table-column>
         <el-table-column prop="model_id" label="模型" width="120" show-overflow-tooltip />
         <el-table-column label="状态" width="110">
@@ -451,12 +550,14 @@ onUnmounted(() => {
       />
       <template v-else>
         <el-descriptions :column="2" border>
-          <el-descriptions-item label="任务 ID">{{ selected.task_id }}</el-descriptions-item>
+          <el-descriptions-item v-if="!(selected as any).grouped" label="任务 ID">{{ selected.task_id }}</el-descriptions-item>
+          <el-descriptions-item v-else label="方案汇总">{{ (selected as any).group_label }} · {{ (selected as any).group_count }} 条记录</el-descriptions-item>
           <el-descriptions-item label="模型">{{ selected.model_id }}</el-descriptions-item>
+          <el-descriptions-item v-if="(selected as any).grouped" label="方案配置">{{ (selected as any).group_config }}</el-descriptions-item>
           <el-descriptions-item label="进度">{{ selected.progress || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="输出目录">{{ selected.raw_output_dir || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="!(selected as any).grouped" label="输出目录">{{ selected.raw_output_dir || '-' }}</el-descriptions-item>
         </el-descriptions>
-        <div v-if="progressDetail || !finalStatus(selected.status)" class="progress-card mt" aria-live="polite">
+        <div v-if="!(selected as any).grouped && (progressDetail || !finalStatus(selected.status))" class="progress-card mt" aria-live="polite">
           <div class="progress-card__head">
             <strong>{{ selected.progress || '正在准备压测' }}</strong>
             <span>{{ Number(progressDetail?.percent || 0).toFixed(1) }}%</span>
@@ -471,7 +572,7 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="detail-actions">
-          <el-button v-if="!finalStatus(selected.status)" type="danger" plain @click="cancelTask(selected.task_id)">取消任务</el-button>
+          <el-button v-if="!(selected as any).grouped && !finalStatus(selected.status)" type="danger" plain @click="cancelTask(selected.task_id)">取消任务</el-button>
           <el-link v-if="selected.report_path" type="primary" :href="`/api/stress/reports/${selected.task_id}`" target="_blank">打开 Markdown 报告</el-link>
           <el-link v-if="selected.raw_result" type="primary" :href="stressRawResultUrl(selected.task_id)" target="_blank"><el-icon><Download /></el-icon>原始结果 JSON</el-link>
         </div>
@@ -500,7 +601,7 @@ onUnmounted(() => {
           <el-table-column prop="avg_turns" label="平均轮数" width="95"><template #default="{ row }">{{ formatMetric(row.avg_turns) }}</template></el-table-column>
         </el-table>
 
-        <section class="artifact-panel mt" aria-labelledby="artifact-title">
+        <section v-if="!(selected as any).grouped" class="artifact-panel mt" aria-labelledby="artifact-title">
           <div class="section-label"><span id="artifact-title">原始产物</span><el-tag size="small" effect="plain">{{ artifacts.length }} 个文件</el-tag></div>
           <el-skeleton v-if="artifactsLoading" :rows="2" animated />
           <el-empty v-else-if="!artifacts.length" description="暂无可下载原始产物" :image-size="64" />
@@ -518,6 +619,7 @@ onUnmounted(() => {
 
 <style scoped>
 .field-help { margin: 6px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
+.group-subtitle { display: block; margin-top: 2px; color: var(--el-text-color-secondary); font-size: 11px; }
 .section-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 10px; font-weight: 650; }
 .dataset-card { width: 100%; color: inherit; text-align: left; font: inherit; cursor: pointer; }
 .dataset-card:focus-visible, .advanced-toggle:focus-visible, .artifact-row:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
