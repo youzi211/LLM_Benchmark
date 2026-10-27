@@ -236,8 +236,8 @@ onUnmounted(() => {
 }
 
 .lb-error {
-  background: #fef2f2;
-  color: #b91c1c;
+  background: var(--lb-danger-bg);
+  color: var(--lb-danger-soft);
   padding: 6px 20px;
   font-size: 12px;
 }
