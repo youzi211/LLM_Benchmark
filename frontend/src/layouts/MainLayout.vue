@@ -200,7 +200,7 @@ onUnmounted(() => {
 
 <style scoped>
 .lb-topbar {
-  background: #ffffff;
+  background: var(--lb-surface);
   border-bottom: 1px solid var(--lb-border);
 }
 
@@ -243,7 +243,7 @@ onUnmounted(() => {
 }
 
 .lb-tabs {
-  background: #fff;
+  background: var(--lb-surface);
   border-bottom: 1px solid var(--lb-border);
 }
 
