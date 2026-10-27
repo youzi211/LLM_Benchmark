@@ -19,6 +19,9 @@ __pycache__/
 # Local brainstorming / visual companion artifacts
 .superpowers/
 
+# Playwright browser-verification screenshots and snapshots
+/.playwright-mcp/
+
 # Mimocode agents
 /.mimocode/
 
