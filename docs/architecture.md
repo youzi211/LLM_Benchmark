@@ -34,7 +34,8 @@
 
 - 不要把 EvalScope 再包装成独立子服务；当前架构已经收缩为主服务进程内直接调用。
 - 不要把 EvalScope 原始大表硬塞进统一总览；overview 只做摘要和导航。
-- P4 结果边界：`IntelligenceTask` / `StressTask` 的完整 EvalScope 业务结果只归档一次到任务级 `raw_result`，`normalized_result` 只保留页面、总览和摘要所需字段，`raw_output_dir` 只保存原始输出目录指针。
+- P4 结果边界：`IntelligenceTask` / `StressTask` 的完整 EvalScope 业务结果只归档一次到任务级 `raw_result`，`normalized_result` 只保留页面、总览和摘要所需字段，`raw_output_dir` 只保存原始输出目录指针。任务列表接口不返回 `raw_result`；能力任务列表也不返回 `normalized_result`，完整结果通过任务结果接口按需读取。
+- 首页 KPI 通过 `/api/overview/task-summary` 在任务 Store 截断前计算全量统计；最近列表只负责运行中、最近结束和导航，不能反过来作为“今日评测”和完成率的事实来源。
 - 不要把 Judge 密钥放进 `data/evalscope.json`；Judge 的地址和密钥仍来自 `data/models.json` 中的模型配置。
 - 不要在报告中输出自动“上线通过/失败”结论；报告只给事实、风险和建议。
 

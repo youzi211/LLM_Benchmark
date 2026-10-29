@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import heapq
 import os
+from collections.abc import Iterator
 from pathlib import Path
 
 from app.storage.file_utils import read_json_file, write_json_file_atomic
@@ -26,18 +28,21 @@ class StressTaskStore:
             return None
         return self._with_legacy_duration(StressTask.model_validate(make_json_safe(read_json_file(path, {}))))
 
-    def list(self, limit: int = 50) -> list[StressTask]:
+    def iter_tasks(self) -> Iterator[StressTask]:
         if not self.directory.exists():
-            return []
-        tasks: list[StressTask] = []
+            return
         for path in self.directory.glob("stress_task_*.json"):
             try:
                 task = StressTask.model_validate(make_json_safe(read_json_file(path, {})))
-                tasks.append(self._with_legacy_duration(task))
+                yield self._with_legacy_duration(task)
             except Exception:
                 continue
-        tasks.sort(key=lambda item: (item.created_at, item.task_id), reverse=True)
-        return tasks[:limit]
+
+    def list(self, limit: int | None = 50) -> list[StressTask]:
+        key = lambda item: (item.created_at, item.task_id)
+        if limit is None:
+            return sorted(self.iter_tasks(), key=key, reverse=True)
+        return heapq.nlargest(limit, self.iter_tasks(), key=key)
 
     @staticmethod
     def _with_legacy_duration(task: StressTask) -> StressTask:

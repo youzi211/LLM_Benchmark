@@ -569,7 +569,8 @@ class StressRunner:
             errors=[item for item in errors if isinstance(item, dict)],
         )
 
-    def _normalize_run(self, row: dict[str, Any]) -> StressRunResult:
+    @staticmethod
+    def _normalize_run(row: dict[str, Any]) -> StressRunResult:
         def first(*keys: str) -> Any:
             for key in keys:
                 if key in row:
@@ -613,7 +614,8 @@ class StressRunner:
             trace_summary=(row.get("raw") or {}).get("trace_summary") if isinstance(row.get("raw"), dict) else None,
         )
 
-    def _summary_from_runs(self, runs: list[StressRunResult]) -> dict[str, Any]:
+    @staticmethod
+    def _summary_from_runs(runs: list[StressRunResult]) -> dict[str, Any]:
         summary: dict[str, Any] = {}
         successful = [run for run in runs if run.failed in (None, 0)]
         if successful:
@@ -627,3 +629,21 @@ class StressRunner:
         first_error = next((run.parallel for run in runs if run.failed and run.failed > 0), None)
         summary["first_error_parallel"] = first_error
         return summary
+
+    @classmethod
+    def normalize_for_list(cls, task: StressTask) -> StressTask:
+        """Backfill legacy display metrics without mutating or rewriting task files."""
+        if task.status not in TERMINAL_STATUSES or not task.raw_result:
+            return task
+        try:
+            normalizer = object.__new__(cls)
+            fresh = normalizer._normalize(task, task.raw_result)
+        except Exception:
+            logger.warning("Stress list normalization failed for task %s", task.task_id, exc_info=True)
+            return task
+        if not fresh.runs:
+            return task
+        if task.normalized_result is not None and task.normalized_result.runs:
+            if not cls._needs_metric_backfill(task.normalized_result, fresh):
+                return task
+        return task.model_copy(update={"normalized_result": fresh})

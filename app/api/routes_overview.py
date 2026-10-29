@@ -8,9 +8,22 @@ from fastapi.responses import FileResponse
 from app.api.errors import api_error
 from app.overview.report import build_overview_report, write_overview_markdown
 from app.overview.schemas import OverviewReportRequest
+from app.overview.task_summary import TaskOverviewSummary, build_task_overview_summary
+from app.storage.intelligence_task_store import IntelligenceTaskStore
 from app.storage.overview_report_store import OverviewReportStore
+from app.storage.stress_task_store import StressTaskStore
+from app.storage.task_store import TaskStore
 
 router = APIRouter(prefix="/overview", tags=["overview"])
+
+
+@router.get("/task-summary", response_model=TaskOverviewSummary)
+def get_task_overview_summary():
+    return build_task_overview_summary(
+        task_store=TaskStore(),
+        stress_store=StressTaskStore(),
+        intelligence_store=IntelligenceTaskStore(),
+    )
 
 
 @router.post("/reports")

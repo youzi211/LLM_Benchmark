@@ -169,7 +169,10 @@ async def submit_custom_task(request: IntelligenceRunRequest):
 
 @router.get("/tasks")
 def list_intelligence_tasks(limit: int = 50):
-    return IntelligenceTaskStore().list(limit=limit)
+    return [
+        task.model_dump(mode="json", exclude={"normalized_result", "raw_result"})
+        for task in IntelligenceTaskStore().list(limit=limit)
+    ]
 
 
 @router.post("/tasks/{task_id}/cancel")

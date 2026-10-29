@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import heapq
 import os
+from collections.abc import Iterator
 from pathlib import Path
 
 from app.core.models import TaskResult
@@ -24,14 +26,16 @@ class TaskStore:
             return None
         return TaskResult.model_validate(read_json_file(path, {}))
 
-    def list(self, limit: int = 100) -> list[TaskResult]:
+    def iter_tasks(self) -> Iterator[TaskResult]:
         if not self.directory.exists():
-            return []
-        results: list[TaskResult] = []
+            return
         for path in self.directory.glob("task_*.json"):
             try:
-                results.append(TaskResult.model_validate(read_json_file(path, {})))
+                yield TaskResult.model_validate(read_json_file(path, {}))
             except Exception:
                 continue
-        results.sort(key=lambda item: item.started_at, reverse=True)
-        return results[:limit]
+
+    def list(self, limit: int | None = 100) -> list[TaskResult]:
+        if limit is None:
+            return sorted(self.iter_tasks(), key=lambda item: item.started_at, reverse=True)
+        return heapq.nlargest(limit, self.iter_tasks(), key=lambda item: item.started_at)

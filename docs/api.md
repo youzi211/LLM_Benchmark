@@ -478,7 +478,7 @@ GET /api/tasks?limit=20
 
 #### 成功响应
 
-`200 OK`，返回 `TaskResult[]`。
+`200 OK`，返回任务摘要数组；摘要不包含体积较大的 `results` 和 `analysis`，指标明细与报告分析通过 `GET /api/tasks/{task_id}` 获取。
 
 ### GET `/api/tasks/{task_id}`
 
@@ -728,6 +728,8 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 |---|---:|---:|---|
 | `limit` | integer | `50` | 最大返回数量。 |
 
+列表返回轻量任务摘要，不包含 `raw_result` 和 `normalized_result`；完整结果通过 `GET /api/intelligence/tasks/{task_id}/result` 获取。
+
 #### GET `/api/intelligence/tasks/{task_id}`
 
 读取本地任务。运行中任务会尝试读取 EvalScope 输出目录下的 `progress.json` 并刷新 `progress` / `progress_detail`；任务不存在返回 `404 intelligence_task_not_found`。
@@ -856,6 +858,8 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 
 读取本地压测任务列表，不触发新的 EvalScope 调用。可选 query 参数：`limit`，默认 `50`。
 
+列表返回任务摘要和 `normalized_result`，不包含 `raw_result`；历史任务若缺失标准化档位，服务会在内存中按 `raw_result` 回填后再返回摘要，不回写任务文件。完整原始结果通过 `GET /api/stress/tasks/{task_id}/result`、`GET /api/stress/tasks/{task_id}/raw-result` 或 `raw_output_dir` 获取。
+
 #### GET `/api/stress/tasks/{task_id}`
 
 读取本地任务，并容错读取任务输出目录中的 EvalScope `progress.json`。任务不存在返回 `404 stress_task_not_found`。
@@ -915,7 +919,23 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 | `summary` | object | 已提供模块数、完成模块数、关注点数量等总览统计。 |
 | `report_path` | string/null | 本地 Markdown 总览报告路径。 |
 
-### 12.3 创建总览报告
+### 12.3 查询任务统计摘要
+
+#### GET `/api/overview/task-summary`
+
+在三个任务 Store 截断列表前扫描全部任务，返回首页 KPI 使用的全量统计：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `today_count` | integer | `Asia/Shanghai` 时区当天启动或创建的任务数。 |
+| `final_count` | integer | 全部已结束任务数，包含完成、部分完成、失败、中断和错误。 |
+| `completed_count` | integer | 状态为 `completed` 的已结束任务数。 |
+| `completion_rate` | number/null | 完成数 / 已结束任务数，按百分数保留一位小数；无已结束任务时为空。 |
+| `avg_duration_ms` | integer/null | 有正耗时记录的任务平均耗时；无记录时为空。 |
+
+列表接口继续只返回最近任务；首页 KPI 使用本接口，避免用截断后的列表计算“今日评测”和完成率。统计采用逐条读取并累计，不在内存中同时保留全部任务。
+
+### 12.4 创建总览报告
 
 #### POST `/api/overview/reports`
 
@@ -931,25 +951,25 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 
 成功响应：`200 OK`，返回 `OverviewReport`，并写入本地 `data/overview_reports/` 和 `reports/overview/YYYY-MM-DD/`。
 
-### 12.4 查询总览报告列表
+### 12.5 查询总览报告列表
 
 #### GET `/api/overview/reports`
 
 读取本地总览报告列表。可选 query 参数：`limit`，默认 `50`。
 
-### 12.5 查询总览报告元数据
+### 12.6 查询总览报告元数据
 
 #### GET `/api/overview/reports/{overview_id}`
 
 返回已生成的 `OverviewReport` 元数据。不存在时返回 `404 overview_report_not_found`。
 
-### 12.6 下载总览 Markdown
+### 12.7 下载总览 Markdown
 
 #### GET `/api/overview/reports/{overview_id}/markdown`
 
 下载统一总览 Markdown 报告。报告包含“一眼看懂”、模型与任务信息、网关接入验收摘要、EvalScope 压测摘要、EvalScope 能力评测摘要和详细报告入口（章节顺序与 suite 执行顺序一致：网关 → 压测 → 能力评测）。报告不存在或文件丢失时返回 `404 overview_report_not_found`。
 
-## 12.7 后台 Job 查询
+## 12.8 后台 Job 查询
 
 #### GET `/api/jobs`
 

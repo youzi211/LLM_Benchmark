@@ -108,7 +108,11 @@ async def submit_custom_stress_task(request: StressRunRequest):
 
 @router.get("/tasks")
 def list_stress_tasks(limit: int = 50):
-    return make_json_safe(StressTaskStore().list(limit=limit))
+    tasks = StressTaskStore().list(limit=limit)
+    return make_json_safe([
+        StressRunner.normalize_for_list(task).model_dump(mode="json", exclude={"raw_result"})
+        for task in tasks
+    ])
 
 
 @router.post("/tasks/{task_id}/cancel")

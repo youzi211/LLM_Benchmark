@@ -25,7 +25,10 @@ async def run_task(request: RunTaskRequest):
 
 @router.get("")
 def list_tasks(limit: int = 100):
-    return TaskStore().list(limit=limit)
+    return [
+        task.model_dump(mode="json", exclude={"analysis", "results"})
+        for task in TaskStore().list(limit=limit)
+    ]
 
 
 @router.get("/{task_id}")
