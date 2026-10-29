@@ -28,14 +28,13 @@
 
 ### Typography
 
-- **Heading Font:** Fira Code
-- **Body Font:** Fira Sans
+- **Heading Font:** System monospace stack
+- **Body Font:** System sans-serif stack
 - **Mood:** dashboard, data, analytics, code, technical, precise
-- **Google Fonts:** [Fira Code + Fira Sans](https://fonts.google.com/share?selection.family=Fira+Code:wght@400;500;600;700|Fira+Sans:wght@300;400;500;600;700)
 
-**CSS Import:**
+**Local-only font policy:**
 ```css
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap');
+/* No remote font import. Use the system stack to avoid first-visit network dependencies. */
 ```
 
 ### Spacing Variables

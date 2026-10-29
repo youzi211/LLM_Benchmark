@@ -5,35 +5,26 @@
  */
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import { VideoPlay } from "@element-plus/icons-vue";
-
-interface RunningTask {
-  id: string;
-  type: "basic" | "stress" | "intelligence";
-  model: string;
-  startedAt: number;
-  /** 0-100, 默认 0-95 由运行时间推断 */
-  progress?: number;
-  stage?: string;
-}
+import { VideoPlay, WarningFilled } from "@element-plus/icons-vue";
+import type { OverviewRunningTask } from "@/overview/taskOverview";
 
 const props = withDefaults(defineProps<{
-  tasks?: RunningTask[];
+  tasks?: OverviewRunningTask[];
   loading?: boolean;
+  error?: string;
+  partialError?: string;
   max?: number;
 }>(), {
-  tasks: () => [
-    { id: "tr_2026_08_30_001", type: "intelligence", model: "Claude 3.5 Sonnet", startedAt: Date.now() - 195000, progress: 62, stage: "执行 BBH 子集" },
-    { id: "tr_2026_08_30_002", type: "stress",       model: "DeepSeek-V3",       startedAt: Date.now() - 80000,  progress: 28, stage: "并发 8 路" },
-    { id: "tr_2026_08_30_003", type: "basic",        model: "GPT-4o",            startedAt: Date.now() - 22000,  progress: 85, stage: "检查 usage" },
-  ],
+  tasks: () => [],
   loading: false,
+  error: "",
+  partialError: "",
   max: 6,
 });
 
 const router = useRouter();
 
-// 强制每 1s 重新计算"已用时间"和"进度"(用于演示)
+// 每秒刷新真实任务的已用时间。
 const tick = ref(0);
 let timer: number | undefined;
 onMounted(() => { timer = window.setInterval(() => { tick.value++; }, 1000); });
@@ -41,20 +32,21 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); });
 
 const visible = computed(() => props.tasks.slice(0, props.max));
 
-const typeLabel = (t: RunningTask["type"]) => {
+const typeLabel = (t: OverviewRunningTask["type"]) => {
   if (t === "basic") return "基础";
   if (t === "stress") return "压测";
   return "能力";
 };
 
-const typeColor = (t: RunningTask["type"]) => {
+const typeColor = (t: OverviewRunningTask["type"]) => {
   if (t === "basic") return "var(--lb-info)";
   if (t === "stress") return "var(--lb-warning)";
   return "var(--lb-primary)";
 };
 
-const elapsed = (startedAt: number) => {
+const elapsed = (startedAt?: number) => {
   void tick.value; // 触发响应式
+  if (startedAt === undefined) return "—";
   const sec = Math.floor((Date.now() - startedAt) / 1000);
   if (sec < 60) return sec + "秒";
   const m = Math.floor(sec / 60);
@@ -69,7 +61,7 @@ const progressColor = (p?: number) => {
   return "var(--lb-success)";
 };
 
-const goToTask = (t: RunningTask) => {
+const goToTask = (t: OverviewRunningTask) => {
   const path = t.type === "basic" ? "/basic" : t.type === "stress" ? "/stress" : "/intelligence";
   router.push(path);
 };
@@ -86,12 +78,19 @@ const goToTask = (t: RunningTask) => {
       <div v-for="i in 3" :key="i" class="lb-rt__skel"></div>
     </div>
 
+    <div v-else-if="error" class="lb-rt__empty lb-rt__empty--error" role="alert">
+      <el-icon class="lb-rt__empty-icon"><WarningFilled /></el-icon>
+      <p>运行中任务不可用</p>
+      <p class="lb-rt__empty-hint">{{ error }}</p>
+    </div>
+
     <div v-else-if="visible.length === 0" class="lb-rt__empty">
       <el-icon class="lb-rt__empty-icon"><VideoPlay /></el-icon>
-      <p>当前没有运行中的任务</p>
-      <p class="lb-rt__empty-hint">从 <el-link type="primary" :underline="false" @click="router.push('/basic')">基础评测</el-link> /
-      <el-link type="primary" :underline="false" @click="router.push('/stress')">压测评测</el-link> /
-      <el-link type="primary" :underline="false" @click="router.push('/intelligence')">能力评测</el-link> 启动</p>
+      <p>{{ partialError ? "部分任务数据不可用" : "当前没有运行中的任务" }}</p>
+      <p v-if="partialError" class="lb-rt__empty-hint">{{ partialError }}；其余任务中暂无运行中记录</p>
+      <p v-else class="lb-rt__empty-hint">从 <el-link type="primary" underline="never" @click="router.push('/basic')">基础评测</el-link> /
+      <el-link type="primary" underline="never" @click="router.push('/stress')">压测评测</el-link> /
+      <el-link type="primary" underline="never" @click="router.push('/intelligence')">能力评测</el-link> 启动</p>
     </div>
 
     <ul v-else class="lb-rt__list">
@@ -104,8 +103,8 @@ const goToTask = (t: RunningTask) => {
           <span class="lb-rt__time">{{ elapsed(t.startedAt) }}</span>
         </div>
         <div class="lb-rt__row2">
-          <span class="lb-rt__stage">{{ t.stage ?? "准备中…" }}</span>
-          <span class="lb-rt__pct">{{ t.progress ?? 0 }}%</span>
+          <span class="lb-rt__stage">{{ t.stage || "准备中…" }}</span>
+          <span class="lb-rt__pct">{{ t.progress === undefined ? "—" : t.progress + "%" }}</span>
         </div>
         <div class="lb-rt__bar">
           <div
@@ -265,6 +264,10 @@ const goToTask = (t: RunningTask) => {
   margin: 4px 0;
   font-size: 13.5px;
   color: var(--lb-fg-soft);
+}
+
+.lb-rt__empty--error .lb-rt__empty-icon {
+  color: var(--lb-danger);
 }
 
 .lb-rt__empty-hint {

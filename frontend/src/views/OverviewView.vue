@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * 概览页 (Phase 3.1) - LLM Benchmark 新首页
- * Hero + 4 KPI + 趋势 + 服务健康 + 运行中 + 最近活动
+ * Hero + 4 KPI + 服务健康 + 运行中 + 最近活动
  */
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
@@ -15,46 +15,112 @@ import RunningTasks from "@/components/overview/RunningTasks.vue";
 import StatusDot from "@/components/common/StatusDot.vue";
 import StatusTag from "@/components/common/StatusTag.vue";
 import { ArrowRight, Clock, Refresh, Aim } from "@element-plus/icons-vue";
-import { formatDate } from "@/api/evaluations";
-import { listBasicTasks, listStressTasks, listIntelligenceTasks, type TaskLike } from "@/api/evaluations";
+import {
+  fetchTaskOverviewSummary,
+  formatDate,
+  listBasicTasks,
+  listIntelligenceTasks,
+  listStressTasks,
+  type TaskOverviewSummary,
+} from "@/api/evaluations";
+import {
+  buildOverviewTaskSummary,
+  type OverviewLane,
+  type OverviewTaskSources,
+} from "@/overview/taskOverview";
 
 const router = useRouter();
 const store = useModelsStore();
+const healthStore = useHealthStore();
 const toast = useToast();
 
-const loading = ref(true);
-const basic = ref<TaskLike[]>([]);
-const stress = ref<TaskLike[]>([]);
-const intel = ref<TaskLike[]>([]);
+const tasksLoading = ref(true);
+const summaryLoading = ref(true);
+const sources = ref<OverviewTaskSources>({
+  basic: null,
+  stress: null,
+  intelligence: null,
+});
+const stats = ref<TaskOverviewSummary | null>(null);
+const statsError = ref("");
+
+const LANE_LABELS: Record<OverviewLane, string> = {
+  basic: "基础评测",
+  stress: "压测任务",
+  intelligence: "能力评测",
+};
 
 // /health 由 MainLayout 统一轮询，概览页只读取结果。
-const health = computed(() => useHealthStore().status);
+const health = computed(() => healthStore.status);
 
-async function reload() {
-  loading.value = true;
+const refreshing = computed(() => tasksLoading.value || summaryLoading.value);
+
+async function reloadTasks() {
+  tasksLoading.value = true;
   try {
     const [b, s, i] = await Promise.allSettled([
       listBasicTasks(),
       listStressTasks(),
       listIntelligenceTasks(),
     ]);
-    basic.value = b.status === "fulfilled" && Array.isArray(b.value) ? b.value : [];
-    stress.value = s.status === "fulfilled" && Array.isArray(s.value) ? s.value : [];
-    intel.value = i.status === "fulfilled" && Array.isArray(i.value) ? i.value : [];
-  } catch (err) {
-    toast.error("加载概览数据失败: " + String((err as Error)?.message ?? err));
+    sources.value = {
+      basic: b.status === "fulfilled" ? b.value : null,
+      stress: s.status === "fulfilled" ? s.value : null,
+      intelligence: i.status === "fulfilled" ? i.value : null,
+    };
   } finally {
-    loading.value = false;
+    tasksLoading.value = false;
   }
 }
 
-onMounted(() => {
-  store.load().catch(() => {});
-  reload();
+async function reloadSummary() {
+  summaryLoading.value = true;
+  try {
+    const summary = await fetchTaskOverviewSummary();
+    stats.value = summary;
+    statsError.value = "";
+  } catch (err) {
+    stats.value = null;
+    statsError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    summaryLoading.value = false;
+  }
+}
+
+async function reload() {
+  await Promise.all([reloadTasks(), reloadSummary()]);
+}
+
+onMounted(async () => {
+  await Promise.all([store.load(), reload()]);
 });
 
-const allTasks = computed(() => [...basic.value, ...stress.value, ...intel.value]);
-
+const taskSummary = computed(() => buildOverviewTaskSummary(sources.value));
+const failedLaneLabels = computed(() =>
+  taskSummary.value.failedLanes.map((lane) => LANE_LABELS[lane]),
+);
+const taskDataError = computed(() => !tasksLoading.value && failedLaneLabels.value.length > 0);
+const statsUnavailable = computed(() => !summaryLoading.value && statsError.value !== "");
+const allTaskDataFailed = computed(() =>
+  !tasksLoading.value && taskSummary.value.failedLanes.length === Object.keys(LANE_LABELS).length,
+);
+const taskErrorTitle = computed(() =>
+  allTaskDataFailed.value ? "任务数据加载失败" : "部分任务数据不可用",
+);
+const runningError = computed(() =>
+  allTaskDataFailed.value ? "任务列表加载失败，请稍后重试。" : "",
+);
+const runningPartialError = computed(() =>
+  taskDataError.value && !allTaskDataFailed.value
+    ? `${failedLaneLabels.value.join("、")}加载失败`
+    : "",
+);
+const recentEmptyText = computed(() =>
+  taskDataError.value ? "部分任务数据不可用" : "暂无已结束任务",
+);
+const completionRateText = computed(() =>
+  stats.value?.completion_rate == null ? "—" : `${stats.value.completion_rate.toFixed(1)}%`,
+);
 
 const healthServices = computed(() => {
   const h = health.value;
@@ -73,43 +139,6 @@ const healthServices = computed(() => {
     { key: "scheduler", name: "调度服务",      state: h.scheduler.ok ? ("ok" as const) : ("warn" as const), detail: h.scheduler.state === "running" ? "APScheduler" : "已禁用" },
   ];
 });
-const todayCount = computed(() => {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  return allTasks.value.filter(t => {
-    const ts = new Date(t.started_at || t.finished_at || t.updated_at || 0).getTime();
-    return ts >= start.getTime();
-  }).length;
-});
-
-const passRate = computed(() => {
-  const final = allTasks.value.filter(t => ["completed", "failed", "error"].includes(String(t.status)));
-  if (final.length === 0) return null;
-  const passed = final.filter(t => t.status === "completed").length;
-  return ((passed / final.length) * 100).toFixed(1);
-});
-
-const avgLatency = computed(() => {
-  const withLat = allTasks.value.filter(t => typeof t.duration_ms === "number" && t.duration_ms > 0);
-  if (withLat.length === 0) return null;
-  const sum = withLat.reduce((a, b) => a + Number(b.duration_ms), 0);
-  return Math.round(sum / withLat.length);
-});
-
-const onlineModels = computed(() => store.models.length);
-
-const isFinal = (s?: string) => ["completed", "failed", "error", "partial", "interrupted"].includes(String(s));
-
-const recentTasks = computed(() => {
-  return [...allTasks.value]
-    .filter(t => isFinal(t.status))
-    .sort((a, b) => {
-      const ta = new Date(a.finished_at || a.updated_at || 0).getTime();
-      const tb = new Date(b.finished_at || b.updated_at || 0).getTime();
-      return tb - ta;
-    })
-    .slice(0, 5);
-});
 
 function statusType(s?: string): "success" | "warning" | "danger" | "info" {
   if (s === "completed") return "success";
@@ -119,11 +148,13 @@ function statusType(s?: string): "success" | "warning" | "danger" | "info" {
 }
 
 const recentItems = computed(() =>
-  recentTasks.value.map((t) => ({
-    task: t,
-    lane: t.task_id.startsWith("stress_task_") ? { label: "压测", path: "/stress" }
-      : t.task_id.startsWith("intel_task_") ? { label: "能力", path: "/intelligence" }
-      : { label: "基础", path: "/basic" },
+  taskSummary.value.recentTasks.map(({ task, lane }) => ({
+    task,
+    lane: lane === "stress"
+      ? { label: "压测", path: "/stress" }
+      : lane === "intelligence"
+        ? { label: "能力", path: "/intelligence" }
+        : { label: "基础", path: "/basic" },
   })),
 );
 
@@ -137,43 +168,69 @@ function goNew() {
     <PageHero
       eyebrow="OVERVIEW"
       title="评测概览"
-      :description="`当前模型: ${store.currentModel?.name ?? store.currentId ?? '未选择'} · 实时监控今日评测状态、趋势与服务健康。`"
+      :description="`当前模型: ${store.currentModel?.name ?? store.currentId ?? '未选择'} · 查看任务状态、服务健康与最近活动。`"
     >
       <template #actions>
-        <el-button size="small" :icon="Refresh" @click="reload" :loading="loading">刷新</el-button>
+        <el-button size="small" :icon="Refresh" @click="reload" :loading="refreshing">刷新</el-button>
         <el-button type="primary" plain :icon="Aim" @click="goNew">新建评测</el-button>
       </template>
     </PageHero>
+
+    <el-alert
+      v-if="taskDataError"
+      class="lb-overview__alert"
+      :type="allTaskDataFailed ? 'error' : 'warning'"
+      :closable="false"
+      show-icon
+      role="alert"
+      aria-live="assertive"
+    >
+      <template #title>{{ taskErrorTitle }}</template>
+      <div class="lb-overview__alert-body">
+        <span>{{ failedLaneLabels.join("、") }}加载失败，运行中与最近任务可能不完整。</span>
+        <el-button link type="primary" @click="reload">重新加载</el-button>
+      </div>
+    </el-alert>
+    <el-alert
+      v-if="statsUnavailable"
+      class="lb-overview__alert"
+      type="error"
+      :closable="false"
+      show-icon
+      role="alert"
+      aria-live="assertive"
+      :title="`任务统计加载失败：${statsError}`"
+    />
 
     <!-- 4 KPI 卡片 -->
     <section class="lb-overview__kpis">
       <KpiCard
         label="今日评测"
-        :value="todayCount"
+        :value="stats?.today_count ?? '—'"
         variant="primary"
-        :loading="loading"
-        caption="含基础 / 压测 / 能力"
+        :loading="summaryLoading"
+        :caption="statsUnavailable ? '统计接口不可用' : '全部任务'"
       />
       <KpiCard
-        label="通过率"
-        :value="passRate !== null ? passRate + '%' : '—'"
+        label="执行完成率"
+        :value="completionRateText"
         variant="success"
-        :loading="loading"
-        caption="已完成任务中"
+        :loading="summaryLoading"
+        :caption="statsUnavailable ? '统计接口不可用' : '已完成 / 已结束 · 全部任务'"
       />
       <KpiCard
-        label="平均耗时"
-        :value="avgLatency !== null ? avgLatency + 'ms' : '—'"
+        label="平均任务耗时"
+        :value="stats?.avg_duration_ms != null ? stats.avg_duration_ms + 'ms' : '—'"
         variant="warning"
-        :loading="loading"
-        caption="任务平均时长"
+        :loading="summaryLoading"
+        :caption="statsUnavailable ? '统计接口不可用' : '仅统计有耗时记录的任务'"
       />
       <KpiCard
-        label="在线模型"
-        :value="onlineModels"
+        label="已配置模型"
+        :value="store.error ? '—' : store.models.length"
         variant="info"
-        :loading="loading"
-        caption="可在右上选择"
+        :loading="store.loading"
+        :caption="store.error ? '模型配置加载失败' : '已保存的模型配置数'"
       />
     </section>
 
@@ -188,16 +245,21 @@ function goNew() {
 
     <!-- 运行中 + 最近活动 -->
     <section class="lb-overview__grid">
-      <RunningTasks />
+      <RunningTasks
+        :tasks="taskSummary.runningTasks"
+        :loading="tasksLoading"
+        :error="runningError"
+        :partial-error="runningPartialError"
+      />
 
       <div class="lb-overview__recent">
         <div class="lb-overview__panel-head">
-          <h3>最近完成</h3>
-          <el-link type="primary" :underline="false" @click="router.push('/basic')">
+          <h3>最近结束</h3>
+          <el-link type="primary" underline="never" @click="router.push('/basic')">
             查看全部 <el-icon><ArrowRight /></el-icon>
           </el-link>
         </div>
-        <ul v-if="recentTasks.length" class="lb-overview__recent-list">
+        <ul v-if="recentItems.length" class="lb-overview__recent-list">
           <li
             v-for="item in recentItems"
             :key="item.task.task_id"
@@ -219,7 +281,7 @@ function goNew() {
           </li>
         </ul>
         <div v-else class="lb-overview__recent-empty">
-          暂无完成的任务
+          {{ recentEmptyText }}
         </div>
       </div>
     </section>
@@ -237,6 +299,13 @@ function goNew() {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
+}
+
+.lb-overview__alert-body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .lb-overview__grid {

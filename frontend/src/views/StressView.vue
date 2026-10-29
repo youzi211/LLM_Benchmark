@@ -1,21 +1,28 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useModelsStore } from "@/stores/models";
 import PageHero from "@/components/layouts/PageHero.vue";
 import StatusTag from "@/components/common/StatusTag.vue";
 import FilterChips from "@/components/common/FilterChips.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
-import TaskTimeline from "@/components/common/TaskTimeline.vue";
 import { useRouter } from "vue-router";
 import { useToast } from "@/composables/useToast";
 import { ArrowDown, Download, Search } from "@element-plus/icons-vue";
-import EChart from "@/components/EChart.vue";
+import {
+  buildStressGroups,
+  formatStressLoad,
+  runsOfTask as runsOf,
+  stressMetricValue,
+  stressRatePercent,
+  stressGroupKey as groupKey,
+  stressStatusLabel,
+} from "@/stress/stressView";
+import { shouldShowTaskListEmpty, taskById } from "@/utils/taskListState";
 import {
   cancelStressTask,
   fetchStressDatasets,
   finalStatus,
-  formatDate,
   getStressProgress,
   getStressTask,
   listStressArtifacts,
@@ -30,14 +37,19 @@ import {
   type TaskLike,
 } from "@/api/evaluations";
 
+const EChart = defineAsyncComponent(() => import("@/components/EChart.vue"));
 const store = useModelsStore();
-const loading = ref(false);
+const loading = ref(true);
+const refreshing = ref(false);
+const listError = ref("");
 const submitting = ref(false);
 const tasks = ref<TaskLike[]>([]);
 const selected = ref<TaskLike | null>(null);
 const groupByConfig = ref(true);
 const selectedGroupKey = ref<string | null>(null);
 let refreshTimer: number | undefined;
+let activeReload: Promise<void> | null = null;
+let selectionVersion = 0;
 const custom = ref(false);
 const datasetsLoading = ref(false);
 const stressDatasets = ref<Record<string, StressDatasetMeta>>({});
@@ -67,6 +79,15 @@ const selectedDatasetScene = computed(() => {
 const normalizedResult = computed<any>(() => selected.value?.normalized_result || null);
 const progressDetail = computed<any>(() => selected.value?.progress_detail || null);
 const resultSummary = computed<Record<string, unknown>>(() => normalizedResult.value?.summary || {});
+const selectedConfig = computed<Record<string, unknown>>(() =>
+  (selected.value?.request_config as Record<string, unknown> | undefined) || {},
+);
+const groupMembers = computed(() => {
+  if (!selectedGroupKey.value) return [];
+  return tasks.value
+    .filter((task) => groupKey(task) === selectedGroupKey.value)
+    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+});
 const totals = computed(() => runsOf(selected.value).reduce((acc: any, run: any) => {
   acc.total += Number(run.total || 0);
   acc.success += Number(run.success || 0);
@@ -78,22 +99,21 @@ const progressFailed = computed(() => progressDetail.value?.failed_requests ?? (
 
 function statusType(status?: string) {
   if (status === "completed") return "success";
+  if (status === "partial") return "warning";
   if (status === "failed" || status === "interrupted") return "danger";
   if (status === "running" || status === "pending") return "warning";
   return "info";
 }
 
-function runsOf(task: TaskLike | null) {
-  const normalized: any = task?.normalized_result || (task?.raw_result as any)?.normalized_result;
-  return Array.isArray(normalized?.runs) ? normalized.runs : [];
-}
-
 function formatMetric(value: unknown) {
-  return value == null || value === "" ? "—" : String(value);
+  const number = stressMetricValue(value);
+  return number === undefined ? "—" : String(number);
 }
 
-const throughputOption = computed(() => makeLineOption("吞吐", "req/s", runsOf(selected.value), [
+const requestThroughputOption = computed(() => makeLineOption("请求吞吐", "req/s", runsOf(selected.value), [
   ["request_throughput", "请求吞吐"],
+]));
+const tokenThroughputOption = computed(() => makeLineOption("Token 吞吐", "tok/s", runsOf(selected.value), [
   ["output_throughput", "输出吞吐"],
   ["total_throughput", "总吞吐"],
 ]));
@@ -102,10 +122,18 @@ const latencyOption = computed(() => makeLineOption("延迟", "s", runsOf(select
   ["p95_latency_seconds", "P95"],
   ["p99_latency_seconds", "P99"],
 ]));
-const successOption = computed(() => makeLineOption("成功率", "%", runsOf(selected.value).map((r: any) => ({ ...r, success_rate_percent: Number(r.success_rate) <= 1 ? Number(r.success_rate) * 100 : r.success_rate })), [["success_rate_percent", "成功率"]]));
+const successOption = computed(() => makeLineOption(
+  "成功率",
+  "%",
+  runsOf(selected.value).map((run) => ({ ...run, success_rate_percent: stressRatePercent(run.success_rate) })),
+  [["success_rate_percent", "成功率"]],
+));
 
 function makeLineOption(title: string, unit: string, rows: any[], series: string[][]) {
-  const labels = rows.map((r, i) => r.parallel ? `P${r.parallel}` : `#${i + 1}`);
+  const labels = rows.map((run, index) => {
+    const label = formatStressLoad(run, selectedConfig.value).axisLabel;
+    return label === "—" ? `#${index + 1}` : label;
+  });
   return {
     title: { text: title, left: "center" },
     tooltip: { trigger: "axis" },
@@ -113,8 +141,19 @@ function makeLineOption(title: string, unit: string, rows: any[], series: string
     grid: { left: 48, right: 24, top: 72, bottom: 36 },
     xAxis: { type: "category", data: labels },
     yAxis: { type: "value", name: unit },
-    series: series.map(([key, name]) => ({ name, type: "line", smooth: true, data: rows.map((r) => r[key] ?? null) })),
+    series: series.map(([key, name]) => ({
+      name,
+      type: "line",
+      smooth: true,
+      data: rows.map((run) => stressMetricValue(run[key]) ?? null),
+    })),
   };
+}
+
+function formatTaskError(error: unknown) {
+  if (error == null || error === "") return "—";
+  if (typeof error === "string") return error;
+  return JSON.stringify(error);
 }
 
 async function loadDatasets() {
@@ -137,7 +176,7 @@ function resolveGroupSelection() {
   const key = selectedGroupKey.value;
   const current = selected.value as any;
   const still = groupedTasks.value.find((task: any) => task.group_key === key);
-  if (!still) { selected.value = null; return; }
+  if (!still) { selectedGroupKey.value = null; selected.value = null; return; }
   selected.value = current?.progress_detail ? { ...still, progress_detail: current.progress_detail } : still;
 }
 
@@ -148,38 +187,61 @@ async function refreshSelected() {
   const selectedAny = selected.value as any;
   if (!selectedAny || selectedAny.grouped || finalStatus(selectedAny.status)) return;
   const request = ++detailRequests;
+  const selection = selectionVersion;
   try {
     const detail = await getStressTask(String(selectedAny.task_id), false);
-    if (request === detailRequests && !selectedGroupKey.value) selected.value = detail;
+    if (request === detailRequests && selection === selectionVersion && !selectedGroupKey.value) {
+      selected.value = detail;
+    }
   } catch { /* 单次轮询失败保持旧数据 */ }
 }
 
 async function refreshGroupProgress() {
   const selectedAny = selected.value as any;
   if (!selectedAny?.grouped || finalStatus(selectedAny.status)) return;
+  const selection = selectionVersion;
+  const groupKeyAtRequest = selectedGroupKey.value;
   const running = tasks.value.find((task) => groupKey(task) === selectedGroupKey.value && !finalStatus(task.status));
   if (!running) return;
   const request = ++progressRequests;
   try {
     const progress = await getStressProgress(running.task_id);
-    if (request === progressRequests && selected.value) selected.value = { ...(selected.value as any), progress_detail: progress };
+    if (
+      request === progressRequests
+      && selection === selectionVersion
+      && groupKeyAtRequest === selectedGroupKey.value
+      && selected.value
+    ) {
+      selected.value = { ...(selected.value as any), progress_detail: progress };
+    }
   } catch { /* 单次轮询失败保持旧数据 */ }
 }
 
-async function reload() {
-  loading.value = true;
-  try {
-    tasks.value = await listStressTasks();
-    if (selectedGroupKey.value) {
-      resolveGroupSelection();
-      await refreshGroupProgress();
-    } else if (selected.value) {
-      // 选中的是单个任务：列表已刷新，只补详情，不再重拉 artifacts。
-      await refreshSelected();
+function reload(options: { background?: boolean } = {}): Promise<void> {
+  if (activeReload) return activeReload;
+  if (!options.background) refreshing.value = true;
+  activeReload = (async () => {
+    try {
+      tasks.value = await listStressTasks();
+      listError.value = "";
+      if (selectedGroupKey.value) {
+        resolveGroupSelection();
+        await refreshGroupProgress();
+      } else if (selected.value) {
+        // 选中的是单个任务：列表已刷新，只补详情，不再重拉 artifacts。
+        await refreshSelected();
+      }
+    } catch (err) {
+      listError.value = err instanceof Error ? err.message : String(err);
+      if (!options.background) ElMessage.error("加载压测任务失败: " + listError.value);
+    } finally {
+      loading.value = false;
+      if (!options.background) refreshing.value = false;
     }
-  } finally {
-    loading.value = false;
-  }
+  })().finally(() => {
+    activeReload = null;
+  });
+  return activeReload;
 }
 
 function buildPayload() {
@@ -268,85 +330,7 @@ const statusFilter = ref<string>("all");
 const queryText = ref<string>("");
 const selectedIds = ref<string[]>([]);
 
-function stableJson(value: any): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
-function groupKey(task: TaskLike): string {
-  const config = { ...((task.request_config as Record<string, unknown>) || {}) };
-  delete config.parallel;
-  delete config.number;
-  return `${task.model_id || ""}:${stableJson(config)}`;
-}
-
-function scenarioLabel(task: TaskLike): string {
-  const config = (task.request_config || {}) as Record<string, any>;
-  const dataset = String(config.dataset || "压测");
-  if (config.dataset_args?.target_input_len) return `短回答 · ${config.dataset_args.target_input_len} 输入`;
-  if (Number(config.max_tokens) >= 4096) return `长回答 · ${dataset}`;
-  if (dataset === "longalpaca") return `长文本 · ${dataset}`;
-  return `${dataset} · max ${config.max_tokens ?? "默认"}`;
-}
-
-const groupedTasks = computed(() => {
-  const buckets = new Map<string, TaskLike[]>();
-  for (const task of tasks.value) {
-    const key = groupKey(task);
-    const bucket = buckets.get(key) || [];
-    bucket.push(task);
-    buckets.set(key, bucket);
-  }
-  return Array.from(buckets, ([key, bucket]) => {
-    const included = bucket.filter((task) => runsOf(task).length || ["running", "pending"].includes(String(task.status)));
-    if (!included.length) return null;
-    const latest = [...included].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))[0];
-    const statuses = included.map((task) => String(task.status || ""));
-    const config = (latest.request_config || {}) as Record<string, any>;
-    const status = statuses.includes("running") ? "running"
-      : statuses.includes("pending") ? "pending"
-        : statuses.includes("completed") ? "completed"
-          : statuses.includes("failed") ? "failed" : "interrupted";
-    const runs = included.flatMap((task) => runsOf(task));
-    const normalized = {
-      task_id: `group:${key}`,
-      model: latest.model_id,
-      status,
-      summary: {
-        best_req_throughput: Math.max(0, ...runs.map((run: any) => Number(run.request_throughput) || 0)),
-        best_output_throughput: Math.max(0, ...runs.map((run: any) => Number(run.output_throughput) || 0)),
-        max_success_parallel: Math.max(0, ...runs.filter((run: any) => Number(run.success_rate) >= 1).map((run: any) => Number(run.parallel) || 0)),
-        first_error_parallel: runs.filter((run: any) => Number(run.failed) > 0).map((run: any) => Number(run.parallel) || 0).sort((a: number, b: number) => a - b)[0] ?? null,
-      },
-      runs: [...runs].sort((a: any, b: any) => (Number(a.parallel) || 0) - (Number(b.parallel) || 0)),
-      errors: included.flatMap((task) => (task.normalized_result as any)?.errors || []),
-    };
-    return {
-      ...latest,
-      task_id: `group:${key}`,
-      group_key: key,
-      group_label: scenarioLabel(latest),
-      group_config: [
-        `数据集 ${config.dataset || "默认"}`,
-        config.dataset_args?.target_input_len ? `输入目标 ${config.dataset_args.target_input_len}` : null,
-        `max_tokens ${config.max_tokens ?? "默认"}`,
-        config.stream === false ? "非流式" : "流式",
-      ].filter(Boolean).join(" · "),
-      group_count: included.length,
-      grouped: true,
-      status,
-      progress: `${bucket.length} 条同配置记录 · ${runs.length} 个并发档位`,
-      duration_ms: included.reduce((sum, task) => sum + (Number(task.duration_ms) || 0), 0),
-      normalized_result: normalized,
-      raw_result: null,
-      raw_output_dir: null,
-      report_path: null,
-    } as TaskLike;
-  }).filter(Boolean) as TaskLike[];
-});
+const groupedTasks = computed(() => buildStressGroups(tasks.value));
 
 const displayTasks = computed(() => groupByConfig.value ? groupedTasks.value : tasks.value);
 
@@ -356,6 +340,7 @@ const statusFilterOptions = computed(() => {
     { value: "all",       label: "全部",     count: t.length },
     { value: "running",   label: "运行中",   count: t.filter(x => x.status === "running").length },
     { value: "completed", label: "已完成",   count: t.filter(x => x.status === "completed").length },
+    { value: "partial",   label: "部分失败", count: t.filter(x => x.status === "partial").length },
     { value: "failed",    label: "失败",     count: t.filter(x => ["failed", "error", "interrupted"].includes(String(x.status))).length },
   ];
 });
@@ -388,31 +373,59 @@ function bulkRerun() {
   toast.info(`已请求重新运行 ${selectedIds.value.length} 个任务`);
   selectedIds.value = [];
 }
-async function selectTask(taskId: string, refreshList = true) {
-  if (refreshList) await reload();
+async function selectTask(taskId: string, refreshList = false) {
+  const selection = ++selectionVersion;
   selectedGroupKey.value = null;
-  const cached = tasks.value.find((t) => t.task_id === taskId);
-  selected.value = await getStressTask(taskId, finalStatus(cached?.status));
+  if (refreshList) await reload({ background: true });
+  if (selection !== selectionVersion) return;
+  const cached = taskById(tasks.value, taskId);
+  selected.value = cached;
   artifacts.value = [];
-  if (selected.value.raw_output_dir) {
+  artifactsLoading.value = false;
+  let detail: TaskLike;
+  try {
+    detail = await getStressTask(taskId, finalStatus(cached?.status));
+  } catch (err) {
+    if (selection === selectionVersion) {
+      ElMessage.error("加载压测详情失败: " + (err instanceof Error ? err.message : String(err)));
+    }
+    return;
+  }
+  if (selection !== selectionVersion) return;
+  selected.value = detail;
+  if (detail.raw_output_dir) {
     artifactsLoading.value = true;
-    try { artifacts.value = await listStressArtifacts(taskId); } catch { artifacts.value = []; }
-    finally { artifactsLoading.value = false; }
+    try {
+      const loadedArtifacts = await listStressArtifacts(taskId);
+      if (selection === selectionVersion) artifacts.value = loadedArtifacts;
+    } catch {
+      if (selection === selectionVersion) artifacts.value = [];
+    } finally {
+      if (selection === selectionVersion) artifactsLoading.value = false;
+    }
   }
 }
 
 function selectGroup(task: TaskLike) {
+  selectionVersion++;
   selectedGroupKey.value = String((task as any).group_key);
   selected.value = task;
   artifacts.value = [];
+  artifactsLoading.value = false;
 }
 
 async function cancelTask(taskId: string) {
-  await ElMessageBox.confirm(`确认取消压测任务 ${taskId}？`, "取消确认", { type: "warning" });
-  await cancelStressTask(taskId);
-  ElMessage.success("已取消");
-  await reload();
-  await selectTask(taskId, false);
+  try {
+    await ElMessageBox.confirm(`确认取消压测任务 ${taskId}？`, "取消确认", { type: "warning" });
+    await cancelStressTask(taskId);
+    ElMessage.success("已取消");
+    await reload();
+    await selectTask(taskId, false);
+  } catch (err) {
+    if (err !== "cancel" && err !== "close") {
+      ElMessage.error("取消压测失败: " + (err instanceof Error ? err.message : String(err)));
+    }
+  }
 }
 
 function pickDataset(name: string) {
@@ -420,13 +433,12 @@ function pickDataset(name: string) {
   form.value.dataset = name;
 }
 
-onMounted(() => {
-  loadDatasets();
-  reload();
+onMounted(async () => {
+  await Promise.allSettled([loadDatasets(), reload()]);
   refreshTimer = window.setInterval(() => {
-    if (document.visibilityState !== "visible" || loading.value) return; // 上一轮未完成时跳过，避免请求叠加
+    if (document.visibilityState !== "visible" || activeReload) return;
     if (tasks.value.some((task) => !finalStatus(task.status)) || (selected.value && !finalStatus(selected.value.status))) {
-      reload(); // reload 内部已按分组/单任务分别刷新进度或详情
+      reload({ background: true }); // reload 内部已按分组/单任务分别刷新进度或详情
     }
   }, 5000);
 });
@@ -443,7 +455,7 @@ onUnmounted(() => {
     description="通过并发与限速场景探测模型的吞吐量、延迟分布与稳定性。适合在容量规划或限速策略调整前后做基线对比。"
   >
     <template #actions>
-      <el-button size="small" @click="reload">刷新</el-button>
+      <el-button size="small" :loading="refreshing" @click="reload()">刷新</el-button>
       <el-button type="primary" :loading="submitting" @click="submit">启动压测</el-button>
     </template>
   </PageHero>
@@ -544,8 +556,9 @@ onUnmounted(() => {
         <el-input v-model="queryText" :placeholder="groupByConfig ? '搜索方案 / 模型' : '搜索任务 ID / 模型'" clearable size="default" style="width: 220px;">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <el-button size="small" @click="reload">刷新</el-button>
+        <el-button size="small" :loading="refreshing" @click="reload()">刷新</el-button>
       </div>
+      <el-alert v-if="listError" class="mb" type="error" :closable="false" show-icon :title="`任务列表加载失败：${listError}`" />
       <div class="lb-tl__filters">
         <FilterChips v-model="statusFilter" :options="statusFilterOptions" :show-count="true" size="small" />
       </div>
@@ -568,14 +581,14 @@ onUnmounted(() => {
         </el-table-column>
         <el-table-column prop="model_id" label="模型" width="120" show-overflow-tooltip />
         <el-table-column label="状态" width="110">
-          <template #default="{ row }"><StatusTag :status="row.status" /></template>
+          <template #default="{ row }"><StatusTag :status="row.status" :label="stressStatusLabel(row.status, row.grouped)" /></template>
         </el-table-column>
         <el-table-column label="耗时" width="90">
           <template #default="{ row }"><span class="lb-tl__num">{{ row.duration_ms != null ? Math.round(Number(row.duration_ms)) + " ms" : "—" }}</span></template>
         </el-table-column>
       </el-table>
       <EmptyState
-        v-if="!loading && filteredTasks.length === 0"
+        v-if="shouldShowTaskListEmpty(loading, listError, filteredTasks.length)"
         :title="queryText || statusFilter !== 'all' ? '无匹配任务' : '暂无压测任务'"
         :description="queryText || statusFilter !== 'all' ? '试着清空筛选条件或在左侧表单启动一次压测' : '点击左侧表单启动第一次压测'"
         :variant="queryText ? 'search' : 'list'"
@@ -585,7 +598,7 @@ onUnmounted(() => {
     </el-card>
 
     <el-card class="panel-card detail-card" shadow="never">
-      <template #header><div class="card-title"><span>压测详情</span><StatusTag v-if="selected" :status="selected.status ?? 'pending'" /></div></template>
+      <template #header><div class="card-title"><span>压测详情</span><StatusTag v-if="selected" :status="selected.status ?? 'pending'" :label="stressStatusLabel(selected.status, Boolean((selected as any).grouped))" /></div></template>
       <EmptyState
         v-if="!selected"
         title="尚未选择任务"
@@ -622,28 +635,53 @@ onUnmounted(() => {
         </div>
         <el-alert v-if="selected.error" class="mt" type="error" :closable="false" :title="JSON.stringify(selected.error)" />
         <div v-if="runsOf(selected).length" class="metric-grid mt">
-          <div class="metric-tile"><span>最高请求吞吐</span><strong>{{ resultSummary.best_req_throughput ?? '—' }}</strong><small>req/s</small></div>
-          <div class="metric-tile"><span>最高输出吞吐</span><strong>{{ resultSummary.best_output_throughput ?? '—' }}</strong><small>tok/s</small></div>
+          <div class="metric-tile"><span>最高请求吞吐</span><strong>{{ formatMetric(resultSummary.best_req_throughput) }}</strong><small>req/s</small></div>
+          <div class="metric-tile"><span>最高输出吞吐</span><strong>{{ formatMetric(resultSummary.best_output_throughput) }}</strong><small>tok/s</small></div>
           <div class="metric-tile"><span>成功请求</span><strong>{{ totals.success }}</strong><small>/ {{ totals.total }}</small></div>
           <div class="metric-tile" :class="{ 'metric-tile--danger': totals.failed > 0 }"><span>失败请求</span><strong>{{ totals.failed }}</strong><small>requests</small></div>
         </div>
-        <el-row v-if="runsOf(selected).length" :gutter="16" class="mt"><el-col :span="24"><EChart :option="throughputOption" height="320px" /></el-col><el-col :span="24"><EChart :option="latencyOption" height="320px" /></el-col><el-col :span="24"><EChart :option="successOption" height="300px" /></el-col></el-row>
+        <el-row v-if="runsOf(selected).length" :gutter="16" class="mt">
+          <el-col :xs="24" :lg="12"><EChart :option="requestThroughputOption" height="320px" /></el-col>
+          <el-col :xs="24" :lg="12"><EChart :option="tokenThroughputOption" height="320px" /></el-col>
+          <el-col :span="24"><EChart :option="latencyOption" height="320px" /></el-col>
+          <el-col :span="24"><EChart :option="successOption" height="300px" /></el-col>
+        </el-row>
         <el-table v-if="runsOf(selected).length" :data="runsOf(selected)" class="mt" border>
-          <el-table-column label="并发/速率" width="100"><template #default="{ row }">{{ row.rate ?? row.parallel ?? '—' }}</template></el-table-column>
+          <el-table-column label="负载档位" width="140"><template #default="{ row }">{{ formatStressLoad(row, selectedConfig).label }}</template></el-table-column>
           <el-table-column prop="total" label="请求" width="76" />
           <el-table-column prop="success" label="成功" width="76" />
           <el-table-column prop="failed" label="失败" width="76" />
-          <el-table-column prop="request_throughput" label="RPS" width="100" />
-          <el-table-column prop="output_throughput" label="输出 tok/s" width="110" />
-          <el-table-column prop="avg_latency_seconds" label="平均延迟(s)" width="115" />
-          <el-table-column prop="p95_latency_seconds" label="P95(s)" width="90" />
-          <el-table-column prop="avg_ttft_ms" label="TTFT(ms)" width="105" />
-          <el-table-column prop="avg_tpot_ms" label="TPOT(ms)" width="105" />
+          <el-table-column prop="request_throughput" label="RPS" width="100"><template #default="{ row }">{{ formatMetric(row.request_throughput) }}</template></el-table-column>
+          <el-table-column prop="output_throughput" label="输出 tok/s" width="110"><template #default="{ row }">{{ formatMetric(row.output_throughput) }}</template></el-table-column>
+          <el-table-column prop="avg_latency_seconds" label="平均延迟(s)" width="115"><template #default="{ row }">{{ formatMetric(row.avg_latency_seconds) }}</template></el-table-column>
+          <el-table-column prop="p95_latency_seconds" label="P95(s)" width="90"><template #default="{ row }">{{ formatMetric(row.p95_latency_seconds) }}</template></el-table-column>
+          <el-table-column prop="avg_ttft_ms" label="TTFT(ms)" width="105"><template #default="{ row }">{{ formatMetric(row.avg_ttft_ms) }}</template></el-table-column>
+          <el-table-column prop="avg_tpot_ms" label="TPOT(ms)" width="105"><template #default="{ row }">{{ formatMetric(row.avg_tpot_ms) }}</template></el-table-column>
           <el-table-column prop="avg_itl_ms" label="ITL(ms)" width="95"><template #default="{ row }">{{ formatMetric(row.avg_itl_ms) }}</template></el-table-column>
           <el-table-column prop="avg_input_tokens" label="输入 Token" width="105"><template #default="{ row }">{{ formatMetric(row.avg_input_tokens) }}</template></el-table-column>
           <el-table-column prop="avg_output_tokens" label="输出 Token" width="105"><template #default="{ row }">{{ formatMetric(row.avg_output_tokens) }}</template></el-table-column>
           <el-table-column prop="avg_turns" label="平均轮数" width="95"><template #default="{ row }">{{ formatMetric(row.avg_turns) }}</template></el-table-column>
         </el-table>
+
+        <section v-if="(selected as any).grouped" class="group-members mt" aria-labelledby="group-members-title">
+          <div class="section-label">
+            <span id="group-members-title">组内任务</span>
+            <el-tag size="small" effect="plain">{{ groupMembers.length }} 条任务</el-tag>
+          </div>
+          <el-table :data="groupMembers" size="small" row-key="task_id" @row-click="(row: TaskLike) => selectTask(row.task_id)">
+            <el-table-column prop="task_id" label="任务 ID" min-width="180" show-overflow-tooltip />
+            <el-table-column label="状态" width="105"><template #default="{ row }"><StatusTag :status="row.status" compact /></template></el-table-column>
+            <el-table-column label="错误" min-width="170" show-overflow-tooltip>
+              <template #default="{ row }">{{ formatTaskError(row.error) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="130" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click.stop="selectTask(row.task_id)">查看</el-button>
+                <el-button v-if="!finalStatus(row.status)" link type="danger" @click.stop="cancelTask(row.task_id)">取消</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </section>
 
         <section v-if="!(selected as any).grouped" class="artifact-panel mt" aria-labelledby="artifact-title">
           <div class="section-label"><span id="artifact-title">原始产物</span><el-tag size="small" effect="plain">{{ artifacts.length }} 个文件</el-tag></div>
@@ -663,6 +701,7 @@ onUnmounted(() => {
 
 <style scoped>
 .field-help { margin: 6px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
+.mb { margin-bottom: 12px; }
 .group-subtitle { display: block; margin-top: 2px; color: var(--el-text-color-secondary); font-size: 11px; }
 .section-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 10px; font-weight: 650; }
 .dataset-card { width: 100%; color: inherit; text-align: left; font: inherit; cursor: pointer; }

@@ -1,22 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useModelsStore } from "@/stores/models";
 import PageHero from "@/components/layouts/PageHero.vue";
 import StatusTag from "@/components/common/StatusTag.vue";
 import FilterChips from "@/components/common/FilterChips.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
-import TaskTimeline from "@/components/common/TaskTimeline.vue";
 import { useRouter } from "vue-router";
 import { useToast } from "@/composables/useToast";
 import { Search } from "@element-plus/icons-vue";
-import EChart from "@/components/EChart.vue";
 import DatasetPicker from "@/components/common/DatasetPicker.vue";
+import { shouldShowTaskListEmpty, taskById } from "@/utils/taskListState";
 import {
   cancelIntelligenceTask,
   fetchDatasets,
   finalStatus,
-  formatDate,
   getIntelligenceTask,
   listIntelligenceTasks,
   runDefaultIntelligence,
@@ -26,13 +24,19 @@ import {
   type TaskLike,
 } from "@/api/evaluations";
 
+const EChart = defineAsyncComponent(() => import("@/components/EChart.vue"));
 const store = useModelsStore();
-const loading = ref(false);
+const loading = ref(true);
+const refreshing = ref(false);
+const listError = ref("");
 const datasetLoading = ref(false);
 const submitting = ref(false);
 const tasks = ref<TaskLike[]>([]);
 const selected = ref<TaskLike | null>(null);
 let refreshTimer: number | undefined;
+let activeReload: Promise<void> | null = null;
+let detailRequests = 0;
+let selectionVersion = 0;
 const datasets = ref<Record<string, DatasetMeta>>({});
 const defaultDatasets = ref<string[]>([]);
 const custom = ref(false);
@@ -99,14 +103,38 @@ async function loadDatasetMeta() {
   }
 }
 
-async function reload() {
-  loading.value = true;
+async function refreshSelected() {
+  if (!selected.value || finalStatus(selected.value.status)) return;
+  const request = ++detailRequests;
+  const selection = selectionVersion;
+  const taskId = selected.value.task_id;
   try {
-    tasks.value = await listIntelligenceTasks();
-    if (selected.value) await selectTask(selected.value.task_id, false);
-  } finally {
-    loading.value = false;
+    const detail = await getIntelligenceTask(taskId, false);
+    if (request === detailRequests && selection === selectionVersion) selected.value = detail;
+  } catch {
+    // Background refreshes keep the last known detail.
   }
+}
+
+function reload(options: { background?: boolean } = {}): Promise<void> {
+  if (activeReload) return activeReload;
+  if (!options.background) refreshing.value = true;
+  activeReload = (async () => {
+    try {
+      tasks.value = await listIntelligenceTasks();
+      listError.value = "";
+      await refreshSelected();
+    } catch (err) {
+      listError.value = err instanceof Error ? err.message : String(err);
+      if (!options.background) ElMessage.error("加载能力评测任务失败: " + listError.value);
+    } finally {
+      loading.value = false;
+      if (!options.background) refreshing.value = false;
+    }
+  })().finally(() => {
+    activeReload = null;
+  });
+  return activeReload;
 }
 
 function buildPayload() {
@@ -198,25 +226,42 @@ function bulkRerun() {
   toast.info(`已请求重新运行 ${selectedIds.value.length} 个任务`);
   selectedIds.value = [];
 }
-async function selectTask(taskId: string, refreshList = true) {
-  if (refreshList) await reload();
-  const cached = tasks.value.find((t) => t.task_id === taskId);
-  selected.value = await getIntelligenceTask(taskId, finalStatus(cached?.status));
+async function selectTask(taskId: string, refreshList = false) {
+  const selection = ++selectionVersion;
+  if (refreshList) await reload({ background: true });
+  if (selection !== selectionVersion) return;
+  const cached = taskById(tasks.value, taskId);
+  selected.value = cached;
+  try {
+    const detail = await getIntelligenceTask(taskId, finalStatus(cached?.status));
+    if (selection === selectionVersion) selected.value = detail;
+  } catch (err) {
+    if (selection === selectionVersion) {
+      ElMessage.error("加载能力评测详情失败: " + (err instanceof Error ? err.message : String(err)));
+    }
+  }
 }
 
 async function cancelTask(taskId: string) {
-  await ElMessageBox.confirm(`确认取消能力评测任务 ${taskId}？`, "取消确认", { type: "warning" });
-  await cancelIntelligenceTask(taskId);
-  ElMessage.success("已取消");
-  await reload();
-  await selectTask(taskId, false);
+  try {
+    await ElMessageBox.confirm(`确认取消能力评测任务 ${taskId}？`, "取消确认", { type: "warning" });
+    await cancelIntelligenceTask(taskId);
+    ElMessage.success("已取消");
+    await reload();
+    await selectTask(taskId, false);
+  } catch (err) {
+    if (err !== "cancel" && err !== "close") {
+      ElMessage.error("取消能力评测失败: " + (err instanceof Error ? err.message : String(err)));
+    }
+  }
 }
 
 onMounted(async () => {
-  await Promise.all([loadDatasetMeta(), reload()]);
+  await Promise.allSettled([loadDatasetMeta(), reload()]);
   refreshTimer = window.setInterval(() => {
+    if (document.visibilityState !== "visible" || activeReload) return;
     if (tasks.value.some((task) => !finalStatus(task.status)) || (selected.value && !finalStatus(selected.value.status))) {
-      reload();
+      reload({ background: true });
     }
   }, 5000);
 });
@@ -233,7 +278,7 @@ onUnmounted(() => {
     description="基于 EvalScope 的能力维度评估, 覆盖 BBH / MMLU / GSM8K / ARC 等公开数据集。适合在模型升级或大版本切换时建立能力基线。"
   >
     <template #actions>
-      <el-button size="small" @click="reload">刷新</el-button>
+      <el-button size="small" :loading="refreshing" @click="reload()">刷新</el-button>
       <el-button type="primary" :loading="submitting" @click="submit">启动能力评测</el-button>
     </template>
   </PageHero>
@@ -275,8 +320,9 @@ onUnmounted(() => {
         <el-input v-model="queryText" placeholder="搜索任务 ID / 模型" clearable size="default" style="width: 220px;">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <el-button size="small" @click="reload">刷新</el-button>
+        <el-button size="small" :loading="refreshing" @click="reload()">刷新</el-button>
       </div>
+      <el-alert v-if="listError" class="mb" type="error" :closable="false" show-icon :title="`任务列表加载失败：${listError}`" />
       <div class="lb-tl__filters">
         <FilterChips v-model="statusFilter" :options="statusFilterOptions" :show-count="true" size="small" />
       </div>
@@ -294,7 +340,7 @@ onUnmounted(() => {
         <el-table-column label="进度" min-width="180" show-overflow-tooltip><template #default="{ row }">{{ row.progress || '-' }}</template></el-table-column>
       </el-table>
       <EmptyState
-        v-if="!loading && filteredTasks.length === 0"
+        v-if="shouldShowTaskListEmpty(loading, listError, filteredTasks.length)"
         :title="queryText || statusFilter !== 'all' ? '无匹配任务' : '暂无能力评测任务'"
         :description="queryText || statusFilter !== 'all' ? '试着清空筛选条件' : '点击左侧表单启动第一次能力评测'"
         :variant="queryText ? 'search' : 'list'"
@@ -331,3 +377,7 @@ onUnmounted(() => {
     </el-card>
   </section>
 </template>
+
+<style scoped>
+.mb { margin-bottom: 12px; }
+</style>

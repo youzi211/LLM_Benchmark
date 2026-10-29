@@ -128,6 +128,19 @@ export async function listIntelligenceTasks(limit = 50): Promise<TaskLike[]> {
   return Array.isArray(data) ? data : [];
 }
 
+export interface TaskOverviewSummary {
+  today_count: number;
+  final_count: number;
+  completed_count: number;
+  completion_rate: number | null;
+  avg_duration_ms: number | null;
+}
+
+export async function fetchTaskOverviewSummary(): Promise<TaskOverviewSummary> {
+  const { data } = await http.get("/overview/task-summary");
+  return data as TaskOverviewSummary;
+}
+
 export async function getIntelligenceTask(taskId: string, result = false): Promise<TaskLike> {
   const { data } = await http.get(`/intelligence/tasks/${encodeURIComponent(taskId)}${result ? "/result" : ""}`);
   return data;

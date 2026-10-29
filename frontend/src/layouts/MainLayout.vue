@@ -1,19 +1,19 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ArrowDown, Moon, Sunny } from "@element-plus/icons-vue";
 import { useTheme } from "@/composables/useTheme";
 import { useModelsStore } from "@/stores/models";
 import { useHealthStore } from "@/stores/health";
-import ModelCreateDrawer from "@/components/models/ModelCreateDrawer.vue";
 import StatusDot from "@/components/common/StatusDot.vue";
 import ConnectionBanner from "@/components/common/ConnectionBanner.vue";
 import ShortcutHelp from "@/components/layouts/ShortcutHelp.vue";
 import MobileTabs from "@/components/layouts/MobileTabs.vue";
 import { useToast } from "@/composables/useToast";
 import { useShortcuts } from "@/composables/useShortcuts";
-import EvalScopeConfigDrawer from "@/components/evalscope/EvalScopeConfigDrawer.vue";
 
+const ModelCreateDrawer = defineAsyncComponent(() => import("@/components/models/ModelCreateDrawer.vue"));
+const EvalScopeConfigDrawer = defineAsyncComponent(() => import("@/components/evalscope/EvalScopeConfigDrawer.vue"));
 const store = useModelsStore();
 const router = useRouter();
 const route = useRoute();
@@ -141,8 +141,10 @@ onUnmounted(() => {
           <el-button size="small" type="primary" plain @click="modelDrawerVisible = true">添加模型</el-button>
           <el-button size="small" type="warning" plain @click="evalscopeDrawerVisible = true">评测环境</el-button>
           <el-tooltip :content="`当前主题: ${themeLabel} (点击切换)`" placement="bottom">
-            <ShortcutHelp />
-            <el-button size="small" circle :icon="themeIcon === 'moon' ? Moon : Sunny" @click="toggleTheme" :aria-label="`切换主题: ${themeLabel}`" class="lb-theme-toggle" />
+            <span class="lb-theme-group">
+              <ShortcutHelp />
+              <el-button size="small" circle :icon="themeIcon === 'moon' ? Moon : Sunny" @click="toggleTheme" :aria-label="`切换主题: ${themeLabel}`" class="lb-theme-toggle" />
+            </span>
           </el-tooltip>
         </div>
       </div>
@@ -193,8 +195,8 @@ onUnmounted(() => {
       <small>Vue 3 · Vite · Element Plus · ECharts</small>
     </footer>
 
-    <ModelCreateDrawer v-model="modelDrawerVisible" @created="onModelCreated" />
-    <EvalScopeConfigDrawer v-model="evalscopeDrawerVisible" />
+    <ModelCreateDrawer v-if="modelDrawerVisible" v-model="modelDrawerVisible" @created="onModelCreated" />
+    <EvalScopeConfigDrawer v-if="evalscopeDrawerVisible" v-model="evalscopeDrawerVisible" />
   </div>
 </template>
 
@@ -233,6 +235,12 @@ onUnmounted(() => {
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.lb-theme-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .lb-error {

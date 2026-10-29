@@ -1,11 +1,15 @@
 import { defineStore } from "pinia";
 import { createModel, fetchModels, type ModelConfig, type ModelConfigCreate } from "@/api/models";
+import { createSingleFlight } from "@/utils/singleFlight";
+
+const fetchModelsSingleFlight = createSingleFlight(fetchModels);
 
 interface State {
   models: ModelConfig[];
   currentId: string | null;
   loading: boolean;
   error: string | null;
+  loadVersion: number;
 }
 
 export const useModelsStore = defineStore("models", {
@@ -14,6 +18,7 @@ export const useModelsStore = defineStore("models", {
     currentId: null,
     loading: false,
     error: null,
+    loadVersion: 0,
   }),
   getters: {
     currentModel(state): ModelConfig | null {
@@ -23,10 +28,12 @@ export const useModelsStore = defineStore("models", {
   actions: {
     async load(force = false): Promise<void> {
       if (!force && this.models.length) return;
+      const loadVersion = ++this.loadVersion;
       this.loading = true;
       this.error = null;
       try {
-        const models = await fetchModels();
+        const models = force ? await fetchModels() : await fetchModelsSingleFlight();
+        if (loadVersion !== this.loadVersion) return;
         this.models = models;
         if (this.currentId && !models.some((model) => model.id === this.currentId)) {
           this.currentId = null;
@@ -35,9 +42,10 @@ export const useModelsStore = defineStore("models", {
           this.currentId = models[0].id ?? null;
         }
       } catch (err) {
+        if (loadVersion !== this.loadVersion) return;
         this.error = err instanceof Error ? err.message : String(err);
       } finally {
-        this.loading = false;
+        if (loadVersion === this.loadVersion) this.loading = false;
       }
     },
     select(id: string): void {

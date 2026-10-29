@@ -85,7 +85,7 @@ const total = computed(() => props.services.length);
     </ul>
 
     <div class="lb-sh__foot">
-      <el-link type="primary" :underline="false" @click="emit('configure', 'all')">
+      <el-link type="primary" underline="never" @click="emit('configure', 'all')">
         查看完整诊断 <el-icon class="lb-sh__arrow"><ArrowRight /></el-icon>
       </el-link>
     </div>

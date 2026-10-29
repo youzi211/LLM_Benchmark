@@ -7,7 +7,7 @@ import { computed } from "vue";
 import { ArrowUp, ArrowDown, Minus } from "@element-plus/icons-vue";
 
 const props = withDefaults(defineProps<{
-  /** 标签: 今日评测 / 通过率 / 平均延迟 / 在线模型 */
+  /** 标签: 今日评测 / 执行完成率 / 平均任务耗时 / 已配置模型 */
   label: string;
   /** 主数值 (字符串, 允许 "94.7%" "342ms" 等含单位) */
   value: string | number;

@@ -6,6 +6,7 @@
   "description": "Vue 3 + Vite + Element Plus + ECharts 重写控制台的前端骨架",
   "scripts": {
     "dev": "vite",
+    "test": "node --test tests/*.test.ts",
     "build": "vue-tsc -b && vite build",
     "build:no-check": "vite build",
     "preview": "vite preview --port 4173"
