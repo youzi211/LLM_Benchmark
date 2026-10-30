@@ -224,9 +224,30 @@ function goCompare() {
   router.push({ path: "/compare", query: { ids: selectedIds.value.join(","), types: "intelligence" } });
 }
 
-function bulkRerun() {
-  toast.info(`已请求重新运行 ${selectedIds.value.length} 个任务`);
-  selectedIds.value = [];
+const rerunning = ref(false);
+async function bulkRerun() {
+  const rows = tasks.value.filter((t) => selectedIds.value.includes(t.task_id));
+  if (!rows.length) return;
+  rerunning.value = true;
+  let ok = 0;
+  let failed = 0;
+  try {
+    for (const row of rows as any[]) {
+      try {
+        // 列表只存 datasets；limit 等参数不保留，重跑走后端默认。
+        await runIntelligence({ model_id: row.model_id, datasets: row.datasets || [] });
+        ok += 1;
+      } catch (err) {
+        failed += 1;
+        ElMessage.error(`重跑失败 ${row.task_id}: ` + (err instanceof Error ? err.message : String(err)));
+      }
+    }
+  } finally {
+    rerunning.value = false;
+    selectedIds.value = [];
+    await reload();
+  }
+  if (ok && !failed) ElMessage.success(`已重新运行 ${ok} 个能力评测任务`);
 }
 async function selectTask(taskId: string, refreshList = false) {
   const selection = ++selectionVersion;
@@ -344,7 +365,7 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
       </div>
       <div v-if="selectedIds.length" class="lb-tl__bulkbar">
         <span class="lb-tl__bulkbar-text">已选 {{ selectedIds.length }} 个任务</span>
-        <el-button size="small" type="primary" plain @click="bulkRerun">重新运行</el-button>
+        <el-button size="small" type="primary" plain :loading="rerunning" @click="bulkRerun">重新运行</el-button>
         <el-button size="small" type="success" plain @click="goCompare">对比 ({{ selectedIds.length }})</el-button>
         <el-button size="small" @click="selectedIds = []">取消</el-button>
       </div>

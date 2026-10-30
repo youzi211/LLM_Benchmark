@@ -18,6 +18,7 @@ const store = useModelsStore();
 const router = useRouter();
 const route = useRoute();
 const modelDrawerVisible = ref(false);
+const modelEditVisible = ref(false);
 const evalscopeDrawerVisible = ref(false);
 
 const healthStore = useHealthStore();
@@ -75,6 +76,19 @@ function selectMainTab(tabName: string | number | boolean | undefined) {
 
 function onModelCreated(id: string) {
   store.select(id);
+}
+
+const editingModel = computed(() => store.models.find((m) => m.id === store.currentId) ?? null);
+
+function onModelUpdated(id: string) {
+  store.select(id);
+}
+
+function onModelDeleted(id: string) {
+  if (store.currentId === id) {
+    const next = store.models.find((m) => m.id !== id);
+    store.select(next?.id ?? "");
+  }
 }
 
 function retryConn(key: string) {
@@ -139,6 +153,7 @@ onUnmounted(() => {
           </el-select>
           <StatusDot :state="store.error ? 'fail' : 'ok'" :label="store.error ? 'API 异常' : 'API 正常'" :size="7" />
         <el-button size="small" @click="store.load(true)">刷新模型</el-button>
+          <el-button size="small" :disabled="!store.currentId" @click="modelEditVisible = true">编辑模型</el-button>
           <el-button size="small" type="primary" plain @click="modelDrawerVisible = true">添加模型</el-button>
           <el-button size="small" type="warning" plain @click="evalscopeDrawerVisible = true">评测环境</el-button>
           <el-tooltip :content="`当前主题: ${themeLabel} (点击切换)`" placement="bottom">
@@ -197,6 +212,7 @@ onUnmounted(() => {
     </footer>
 
     <ModelCreateDrawer v-if="modelDrawerVisible" v-model="modelDrawerVisible" @created="onModelCreated" />
+    <ModelCreateDrawer v-if="modelEditVisible" v-model="modelEditVisible" :edit-target="editingModel" @updated="onModelUpdated" @deleted="onModelDeleted" />
     <EvalScopeConfigDrawer v-if="evalscopeDrawerVisible" v-model="evalscopeDrawerVisible" />
   </div>
 </template>

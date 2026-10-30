@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { createModel, fetchModels, type ModelConfig, type ModelConfigCreate } from "@/api/models";
+import { createModel, deleteModel, fetchModels, updateModel, type ModelConfig, type ModelConfigCreate, type ModelConfigUpdate } from "@/api/models";
 import { createSingleFlight } from "@/utils/singleFlight";
 
 const fetchModelsSingleFlight = createSingleFlight(fetchModels);
@@ -56,6 +56,15 @@ export const useModelsStore = defineStore("models", {
       await this.load(true);
       this.currentId = created.id;
       return created;
+    },
+    async update(id: string, patch: ModelConfigUpdate): Promise<ModelConfig> {
+      const updated = await updateModel(id, patch);
+      await this.load(true);
+      return updated;
+    },
+    async remove(id: string): Promise<void> {
+      await deleteModel(id);
+      await this.load(true);
     },
   },
 });

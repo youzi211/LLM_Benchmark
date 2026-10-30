@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 import { useModelsStore } from "@/stores/models";
@@ -47,6 +47,8 @@ const defaultStressDataset = ref("");
 const selectedStressDataset = ref("");
 
 const currentStep = ref(0);
+let refreshTimer: number | undefined;
+let activeReload: Promise<void> | null = null;
 
 const wizardSteps = [
   { key: "lane",    title: "选择评测线", description: "勾选要跑的基础 / 压测 / 能力" },
@@ -140,14 +142,23 @@ async function loadStressDatasets() {
   }
 }
 
-async function reload() {
-  loading.value = true;
-  try {
-    tasks.value = await listSuites();
-    if (selected.value) selected.value = await getSuite(selected.value.suite_id);
-  } finally {
-    loading.value = false;
-  }
+function reload(options: { background?: boolean } = {}): Promise<void> {
+  if (activeReload) return activeReload;
+  if (!options.background) loading.value = true;
+  activeReload = (async () => {
+    try {
+      tasks.value = await listSuites();
+      if (selected.value) {
+        try { selected.value = await getSuite(selected.value.suite_id); }
+        catch { /* 详情拉取失败保持旧数据 */ }
+      }
+    } finally {
+      loading.value = false;
+    }
+  })().finally(() => {
+    activeReload = null;
+  });
+  return activeReload;
 }
 
 async function selectTask(row: Record<string, any>) {
@@ -269,6 +280,16 @@ onMounted(() => {
   loadDatasets();
   loadStressDatasets();
   reload();
+  refreshTimer = window.setInterval(() => {
+    if (document.visibilityState !== "visible" || activeReload) return;
+    if (tasks.value.some((task) => !finalStatus(task.status)) || (selected.value && !finalStatus(selected.value.status))) {
+      reload({ background: true });
+    }
+  }, 5000);
+});
+
+onUnmounted(() => {
+  if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
 });
 </script>
 
@@ -404,7 +425,7 @@ onMounted(() => {
 
     <el-card class="panel-card" shadow="never">
       <div class="lb-suite-list-head">
-        <el-button size="small" @click="reload">刷新</el-button>
+        <el-button size="small" @click="reload()">刷新</el-button>
       </div>
       <EmptyState
         v-if="!loading && tasks.length === 0"

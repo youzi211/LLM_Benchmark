@@ -3,7 +3,7 @@
  * 概览页 (Phase 3.1) - LLM Benchmark 新首页
  * Hero + 4 KPI + 服务健康 + 运行中 + 最近活动
  */
-import { computed, onMounted, ref } from "vue";
+import { computed, defineAsyncComponent, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useModelsStore } from "@/stores/models";
 import { useHealthStore } from "@/stores/health";
@@ -163,6 +163,26 @@ const recentItems = computed(() =>
 function goNew() {
   router.push("/basic");
 }
+
+const ModelCreateDrawer = defineAsyncComponent(() => import("@/components/models/ModelCreateDrawer.vue"));
+const EvalScopeConfigDrawer = defineAsyncComponent(() => import("@/components/evalscope/EvalScopeConfigDrawer.vue"));
+const modelDrawerVisible = ref(false);
+const evalscopeDrawerVisible = ref(false);
+
+// 服务健康卡的重试 / 配置动作。
+function onRetryService(key: string) {
+  if (key === "models") {
+    store.load(true).catch((err) => toast.error("重试失败: " + String(err?.message ?? err)));
+  }
+  healthStore.refresh().catch((err) => toast.error("重试失败: " + String(err?.message ?? err)));
+}
+
+function onConfigureService(key: string) {
+  if (key === "models") modelDrawerVisible.value = true;
+  else if (key === "evalscope") evalscopeDrawerVisible.value = true;
+  else if (key === "scheduler") router.push("/schedules");
+  else toast.info("FastAPI 网关无需配置，请检查后端服务状态");
+}
 </script>
 
 <template>
@@ -239,10 +259,10 @@ function goNew() {
     <!-- 趋势 + 健康 + 运行中 -->
     <section class="lb-overview__grid">
       <ServiceHealth
-  :services="healthServices"
-  @configure="(k) => toast.info(`打开配置: ${k}`)"
-  @retry="(k) => toast.info(`重试: ${k}`)"
-/>
+        :services="healthServices"
+        @configure="onConfigureService"
+        @retry="onRetryService"
+      />
     </section>
 
     <!-- 运行中 + 最近活动 -->
@@ -291,6 +311,9 @@ function goNew() {
         </div>
       </div>
     </section>
+
+    <ModelCreateDrawer v-if="modelDrawerVisible" v-model="modelDrawerVisible" @created="(id: string) => store.select(id)" />
+    <EvalScopeConfigDrawer v-if="evalscopeDrawerVisible" v-model="evalscopeDrawerVisible" />
   </div>
 </template>
 

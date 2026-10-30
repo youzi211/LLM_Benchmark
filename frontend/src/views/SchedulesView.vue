@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import PageHero from "@/components/layouts/PageHero.vue";
 import StatusTag from "@/components/common/StatusTag.vue";
@@ -11,6 +11,7 @@ import {
   deleteSchedule,
   fetchDatasets,
   fetchSuiteProfiles,
+  finalStatus,
   formatDate,
   relativeFromNow,
   getScheduleLastRun,
@@ -28,6 +29,8 @@ const selected = ref<Record<string, any> | null>(null);
 const lastRun = ref<Record<string, any> | null>(null);
 const profiles = ref<SuiteProfile[]>([]);
 const datasetMap = ref<Record<string, DatasetMeta>>({});
+let refreshTimer: number | undefined;
+let activeReload: Promise<void> | null = null;
 
 function statusType(status?: string) {
   if (status === "completed") return "success";
@@ -57,12 +60,29 @@ function scheduleStressDataset(row?: Record<string, any>) {
 
 const lastRunSteps = computed(() => (lastRun.value?.suite?.steps as any[]) || []);
 
-async function reload() {
-  loading.value = true;
+function reload(options: { background?: boolean } = {}): Promise<void> {
+  if (activeReload) return activeReload;
+  if (!options.background) loading.value = true;
+  activeReload = (async () => {
+    try {
+      schedules.value = await listSchedules();
+    } finally {
+      loading.value = false;
+    }
+  })().finally(() => {
+    activeReload = null;
+  });
+  return activeReload;
+}
+
+async function reloadSelectedLastRun() {
+  if (!selected.value) return;
+  const scheduleId = selected.value.schedule_id;
   try {
-    schedules.value = await listSchedules();
-  } finally {
-    loading.value = false;
+    const run = await getScheduleLastRun(scheduleId);
+    if (selected.value?.schedule_id === scheduleId) lastRun.value = run;
+  } catch {
+    // 后台刷新失败保持旧数据。
   }
 }
 
@@ -118,6 +138,24 @@ onMounted(async () => {
   } catch {
     datasetMap.value = {};
   }
+  // 有正在跑的 suite、或即将到点的任务时每 5 秒后台刷新列表与详情。
+  refreshTimer = window.setInterval(() => {
+    if (document.visibilityState !== "visible" || activeReload) return;
+    const due = schedules.value.some((row) => {
+      if (row.last_suite_status && !finalStatus(row.last_suite_status)) return true;
+      // next_run_at 过点超过 1 分钟视为陈旧（如调度器被禁用），不再触发刷新。
+      const delta = row.next_run_at ? Date.parse(row.next_run_at) - Date.now() : -Infinity;
+      return delta > -60_000 && delta < 60_000;
+    });
+    if (due) {
+      reload({ background: true });
+      void reloadSelectedLastRun();
+    }
+  }, 5000);
+});
+
+onUnmounted(() => {
+  if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
 });
 
 const selectedProfile = computed(() =>
@@ -152,7 +190,7 @@ function profileLimitLabel(p?: SuiteProfile | null) {
       description="观察与触发定时评测套件; 复杂配置已移至右侧 Drawer, 避免主页被数据集配置拉长。"
     >
       <template #actions>
-        <el-button size="small" @click="reload">刷新</el-button>
+        <el-button size="small" @click="reload()">刷新</el-button>
         <el-button type="primary" size="small" @click="drawerVisible = true">新建定时任务</el-button>
       </template>
     </PageHero>

@@ -10,7 +10,7 @@ import EmptyState from "@/components/common/EmptyState.vue";
 import TaskTimeline from "@/components/common/TaskTimeline.vue";
 import MarkdownReport from "@/components/common/MarkdownReport.vue";
 import { Search } from "@element-plus/icons-vue";
-import { cancelBasicTask, formatDate, getBasicTask, listBasicTasks, submitBasic, type TaskLike } from "@/api/evaluations";
+import { cancelBasicTask, fetchMetrics, formatDate, getBasicTask, listBasicTasks, submitBasic, type MetricInfo, type TaskLike } from "@/api/evaluations";
 import { taskIdFromQuery } from "@/utils/taskCenter";
 
 const route = useRoute();
@@ -19,10 +19,12 @@ const toast = useToast();
 const store = useModelsStore();
 const loading = ref(false);
 const submitting = ref(false);
+const rerunning = ref(false);
 const tasks = ref<TaskLike[]>([]);
 const selected = ref<TaskLike | null>(null);
 const planId = ref("gateway_acceptance_v1");
-const metricIds = ref("");
+const metricIds = ref<string[]>([]);
+const metricOptions = ref<MetricInfo[]>([]);
 
 const statusFilter = ref<string>("all");
 const queryText = ref<string>("");
@@ -71,9 +73,32 @@ function goCompare() {
   router.push({ path: "/compare", query: { ids: selectedIds.value.join(","), types: "basic" } });
 }
 
-function bulkRerun() {
-  toast.info(`已请求重新运行 ${selectedIds.value.length} 个任务`);
-  selectedIds.value = [];
+async function bulkRerun() {
+  const rows = tasks.value.filter((t) => selectedIds.value.includes(t.task_id));
+  if (!rows.length) return;
+  rerunning.value = true;
+  let ok = 0;
+  let failed = 0;
+  try {
+    for (const row of rows) {
+      try {
+        const payload: Record<string, unknown> = { model_id: row.model_id, plan_id: row.plan_id || planId.value };
+        if (Array.isArray(row.metric_ids) && row.metric_ids.length) payload.metric_ids = row.metric_ids;
+        const accepted = await submitBasic(payload);
+        activeTaskId.value = accepted.task_id;
+        ok += 1;
+      } catch (err) {
+        failed += 1;
+        toast.error(`重跑失败 ${row.task_id}: ` + String((err as Error)?.message || err));
+      }
+    }
+  } finally {
+    rerunning.value = false;
+    selectedIds.value = [];
+    await reload();
+    if (activeTaskId.value) beginPolling(activeTaskId.value);
+  }
+  if (ok && !failed) toast.success(`已重新运行 ${ok} 个任务`);
 }
 
 async function reload() {
@@ -93,8 +118,8 @@ async function reload() {
 }
 
 function splitMetricIds() {
-  const raw = metricIds.value.trim();
-  return raw ? raw.split(/[\uFF0C,\s]+/).filter(Boolean) : undefined;
+  // \u9009\u62E9\u5668\u53EA\u7ED9\u5408\u6CD5 ID\uFF1B\u4ECD\u6821\u9A8C\u4E00\u6B21\uFF0C\u907F\u514D\u810F\u6570\u636E\u8FDB payload\u3002
+  return metricIds.value.filter((id) => id.trim());
 }
 
 async function submit() {
@@ -106,8 +131,7 @@ async function submit() {
   try {
     const payload: Record<string, unknown> = { model_id: store.currentId, plan_id: planId.value };
     const metrics = splitMetricIds();
-    if (metrics?.length) payload.metric_ids = metrics;
-    const accepted = await submitBasic(payload);
+    if (metrics?.length) payload.metric_ids = metrics;    const accepted = await submitBasic(payload);
     toast.info(`评测已提交: ${accepted.task_id}`);
     activeTaskId.value = accepted.task_id;
     await reload();
@@ -241,6 +265,7 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
 onMounted(async () => {
   await reload();
   await selectRequestedTask();
+  fetchMetrics().then((items) => { metricOptions.value = items; }).catch(() => { metricOptions.value = []; });
 });
 onBeforeUnmount(stopPolling);
 </script>
@@ -269,8 +294,10 @@ onBeforeUnmount(stopPolling);
             <el-option label="gateway_acceptance_v1" value="gateway_acceptance_v1" />
           </el-select>
         </el-form-item>
-        <el-form-item label="指定指标 (可选, 逗号分隔)">
-          <el-input v-model="metricIds" placeholder="connectivity, usage" />
+        <el-form-item label="指定指标 (可选)">
+          <el-select v-model="metricIds" class="full-width" multiple collapse-tags collapse-tags-tooltip clearable placeholder="默认跑全部指标">
+            <el-option v-for="m in metricOptions" :key="m.id" :label="`${m.name} (${m.id})`" :value="m.id" />
+          </el-select>
         </el-form-item>
       </el-form>
     </el-card>
@@ -293,7 +320,7 @@ onBeforeUnmount(stopPolling);
       </div>
       <div v-if="selectedIds.length" class="lb-tl__bulkbar">
         <span class="lb-tl__bulkbar-text">已选 {{ selectedIds.length }} 个任务</span>
-        <el-button size="small" type="primary" plain @click="bulkRerun">重新运行</el-button>
+        <el-button size="small" type="primary" plain :loading="rerunning" @click="bulkRerun">重新运行</el-button>
         <el-button size="small" type="success" plain @click="goCompare">对比 ({{ selectedIds.length }})</el-button>
         <el-button size="small" @click="selectedIds = []">取消</el-button>
       </div>

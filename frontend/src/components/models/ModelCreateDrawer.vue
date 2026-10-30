@@ -1,20 +1,26 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { useModelsStore } from "@/stores/models";
-import type { ModelProtocol } from "@/api/models";
+import type { ModelConfig, ModelProtocol } from "@/api/models";
 
 const props = defineProps<{
   modelValue: boolean;
+  /** 传入则进入编辑模式，否则为新增。 */
+  editTarget?: ModelConfig | null;
 }>();
 
 const emit = defineEmits<{
   (event: "update:modelValue", value: boolean): void;
   (event: "created", id: string): void;
+  (event: "updated", id: string): void;
+  (event: "deleted", id: string): void;
 }>();
 
 const store = useModelsStore();
 const submitting = ref(false);
+const deleting = ref(false);
+const isEdit = computed(() => Boolean(props.editTarget));
 
 const visible = computed({
   get: () => props.modelValue,
@@ -34,6 +40,27 @@ function defaultForm() {
     declared_context_tokens: "",
     declared_max_output_tokens: "",
     concurrency_levels: "1,5,10,20",
+  };
+}
+
+function fillFromTarget(target: ModelConfig | null | undefined) {
+  const base = defaultForm();
+  if (!target) {
+    form.value = base;
+    return;
+  }
+  form.value = {
+    id: String(target.id ?? ""),
+    name: String(target.name ?? ""),
+    protocol: (target.protocol as ModelProtocol) || "chat_completions",
+    base_url: String(target.base_url ?? ""),
+    api_key: "", // 列表返回的是脱敏 key；留空表示不修改。
+    model: String(target.model ?? ""),
+    timeout_seconds: Number(target.timeout_seconds ?? 60) || 60,
+    enabled: target.enabled !== false,
+    declared_context_tokens: target.declared_context_tokens != null ? String(target.declared_context_tokens) : "",
+    declared_max_output_tokens: target.declared_max_output_tokens != null ? String(target.declared_max_output_tokens) : "",
+    concurrency_levels: Array.isArray(target.concurrency_levels) ? target.concurrency_levels.join(",") : "1,5,10,20",
   };
 }
 
@@ -79,7 +106,7 @@ function validateRequired() {
   if (!/^[a-zA-Z0-9_.-]+$/.test(form.value.id.trim())) throw new Error("模型 ID 只能包含字母、数字、下划线、点和横线");
   if (!form.value.name.trim()) throw new Error("请填写显示名称");
   if (!form.value.base_url.trim()) throw new Error("请填写 Base URL");
-  if (!form.value.api_key.trim()) throw new Error("请填写 API Key");
+  if (!isEdit.value && !form.value.api_key.trim()) throw new Error("请填写 API Key");
   if (!form.value.model.trim()) throw new Error("请填写上游模型名称");
   if (!Number.isInteger(form.value.timeout_seconds) || form.value.timeout_seconds < 1 || form.value.timeout_seconds > 600) {
     throw new Error("超时时间必须在 1-600 秒之间");
@@ -114,6 +141,26 @@ function closeDrawer() {
 async function submit() {
   submitting.value = true;
   try {
+    if (isEdit.value && props.editTarget) {
+      // 编辑模式：api_key 留空则不传，后端 PUT 是部分更新，保留原 key。
+      const payload: Record<string, unknown> = {
+        name: form.value.name.trim(),
+        protocol: form.value.protocol,
+        base_url: form.value.base_url.trim(),
+        model: form.value.model.trim(),
+        timeout_seconds: form.value.timeout_seconds,
+        enabled: form.value.enabled,
+        declared_context_tokens: toOptionalPositiveInteger(form.value.declared_context_tokens, "上下文窗口"),
+        declared_max_output_tokens: toOptionalPositiveInteger(form.value.declared_max_output_tokens, "最大输出 tokens"),
+        concurrency_levels: parseConcurrency(form.value.concurrency_levels),
+      };
+      if (form.value.api_key.trim()) payload.api_key = form.value.api_key.trim();
+      const updated = await store.update(props.editTarget.id, payload);
+      ElMessage.success(`模型已更新：${updated.name || updated.id}`);
+      emit("updated", updated.id);
+      closeDrawer();
+      return;
+    }
     const created = await store.create(buildPayload());
     ElMessage.success(`模型已添加：${created.name || created.id}`);
     emit("created", created.id);
@@ -126,26 +173,49 @@ async function submit() {
   }
 }
 
+async function removeModel() {
+  if (!props.editTarget) return;
+  try {
+    await ElMessageBox.confirm(`确定删除模型 ${props.editTarget.name || props.editTarget.id}？相关任务记录不会删除。`, "删除确认", { type: "warning" });
+  } catch {
+    return;
+  }
+  deleting.value = true;
+  try {
+    await store.remove(props.editTarget.id);
+    ElMessage.success("模型已删除");
+    emit("deleted", props.editTarget.id);
+    closeDrawer();
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : String(err));
+  } finally {
+    deleting.value = false;
+  }
+}
+
 watch(
   () => props.modelValue,
   (open) => {
-    if (open) void store.load();
+    if (open) {
+      fillFromTarget(props.editTarget);
+      void store.load();
+    }
   },
 );
 </script>
 
 <template>
-  <el-drawer v-model="visible" title="添加模型" size="520px" class="model-editor-drawer" destroy-on-close>
+  <el-drawer v-model="visible" :title="isEdit ? '编辑模型' : '添加模型'" size="520px" class="model-editor-drawer" destroy-on-close>
     <el-alert
       class="model-editor__hint"
       type="warning"
       :closable="false"
-      title="API Key 会写入本地 data/models.json，请确认不要提交该文件。列表接口只返回脱敏后的 key。"
+      :title="isEdit ? 'API Key 留空表示保留原 Key；填写则覆盖。列表接口只返回脱敏后的 key。' : 'API Key 会写入本地 data/models.json，请确认不要提交该文件。列表接口只返回脱敏后的 key。'"
     />
 
     <el-form label-position="top" class="model-editor-form">
       <el-form-item label="模型 ID">
-        <el-input v-model="form.id" placeholder="如：ms-enclave-glm52" />
+        <el-input v-model="form.id" placeholder="如：ms-enclave-glm52" :disabled="isEdit" />
         <div class="form-help">唯一标识，只能包含字母、数字、下划线、点和横线。</div>
       </el-form-item>
       <el-form-item label="显示名称">
@@ -170,7 +240,7 @@ watch(
         <el-input v-model="form.base_url" placeholder="如：http://10.182.17.2:1234/v1" />
       </el-form-item>
       <el-form-item label="API Key">
-        <el-input v-model="form.api_key" placeholder="请输入 API Key" show-password />
+        <el-input v-model="form.api_key" :placeholder="isEdit ? '留空保留原 Key' : '请输入 API Key'" show-password />
       </el-form-item>
       <el-form-item label="上游模型名称">
         <el-input v-model="form.model" placeholder="如：LKL-GLM-5.2-FP8" @blur="maybeFillId" />
@@ -207,10 +277,18 @@ watch(
 
     <template #footer>
       <div class="drawer-footer">
+        <el-button v-if="isEdit" type="danger" plain :loading="deleting" @click="removeModel">删除</el-button>
+        <span v-if="isEdit" class="drawer-footer__spacer"></span>
         <el-button @click="closeDrawer">取消</el-button>
-        <el-button @click="resetForm">重置</el-button>
-        <el-button type="primary" :loading="submitting" @click="submit">添加并选中</el-button>
+        <el-button v-if="!isEdit" @click="resetForm">重置</el-button>
+        <el-button type="primary" :loading="submitting" @click="submit">{{ isEdit ? "保存修改" : "添加并选中" }}</el-button>
       </div>
     </template>
   </el-drawer>
 </template>
+
+<style scoped>
+.drawer-footer__spacer {
+  flex: 1 1 auto;
+}
+</style>

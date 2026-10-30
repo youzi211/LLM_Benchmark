@@ -167,6 +167,19 @@ export async function cancelIntelligenceTask(taskId: string) {
   return data;
 }
 
+export interface MetricInfo {
+  id: string;
+  priority: string;
+  name: string;
+  description?: string;
+  [key: string]: unknown;
+}
+
+export async function fetchMetrics(): Promise<MetricInfo[]> {
+  const { data } = await http.get("/metrics");
+  return Array.isArray(data) ? data : [];
+}
+
 export async function fetchDatasets(): Promise<{ default_datasets: string[]; datasets: Record<string, DatasetMeta> }> {
   const { data } = await http.get("/intelligence/datasets");
   return {
