@@ -166,6 +166,10 @@ export function buildStressGroups(tasks: TaskLike[]): TaskLike[] {
     )[0];
     const config = (latest.request_config || {}) as Record<string, unknown>;
     const runs = sortRuns(bucket.flatMap((task) => runsOfTask(task)), config);
+    const durations = bucket.map((task) => stressMetricValue(task.duration_ms));
+    const duration = durations.every((value) => value !== undefined)
+      ? durations.reduce<number>((sum, value) => sum + (value ?? 0), 0)
+      : null;
     const normalized = {
       task_id: `group:${key}`,
       model: latest.model_id,
@@ -209,7 +213,7 @@ export function buildStressGroups(tasks: TaskLike[]): TaskLike[] {
       grouped: true,
       status: normalized.status,
       progress: `${bucket.length} 条同配置记录 · ${runs.length} 个负载档位`,
-      duration_ms: bucket.reduce((sum, task) => sum + (Number(task.duration_ms) || 0), 0),
+      duration_ms: duration,
       normalized_result: normalized,
       raw_result: null,
       raw_output_dir: null,

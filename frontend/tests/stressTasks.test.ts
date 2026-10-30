@@ -189,3 +189,11 @@ test("open-loop tasks stay grouped across request-rate levels", () => {
   assert.equal(groups[0].normalized_result.runs.length, 2);
   assert.match(groups[0].group_config, /开环速率/);
 });
+
+test("grouped durations remain unknown unless every member has a valid duration", () => {
+  const task = { model_id: "model-a", status: "running", request_config: { dataset: "random" } };
+  assert.equal(buildStressGroups([{ ...task, task_id: "unknown", duration_ms: null }])[0].duration_ms, null);
+  assert.equal(buildStressGroups([{ ...task, task_id: "zero", duration_ms: 0 }])[0].duration_ms, 0);
+  assert.equal(buildStressGroups([{ ...task, task_id: "known", duration_ms: 1500 }, { ...task, task_id: "unknown", duration_ms: null }])[0].duration_ms, null);
+  assert.equal(buildStressGroups([{ ...task, task_id: "one", duration_ms: 1500 }, { ...task, task_id: "two", duration_ms: 500 }])[0].duration_ms, 2000);
+});

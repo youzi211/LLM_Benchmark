@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, useId } from "vue";
 import { ArrowDown } from "@element-plus/icons-vue";
 import type { DatasetMeta } from "@/api/evaluations";
 
@@ -31,6 +31,11 @@ const emit = defineEmits<{
 type FilterMode = "default" | "all" | "judge" | "sandbox";
 const filterMode = ref<FilterMode>(props.defaultDatasets.length ? "default" : "all");
 const expanded = ref<Set<string>>(new Set());
+const pickerId = useId();
+const filters: Array<{ value: FilterMode; label: string }> = [
+  { value: "default", label: "默认推荐" }, { value: "all", label: "全部数据集" },
+  { value: "judge", label: "需 Judge" }, { value: "sandbox", label: "需 Sandbox" },
+];
 
 const datasetEntries = computed(() => {
   return Object.entries(props.datasets)
@@ -127,12 +132,7 @@ function effectiveSubsetsList(name: string): string[] {
 <template>
   <div class="dataset-picker">
     <div class="dataset-picker__filter">
-      <el-radio-group v-model="filterMode" size="small">
-        <el-radio-button value="default">默认推荐</el-radio-button>
-        <el-radio-button value="all">全部 ({{ datasetEntries.length }})</el-radio-button>
-        <el-radio-button value="judge">需 Judge</el-radio-button>
-        <el-radio-button value="sandbox">需 Sandbox</el-radio-button>
-      </el-radio-group>
+      <div class="dataset-picker__tabs" role="group" aria-label="数据集筛选"><button v-for="filter in filters" :key="filter.value" type="button" :aria-pressed="filterMode === filter.value" @click="filterMode = filter.value">{{ filter.label }}</button></div>
       <small class="muted">已选 {{ modelValue.length }} / 共 {{ datasetEntries.length }} 个本地数据集</small>
     </div>
 
@@ -151,7 +151,7 @@ function effectiveSubsetsList(name: string): string[] {
         class="dataset-picker__row"
         :class="{ 'dataset-picker__row--active': isChecked(name) }"
       >
-        <div class="row-head" @click="toggleExpand(name)">
+        <div class="row-head">
           <el-checkbox
             :model-value="isChecked(name)"
             :disabled="disabled"
@@ -161,23 +161,20 @@ function effectiveSubsetsList(name: string): string[] {
             <span class="row-name">{{ meta.pretty_name || name }}</span>
           </el-checkbox>
 
-          <div class="row-tags" @click.stop>
-            <el-tag v-if="defaultDatasets.includes(name)" size="small" type="success" effect="plain">推荐</el-tag>
-            <el-tag v-if="meta.available_local" size="small" type="info" effect="plain">本地</el-tag>
-            <el-tag v-if="meta.needs_judge" size="small" type="warning" effect="plain">需 Judge</el-tag>
-            <el-tag v-if="meta.categories?.includes('Coding')" size="small" type="warning" effect="plain">需 Sandbox</el-tag>
-            <el-tag v-for="c in meta.categories || []" :key="c" size="small" effect="plain">{{ c }}</el-tag>
-          </div>
-
-          <el-icon class="row-chevron" :class="{ expanded: isExpanded(name) }">
-            <ArrowDown />
-          </el-icon>
+          <button v-if="hasSubsets(meta)" type="button" class="row-toggle" :aria-label="`展开 ${meta.pretty_name || name} 子集`" :aria-expanded="isExpanded(name)" :aria-controls="`${pickerId}-${name}`" @click="toggleExpand(name)"><span>子集</span><el-icon class="row-chevron" :class="{ expanded: isExpanded(name) }"><ArrowDown /></el-icon></button>
+        </div>
+        <div class="row-tags">
+          <el-tag v-if="defaultDatasets.includes(name)" size="small" type="success" effect="plain">推荐</el-tag>
+          <el-tag v-if="meta.available_local" size="small" type="info" effect="plain">本地</el-tag>
+          <el-tag v-if="meta.needs_judge" size="small" type="warning" effect="plain">需 Judge</el-tag>
+          <el-tag v-if="meta.categories?.includes('Coding')" size="small" type="warning" effect="plain">需 Sandbox</el-tag>
+          <el-tag v-for="c in meta.categories || []" :key="c" size="small" effect="plain">{{ c }}</el-tag>
         </div>
 
         <p class="row-desc">{{ meta.description || '暂无描述' }}</p>
-        <small v-if="meta.local_path" class="row-path">{{ meta.local_path }}</small>
+        <small v-if="meta.local_path" class="row-path" :title="meta.local_path">{{ meta.local_path }}</small>
 
-        <div v-if="hasSubsets(meta)" v-show="isExpanded(name)" class="row-subsets">
+        <div v-if="hasSubsets(meta)" v-show="isExpanded(name)" :id="`${pickerId}-${name}`" class="row-subsets">
           <div class="subset-head">
             <div class="subset-meta">
               <span class="subset-title">{{ subsetTitle(meta) }}</span>
@@ -237,6 +234,9 @@ function effectiveSubsetsList(name: string): string[] {
   margin-bottom: 4px;
   flex-wrap: wrap;
 }
+.dataset-picker__tabs { display: flex; flex-wrap: wrap; gap: 5px; }
+.dataset-picker__tabs button { padding: 6px 9px; border: 1px solid var(--lb-border); border-radius: 6px; background: var(--lb-surface); color: var(--lb-fg-soft); font: 11px var(--font-body); cursor: pointer; transition: background-color 150ms ease, color 150ms ease; }
+.dataset-picker__tabs button:hover, .dataset-picker__tabs button[aria-pressed="true"] { color: var(--lb-primary); border-color: var(--lb-accent-soft-2); background: var(--lb-accent-soft); }
 
 .dataset-picker__list {
   list-style: none;
@@ -244,7 +244,7 @@ function effectiveSubsetsList(name: string): string[] {
   padding: 0;
   display: grid;
   gap: 8px;
-  max-height: 480px;
+  max-height: 520px;
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -252,7 +252,7 @@ function effectiveSubsetsList(name: string): string[] {
 .dataset-picker__row {
   border: 1px solid var(--lb-border);
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 14px;
   background: var(--lb-surface);
   transition: border-color 0.15s ease, background 0.15s ease;
 }
@@ -272,13 +272,16 @@ function effectiveSubsetsList(name: string): string[] {
   display: flex;
   align-items: center;
   gap: 8px;
-  cursor: pointer;
+  min-width: 0;
 }
 
 .row-head :deep(.el-checkbox) {
-  flex: 0 1 auto;
+  flex: 1;
+  min-width: 0;
   margin-right: 4px;
 }
+.row-head :deep(.el-checkbox__label) { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.row-toggle { display: flex; align-items: center; flex-shrink: 0; gap: 7px; padding: 5px 0 5px 8px; border: 0; color: var(--lb-muted); background: transparent; font: 11px var(--font-body); cursor: pointer; }
 
 .row-name {
   font-weight: 650;
@@ -292,6 +295,7 @@ function effectiveSubsetsList(name: string): string[] {
   flex-wrap: wrap;
   flex: 1 1 auto;
   min-width: 0;
+  margin-top: 6px;
 }
 
 .row-chevron {
@@ -307,14 +311,14 @@ function effectiveSubsetsList(name: string): string[] {
 .row-desc {
   margin: 6px 0 2px;
   color: var(--lb-fg-soft);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
 .row-path {
   display: block;
   color: var(--lb-muted);
-  font-size: 12px;
+  font-size: 10px;
   line-height: 1.45;
   word-break: break-all;
   margin-top: 2px;

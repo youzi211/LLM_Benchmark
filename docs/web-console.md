@@ -39,21 +39,28 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8020
 
 ## 3. 三条评测线
 
+三页共用 `EvaluationWorkspace`：顶部“新建基础评测 / 新建压测评测 / 新建能力评测”打开配置抽屉，主区保留最近任务与结果详情。桌面分栏，宽度 ≤1279px 时纵向排列；配置抽屉适配小屏，不再用长表单挤占结果区。
+
+任务列表支持搜索、状态筛选、多选、重跑和对比；取消选择会同时清空实际复选框。列表计数仅代表接口返回的最近记录，不作为全量统计。加载失败与无任务分别表达，后台刷新保留已有内容。
+
 ### 3.1 基础评测
 
 用于验证模型服务基础可用性、协议兼容、usage、错误结构、上下文和缓存 smoke。
 
 页面能力：
 
-- 选择评测计划，默认 `gateway_acceptance_v1`。
-- 可选输入 `metric_ids`，逗号或空白分隔。
+- 在新建抽屉选择评测计划，默认 `gateway_acceptance_v1`。
+- 可选通过多选框指定 `metric_ids`，不指定时使用计划默认指标。
 - 提交基础评测。
 - 查看最近基础评测任务列表。
 - 点击任务查看指标结果、错误摘要和 Markdown 报告入口。
+- 详情分为指标结果、报告预览、任务信息，展示执行完成/异常/跳过指标数，不将执行完成解释为上线通过。
+- 支持取消运行任务、多选重跑及任务对比；任务详情链接继续使用 `task_id` 查询参数。
 
 主要接口：
 
-- `POST /api/tasks/run`
+- `POST /api/tasks/run-async`
+- `POST /api/tasks/{task_id}/cancel`
 - `GET /api/tasks`
 - `GET /api/tasks/{task_id}`
 - `GET /api/reports/{task_id}`
@@ -65,10 +72,12 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8020
 页面能力：
 
 - 使用默认压测参数提交任务。
-- 开启“自定义压测参数”后填写 `parallel`、`number`、`stream`、`dataset`、`dataset_path`、长度和 token 过滤参数。
+- 在新建抽屉开启“自定义压测参数”后填写 `parallel` / `rate`、`number`、`stream`、`dataset`、`dataset_path`、长度和 token 过滤参数；高级参数按执行/超时与生成/采样分区，保留原有字段。
 - 查看最近压测任务列表。
 - 点击任务查看状态、参数摘要、吞吐曲线、延迟曲线、TTFT/TPOT、成功率和报告入口。
 - 对非终态任务执行取消。
+- 结果区分为性能图表、档位明细、任务与产物；宽表在自身区域横向滚动，不撑开整页。按方案归组时可进入组内任务，保留失败成员与取消入口。
+- 图表区可切换请求吞吐、Token 吞吐、延迟和成功率；缺失进度显示等待，不伪装成 0%。
 
 主要接口：
 
@@ -87,11 +96,14 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8020
 页面能力：
 
 - 使用默认数据集组合提交任务。
-- 开启“自定义数据集”后选择具体 EvalScope 数据集。数据集卡片展示中文名称、用途描述、是否本地可用、分类、Judge/sandbox 要求、本地路径、本地 subset 列表以及当前默认 `subset_list`。
-- 设置 `limit` 和 `eval_batch_size`。
+- 在新建抽屉开启“自定义数据集”后选择具体 EvalScope 数据集。数据集卡片展示中文名称、用途描述、是否本地可用、分类、Judge/sandbox 要求、本地路径、本地 subset 列表以及当前默认 `subset_list`；子集展开支持键盘操作。
+- 设置每子集样本上限 `limit` 和评测批大小 `eval_batch_size`。多子集数据集会分别截断，任务总样本数可能大于 `limit`；留空保持服务端默认策略。
 - 查看最近能力评测任务列表。
 - 点击任务查看当前数据集、样本进度、整体进度条、数据集分数、能力类别汇总和报告入口。
 - 对非终态任务执行取消。
+- 默认模式展示服务端默认组合与本地可用范围，不把全部本地数据集误标为默认选择；自定义模式未勾选时保留原有“全部本地可用数据集”兜底规则，并在界面说明。
+- 详情分为数据集得分、能力维度、任务信息；0–1 区间分数按百分制展示，原始数据仍保留在任务/报告中。缺失得分显示“未取得分数”，不按零分绘图或计数。
+- 支持勾选多个任务重跑或对比，沿用原有重跑请求语义。
 
 主要接口：
 
@@ -150,3 +162,7 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8020
 `frontend/` 用 Vue 3 + Vite + Element Plus + ECharts 实现控制台，`npm run dev` 运行开发服务器，`npm run build` 只用于产出静态资源（`app/web_vue/`，不入库）；主服务不再挂载该产物。详见 `frontend/README.md`。
 
 接口契约详见 [API 接口文档](api.md)；评测口径详见 [指标测试方法文档](metric-test-methods.md)。
+
+## 7. 前端回归
+
+在 `frontend/` 运行 `npm test`、`npm run build` 和 `npm run test:e2e`。浏览器测试自动使用独立开发端口与隔离 API 响应，不读取生产/本地模型配置，不发起真实上游请求；安装浏览器与可选环境变量见 `frontend/README.md`。测试证据保存在本地忽略目录 `.tmp/evaluation-pages/`。

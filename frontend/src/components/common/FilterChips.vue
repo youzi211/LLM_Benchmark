@@ -51,7 +51,7 @@ function pick(v: string) {
   align-items: center;
   gap: 6px;
   padding: 4px 12px;
-  font-family: "Fira Sans", sans-serif;
+  font-family: var(--font-body);
   font-size: 12.5px;
   font-weight: 500;
   color: var(--lb-fg-soft);
@@ -70,13 +70,13 @@ function pick(v: string) {
 }
 
 .lb-fc__chip--on {
-  color: white;
+  color: var(--lb-on-primary);
   background: var(--lb-primary);
   border-color: var(--lb-primary);
 }
 
 .lb-fc__chip--on:hover {
-  color: white;
+  color: var(--lb-on-primary);
   background: var(--lb-primary);
   opacity: 0.92;
 }
@@ -90,7 +90,7 @@ function pick(v: string) {
   height: 16px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.2);
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: 10.5px;
   font-weight: 600;
 }

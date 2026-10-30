@@ -42,7 +42,7 @@ const colorOf = computed(() => colorByVariant[props.variant] ?? colorByVariant.l
 
 <template>
   <div class="lb-empty">
-    <div class="lb-empty__icon" :style="{ background: colorOf + '15', color: colorOf }">
+    <div class="lb-empty__icon" :style="{ '--empty-color': colorOf }">
       <svg v-if="!icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path :d="dPath" />
       </svg>
@@ -75,11 +75,13 @@ const colorOf = computed(() => colorByVariant[props.variant] ?? colorByVariant.l
   align-items: center;
   justify-content: center;
   margin-bottom: 14px;
+  color: var(--empty-color);
+  background: color-mix(in srgb, var(--empty-color) 7%, var(--lb-surface));
 }
 
 .lb-empty__title {
   margin: 0 0 6px;
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-heading);
   font-size: 15px;
   color: var(--lb-fg-strong);
   font-weight: 600;

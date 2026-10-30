@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { usePreferredReducedMotion } from "@vueuse/core";
 import { use } from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { LineChart, BarChart, PieChart } from "echarts/charts";
@@ -33,6 +34,7 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const { chartTheme } = useChartTheme();
+const reducedMotion = usePreferredReducedMotion();
 
 // 主题色兜底, 页面里的具体配置(标题/坐标轴/网格)优先.
 const styledOption = computed(() => {
@@ -41,6 +43,7 @@ const styledOption = computed(() => {
   return {
     ...t,
     ...o,
+    animation: reducedMotion.value !== "reduce" && o.animation !== false,
     title: { ...t.title, ...o.title },
     legend: { ...t.legend, ...o.legend },
     tooltip: { ...t.tooltip, ...o.tooltip },

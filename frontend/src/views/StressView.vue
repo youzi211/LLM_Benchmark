@@ -6,9 +6,12 @@ import PageHero from "@/components/layouts/PageHero.vue";
 import StatusTag from "@/components/common/StatusTag.vue";
 import FilterChips from "@/components/common/FilterChips.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
+import EvaluationWorkspace from "@/components/evaluation/EvaluationWorkspace.vue";
 import { useRoute, useRouter } from "vue-router";
 import { useToast } from "@/composables/useToast";
-import { ArrowDown, Download, Search } from "@element-plus/icons-vue";
+import { ArrowDown, Document, Download, Plus, Refresh, Search, VideoPlay } from "@element-plus/icons-vue";
+import type { TableInstance } from "element-plus";
+import { formatEvaluationDuration, modelDisplayName, progressPercentOf } from "@/evaluation/presentation";
 import {
   buildStressGroups,
   formatStressLoad,
@@ -24,6 +27,7 @@ import {
   cancelStressTask,
   fetchStressDatasets,
   finalStatus,
+  formatDate,
   getStressProgress,
   getStressTask,
   listStressArtifacts,
@@ -44,6 +48,9 @@ const loading = ref(true);
 const refreshing = ref(false);
 const listError = ref("");
 const submitting = ref(false);
+const configurationVisible = ref(false);
+const resultTab = ref("charts");
+const taskTable = ref<TableInstance>();
 const tasks = ref<TaskLike[]>([]);
 const selected = ref<TaskLike | null>(null);
 const groupByConfig = ref(true);
@@ -54,6 +61,7 @@ let activeReload: Promise<void> | null = null;
 let selectionVersion = 0;
 const custom = ref(false);
 const datasetsLoading = ref(false);
+const datasetsError = ref("");
 const stressDatasets = ref<Record<string, StressDatasetMeta>>({});
 const defaultStressDataset = ref("");
 const selectedDataset = ref<string>("");
@@ -80,6 +88,7 @@ const selectedDatasetScene = computed(() => {
 });
 const normalizedResult = computed<any>(() => selected.value?.normalized_result || null);
 const progressDetail = computed<any>(() => selected.value?.progress_detail || null);
+const selectedProgress = computed(() => progressPercentOf(progressDetail.value));
 const resultSummary = computed<Record<string, unknown>>(() => normalizedResult.value?.summary || {});
 const selectedConfig = computed<Record<string, unknown>>(() =>
   (selected.value?.request_config as Record<string, unknown> | undefined) || {},
@@ -99,18 +108,13 @@ const totals = computed(() => runsOf(selected.value).reduce((acc: any, run: any)
 const progressSuccess = computed(() => progressDetail.value?.success_requests ?? (runsOf(selected.value).length ? totals.value.success : "—"));
 const progressFailed = computed(() => progressDetail.value?.failed_requests ?? (runsOf(selected.value).length ? totals.value.failed : "—"));
 
-function statusType(status?: string) {
-  if (status === "completed") return "success";
-  if (status === "partial") return "warning";
-  if (status === "failed" || status === "interrupted") return "danger";
-  if (status === "running" || status === "pending") return "warning";
-  return "info";
-}
-
+const metricFormatter = new Intl.NumberFormat("zh-CN", { maximumSignificantDigits: 5 });
 function formatMetric(value: unknown) {
   const number = stressMetricValue(value);
-  return number === undefined ? "—" : String(number);
+  return number === undefined ? "—" : metricFormatter.format(number);
 }
+
+function modelName(id?: string) { return modelDisplayName(id, store.models); }
 
 const requestThroughputOption = computed(() => makeLineOption("请求吞吐", "req/s", runsOf(selected.value), [
   ["request_throughput", "请求吞吐"],
@@ -137,16 +141,18 @@ function makeLineOption(title: string, unit: string, rows: any[], series: string
     return label === "—" ? `#${index + 1}` : label;
   });
   return {
-    title: { text: title, left: "center" },
+    title: { text: title, show: false },
     tooltip: { trigger: "axis" },
-    legend: { top: 28 },
-    grid: { left: 48, right: 24, top: 72, bottom: 36 },
+    legend: { top: 0, left: 0, itemWidth: 10, itemHeight: 8, itemGap: 20 },
+    grid: { left: 12, right: 24, top: 48, bottom: 12, containLabel: true },
     xAxis: { type: "category", data: labels },
     yAxis: { type: "value", name: unit },
     series: series.map(([key, name]) => ({
       name,
       type: "line",
-      smooth: true,
+      smooth: false,
+      symbolSize: 7,
+      lineStyle: { width: 2 },
       data: rows.map((run) => stressMetricValue(run[key]) ?? null),
     })),
   };
@@ -163,11 +169,14 @@ async function loadDatasets() {
   try {
     const result = await fetchStressDatasets();
     stressDatasets.value = result.datasets;
+    datasetsError.value = "";
     defaultStressDataset.value = result.default_dataset;
     if (!selectedDataset.value && result.default_dataset) {
       selectedDataset.value = result.default_dataset;
       form.value.dataset = result.default_dataset;
     }
+  } catch (err) {
+    datasetsError.value = err instanceof Error ? err.message : String(err);
   } finally {
     datasetsLoading.value = false;
   }
@@ -315,6 +324,7 @@ async function submit() {
   submitting.value = true;
   try {
     const task = await runStress(buildPayload());
+    configurationVisible.value = false;
     ElMessage.success(`已启动压测：${task.task_id}`);
     await reload();
     await selectTask(task.task_id, false);
@@ -332,6 +342,13 @@ const toast = useToast();
 const statusFilter = ref<string>("all");
 const queryText = ref<string>("");
 const selectedIds = ref<string[]>([]);
+const hasFilters = computed(() => Boolean(queryText.value.trim()) || statusFilter.value !== "all");
+const autoUpdating = computed(() => tasks.value.some((task) => !finalStatus(task.status)));
+function clearSelection() { taskTable.value?.clearSelection(); selectedIds.value = []; }
+function emptyAction() {
+  if (hasFilters.value) { queryText.value = ""; statusFilter.value = "all"; }
+  else configurationVisible.value = true;
+}
 
 const groupedTasks = computed(() => buildStressGroups(tasks.value));
 
@@ -341,7 +358,7 @@ const statusFilterOptions = computed(() => {
   const t = displayTasks.value;
   return [
     { value: "all",       label: "全部",     count: t.length },
-    { value: "running",   label: "运行中",   count: t.filter(x => x.status === "running").length },
+    { value: "running",   label: "运行中",   count: t.filter(x => ["running", "pending", "queued"].includes(String(x.status))).length },
     { value: "completed", label: "已完成",   count: t.filter(x => x.status === "completed").length },
     { value: "partial",   label: "部分失败", count: t.filter(x => x.status === "partial").length },
     { value: "failed",    label: "失败",     count: t.filter(x => ["failed", "error", "interrupted"].includes(String(x.status))).length },
@@ -353,6 +370,8 @@ const filteredTasks = computed(() => {
   if (statusFilter.value !== "all") {
     if (statusFilter.value === "failed") {
       out = out.filter(t => ["failed", "error", "interrupted"].includes(String(t.status)));
+    } else if (statusFilter.value === "running") {
+      out = out.filter(t => ["running", "pending", "queued"].includes(String(t.status)));
     } else {
       out = out.filter(t => t.status === statusFilter.value);
     }
@@ -369,7 +388,7 @@ function goCompare() {
     toast.warning("至少选 2 个任务才能对比");
     return;
   }
-  router.push({ path: "/compare", query: { ids: selectedIds.value.join(","), types: "stress" } });
+  router.push({ path: "/compare", query: { ids: selectedIds.value.join(","), types: selectedIds.value.map(() => "stress").join(",") } });
 }
 
 const rerunning = ref(false);
@@ -392,7 +411,7 @@ async function bulkRerun() {
     }
   } finally {
     rerunning.value = false;
-    selectedIds.value = [];
+    clearSelection();
     await reload();
   }
   if (ok && !failed) ElMessage.success(`已重新运行 ${ok} 个压测任务`);
@@ -493,17 +512,23 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
   <PageHero
     eyebrow="STRESS TEST"
     title="压测评测"
-    description="通过并发与限速场景探测模型的吞吐量、延迟分布与稳定性。适合在容量规划或限速策略调整前后做基线对比。"
+    description="观察不同负载下的吞吐、响应延迟与稳定性，保留每个档位的测试证据。"
   >
     <template #actions>
-      <el-button size="small" :loading="refreshing" @click="reload()">刷新</el-button>
+      <el-button :icon="Refresh" :loading="refreshing" @click="reload()">刷新数据</el-button>
+      <el-button type="primary" :icon="Plus" @click="configurationVisible = true">新建压测评测</el-button>
     </template>
   </PageHero>
-  <section class="view-grid">
-    <el-card class="panel-card" shadow="never">
-      <el-form label-position="top">
-        <el-form-item label="当前模型"><el-input :model-value="store.currentModel?.name || store.currentId || '未选择模型'" disabled /></el-form-item>
-        <el-form-item><el-switch v-model="custom" active-text="自定义压测参数" inactive-text="使用默认参数" /></el-form-item>
+  <EvaluationWorkspace
+    v-model:configuration-visible="configurationVisible" lane="stress" :task-count="displayTasks.length"
+    :count-unit="groupByConfig ? '个方案' : '条任务'" :model-name="store.currentModel?.name || store.currentId || '未选择模型'"
+    :auto-updating="autoUpdating" detail-title="压测结果" detail-description="吞吐、延迟与档位明细，基于真实请求结果展示"
+    configuration-title="新建压测评测" configuration-description="可直接使用服务端默认参数，或按并发 / 请求速率自定义负载。" drawer-size="min(760px, 100vw)"
+  >
+    <template #configuration>
+      <el-form label-position="top" class="lb-eval-form">
+        <el-form-item><el-switch v-model="custom" aria-label="自定义压测参数" active-text="自定义压测参数" inactive-text="使用默认参数" /></el-form-item>
+        <div v-if="!custom" class="lb-eval-defaults"><strong>使用服务端默认方案</strong><p>自动采用默认负载档位、请求数及生成配置，无需逐项填写。默认数据集：{{ defaultStressDataset || '以服务端配置为准' }}。</p><p>完成后可查看请求 / Token 吞吐、延迟分布与流式指标。</p></div>
 
         <template v-if="custom">
           <el-form-item label="负载模式">
@@ -511,40 +536,23 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
             <p class="field-help">闭环控制同时在途请求数；开环按目标 RPS 发起请求，更适合验证限流和突发流量。</p>
           </el-form-item>
           <el-row :gutter="16">
-            <el-col v-if="form.mode === 'closed'" :xs="24" :sm="12"><el-form-item label="并发档位 parallel"><el-input v-model="form.parallel" placeholder="1,5,10,20" /></el-form-item></el-col>
-            <el-col v-else :xs="24" :sm="12"><el-form-item label="请求速率 rate (req/s)"><el-input v-model="form.rate" placeholder="2,5,10,20" /></el-form-item></el-col>
-            <el-col :xs="24" :sm="12"><el-form-item label="每档请求数 number"><el-input v-model="form.number" placeholder="10,50,100,200" /></el-form-item></el-col>
+            <el-col v-if="form.mode === 'closed'" :xs="24" :sm="12"><el-form-item label="并发档位 parallel"><el-input v-model="form.parallel" aria-label="并发档位 parallel" placeholder="1,5,10,20" /></el-form-item></el-col>
+            <el-col v-else :xs="24" :sm="12"><el-form-item label="请求速率 rate (req/s)"><el-input v-model="form.rate" aria-label="请求速率 rate" placeholder="2,5,10,20" /></el-form-item></el-col>
+            <el-col :xs="24" :sm="12"><el-form-item label="每档请求数 number"><el-input v-model="form.number" aria-label="每档请求数 number" placeholder="10,50,100,200" /></el-form-item></el-col>
           </el-row>
           <el-form-item label="响应方式 stream">
             <el-select v-model="form.stream" class="full-width"><el-option label="默认（流式）" value="" /><el-option label="流式响应" value="true" /><el-option label="非流式响应" value="false" /></el-select>
             <p class="field-help">开启后按 SSE 流逐块接收，可测 TTFT、TPOT 和 ITL；关闭后只统计完整响应延迟。</p>
           </el-form-item>
 
-          <div class="section-label"><span>测试数据集</span><el-tag size="small" effect="plain">{{ selectedDatasetScene }}</el-tag></div>
-          <div class="dataset-cards" v-loading="datasetsLoading">
-            <button
-              v-for="ds in datasetList"
-              :key="ds.name"
-              type="button"
-              class="dataset-card"
-              :class="{ 'dataset-card--active': selectedDataset === ds.name }"
-              @click="pickDataset(ds.name)"
-            >
-              <div class="dataset-card__header">
-                <span class="dataset-card__name">{{ ds.pretty_name || ds.name }}</span>
-                <el-tag v-if="ds.is_default" size="small" type="success">默认</el-tag>
-                <el-tag v-if="ds.available_local" size="small" type="info">本地</el-tag>
-              </div>
-              <p class="dataset-card__desc muted">{{ ds.description || '暂无描述' }}</p>
-              <div class="tag-row" v-if="ds.categories?.length">
-                <el-tag v-for="cat in ds.categories" :key="cat" size="small" effect="plain">{{ cat }}</el-tag>
-              </div>
-            </button>
-          </div>
-          <el-alert v-if="selectedDatasetMeta" :closable="false" type="info" show-icon>
-            <template #title>{{ selectedDatasetMeta.pretty_name || selectedDataset }} · {{ selectedDatasetScene }}</template>
-            {{ selectedDatasetMeta.description || '使用该数据集执行压测。' }}
-          </el-alert>
+          <div class="lb-eval-form__section"><h3>测试数据</h3><p>选择语料和输入 / 输出长度，保证不同任务可重复对比。</p></div>
+          <el-alert v-if="datasetsError" class="lb-eval-alert" type="warning" :closable="false" :title="`数据集列表加载失败：${datasetsError}`"><el-button link type="primary" @click="loadDatasets">重新加载</el-button></el-alert>
+          <el-form-item label="测试数据集">
+            <el-select v-model="selectedDataset" :loading="datasetsLoading" aria-label="压测数据集" placeholder="使用服务端默认数据集" @change="pickDataset">
+              <el-option v-for="ds in datasetList" :key="ds.name" :label="ds.pretty_name || ds.name" :value="ds.name"><span>{{ ds.pretty_name || ds.name }}</span><small class="lb-stress-option-id">{{ ds.name }}</small></el-option>
+            </el-select>
+          </el-form-item>
+          <div v-if="selectedDatasetMeta" class="lb-eval-defaults"><strong>{{ selectedDatasetMeta.pretty_name || selectedDataset }} · {{ selectedDatasetScene }}</strong><p>{{ selectedDatasetMeta.description || '使用该数据集执行压测。' }}</p><div class="tag-row"><el-tag v-if="selectedDatasetMeta.available_local" size="small" effect="plain">本地可用</el-tag><el-tag v-for="category in selectedDatasetMeta.categories || []" :key="category" size="small" type="info" effect="plain">{{ category }}</el-tag></div></div>
 
           <el-row :gutter="16" class="mt">
             <el-col :xs="24" :sm="12"><el-form-item label="最小输入长度"><el-input v-model="form.min_prompt_length" placeholder="默认 0" /></el-form-item></el-col>
@@ -557,6 +565,7 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
             <span>高级参数</span><el-icon :class="{ 'is-open': advancedOpen }"><ArrowDown /></el-icon>
           </button>
           <div v-show="advancedOpen" class="advanced-panel">
+            <div class="lb-eval-form__section"><h3>执行与超时</h3><p>按需设置，多轮、预热与超时均保持原有服务端语义。</p></div>
             <el-switch v-model="form.multi_turn" active-text="启用多轮对话" />
             <el-row :gutter="16" class="mt">
               <el-col :xs="24" :sm="12"><el-form-item label="最少轮数"><el-input v-model="form.min_turns" /></el-form-item></el-col>
@@ -570,6 +579,9 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
               <el-col :xs="24" :sm="8"><el-form-item label="连接超时(s)"><el-input v-model="form.connect_timeout" /></el-form-item></el-col>
               <el-col :xs="24" :sm="8"><el-form-item label="读取超时(s)"><el-input v-model="form.read_timeout" /></el-form-item></el-col>
               <el-col :xs="24" :sm="8"><el-form-item label="总超时(s)"><el-input v-model="form.total_timeout" /></el-form-item></el-col>
+            </el-row>
+            <div class="lb-eval-form__section"><h3>生成与采样</h3><p>留空的参数不会加入请求，继续使用服务端默认值。</p></div>
+            <el-row :gutter="16">
               <el-col :xs="24" :sm="8"><el-form-item label="temperature"><el-input v-model="form.temperature" /></el-form-item></el-col>
               <el-col :xs="24" :sm="8"><el-form-item label="top_p"><el-input v-model="form.top_p" /></el-form-item></el-col>
               <el-col :xs="24" :sm="8"><el-form-item label="top_k"><el-input v-model="form.top_k" /></el-form-item></el-col>
@@ -586,59 +598,57 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
           </div>
         </template>
 
-        <el-button type="primary" :loading="submitting" @click="submit">开始压测评测</el-button>
       </el-form>
-    </el-card>
+    </template>
+    <template #configuration-footer><el-button @click="configurationVisible = false">返回工作台</el-button><el-button type="primary" :icon="VideoPlay" :loading="submitting" :disabled="!store.currentId" @click="submit">开始压测评测</el-button></template>
 
-    <el-card class="panel-card" shadow="never">
-      <div class="card-title__actions">
-        <el-switch v-model="groupByConfig" active-text="按方案归组" inactive-text="逐条任务" @change="selectedIds = []" />
-        <el-input v-model="queryText" :placeholder="groupByConfig ? '搜索方案 / 模型' : '搜索任务 ID / 模型'" clearable size="default" style="width: 220px;">
+    <template #list>
+      <div class="lb-eval-toolbar__mode"><span>记录视图</span><el-switch v-model="groupByConfig" aria-label="按方案归组" active-text="按方案归组" inactive-text="逐条任务" @change="clearSelection" /></div>
+      <div class="lb-eval-toolbar">
+        <el-input v-model="queryText" :placeholder="groupByConfig ? '搜索方案 / 模型' : '搜索任务 ID / 模型'" aria-label="搜索压测任务" clearable>
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <el-button size="small" :loading="refreshing" @click="reload()">刷新</el-button>
+        <el-button text circle :icon="Refresh" :loading="refreshing" aria-label="刷新压测任务" @click="reload()" />
       </div>
-      <el-alert v-if="listError" class="mb" type="error" :closable="false" show-icon :title="`任务列表加载失败：${listError}`" />
-      <div class="lb-tl__filters">
+      <el-alert v-if="listError" class="lb-eval-alert" type="error" :closable="false" show-icon :title="`任务列表加载失败：${listError}`" />
+      <div class="lb-eval-filters">
         <FilterChips v-model="statusFilter" :options="statusFilterOptions" :show-count="true" size="small" />
       </div>
-      <div v-if="selectedIds.length && !groupByConfig" class="lb-tl__bulkbar">
-        <span class="lb-tl__bulkbar-text">已选 {{ selectedIds.length }} 个任务</span>
+      <div v-if="selectedIds.length && !groupByConfig" class="lb-eval-bulk">
+        <span>已选 {{ selectedIds.length }} 个任务</span>
         <el-button size="small" type="primary" plain :loading="rerunning" @click="bulkRerun">重新运行</el-button>
-        <el-button size="small" type="success" plain @click="goCompare">对比 ({{ selectedIds.length }})</el-button>
-        <el-button size="small" @click="selectedIds = []">取消</el-button>
+        <el-button size="small" :disabled="selectedIds.length < 2" @click="goCompare">对比任务</el-button>
+        <el-button size="small" text @click="clearSelection">取消选择</el-button>
       </div>
-      <el-table v-loading="loading" :data="filteredTasks" height="440" :row-key="(r: any) => r.task_id" highlight-current-row
+      <el-table ref="taskTable" v-loading="loading" :data="filteredTasks" :max-height="520" :row-key="(r: any) => r.task_id" :current-row-key="selected?.task_id" highlight-current-row
         @selection-change="(rows: TaskLike[]) => (selectedIds = rows.map(r => r.task_id))"
-        @row-click="(row: any) => row.grouped ? selectGroup(row) : selectTaskAndSync(row.task_id)"
+        @row-click="(row: any, column) => column?.type !== 'selection' && (row.grouped ? selectGroup(row) : selectTaskAndSync(row.task_id))"
         empty-text="">
-        <el-table-column v-if="!groupByConfig" type="selection" width="40" />
-        <el-table-column prop="task_id" label="任务" min-width="160" show-overflow-tooltip>
+        <el-table-column v-if="!groupByConfig" type="selection" width="36" :reserve-selection="true" />
+        <el-table-column prop="task_id" label="任务 / 方案" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">
-            <span v-if="row.grouped"><strong>{{ row.group_label }}</strong><small class="group-subtitle">{{ row.group_config }} · {{ row.group_count }} 条记录 · {{ runsOf(row as any).length }} 个档位</small></span>
-            <span v-else class="lb-tl__id">{{ row.task_id }}</span>
+            <button type="button" class="lb-eval-task-link" :aria-label="row.grouped ? `查看方案 ${row.group_label}` : `查看任务 ${row.task_id}`" @click.stop="row.grouped ? selectGroup(row as TaskLike) : selectTaskAndSync(row.task_id)"><strong>{{ row.grouped ? row.group_label : modelName(row.model_id) }}</strong><small>{{ row.grouped ? `${modelName(row.model_id)} · ${row.group_count} 条记录 · ${runsOf(row as any).length} 个档位` : row.task_id }}</small></button>
           </template>
         </el-table-column>
-        <el-table-column prop="model_id" label="模型" width="120" show-overflow-tooltip />
-        <el-table-column label="状态" width="110">
-          <template #default="{ row }"><StatusTag :status="row.status" :label="stressStatusLabel(row.status, row.grouped)" /></template>
+        <el-table-column label="状态" width="84">
+          <template #default="{ row }"><StatusTag :status="row.status" :label="stressStatusLabel(row.status, row.grouped)" compact /></template>
         </el-table-column>
-        <el-table-column label="耗时" width="90">
-          <template #default="{ row }"><span class="lb-tl__num">{{ row.duration_ms != null ? Math.round(Number(row.duration_ms)) + " ms" : "—" }}</span></template>
+        <el-table-column label="耗时" width="76">
+          <template #default="{ row }"><span class="lb-eval-numeric" :title="row.duration_ms != null ? `${row.duration_ms} ms` : undefined">{{ formatEvaluationDuration(row.duration_ms) }}</span></template>
         </el-table-column>
-      </el-table>
-      <EmptyState
+        <template #empty><EmptyState
         v-if="shouldShowTaskListEmpty(loading, listError, filteredTasks.length)"
         :title="queryText || statusFilter !== 'all' ? '无匹配任务' : '暂无压测任务'"
-        :description="queryText || statusFilter !== 'all' ? '试着清空筛选条件或在左侧表单启动一次压测' : '点击左侧表单启动第一次压测'"
+        :description="hasFilters ? '试着清空筛选条件。' : '新建压测方案，比较不同负载的结果。'"
         :variant="queryText ? 'search' : 'list'"
-        :action-label="queryText || statusFilter !== 'all' ? '清空筛选' : '开始压测'"
-        @action="queryText = ''; statusFilter = 'all';"
-      />
-    </el-card>
+        :action-label="hasFilters ? '清空筛选' : '新建压测评测'"
+        @action="emptyAction"
+      /></template>
+      </el-table>
+    </template>
 
-    <el-card class="panel-card detail-card" shadow="never">
-      <template #header><div class="card-title"><span>压测详情</span><StatusTag v-if="selected" :status="selected.status ?? 'pending'" :label="stressStatusLabel(selected.status, Boolean((selected as any).grouped))" /></div></template>
+    <template #detail-actions><StatusTag v-if="selected" :status="selected.status ?? 'pending'" :label="stressStatusLabel(selected.status, Boolean((selected as any).grouped))" /><el-button v-if="selected && !(selected as any).grouped && !finalStatus(selected.status)" size="small" type="danger" plain @click="cancelTask(selected.task_id)">取消任务</el-button></template>
+    <template #detail>
       <EmptyState
         v-if="!selected"
         title="尚未选择任务"
@@ -646,49 +656,49 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
         variant="list"
       />
       <template v-else>
-        <el-descriptions :column="2" border>
-          <el-descriptions-item v-if="!(selected as any).grouped" label="任务 ID">{{ selected.task_id }}</el-descriptions-item>
-          <el-descriptions-item v-else label="方案汇总">{{ (selected as any).group_label }} · {{ (selected as any).group_count }} 条记录</el-descriptions-item>
-          <el-descriptions-item label="模型">{{ selected.model_id }}</el-descriptions-item>
-          <el-descriptions-item v-if="(selected as any).grouped" label="方案配置">{{ (selected as any).group_config }}</el-descriptions-item>
-          <el-descriptions-item label="进度">{{ selected.progress || '-' }}</el-descriptions-item>
-          <el-descriptions-item v-if="!(selected as any).grouped" label="输出目录">{{ selected.raw_output_dir || '-' }}</el-descriptions-item>
-        </el-descriptions>
-        <div v-if="!(selected as any).grouped && (progressDetail || !finalStatus(selected.status))" class="progress-card mt" aria-live="polite">
-          <div class="progress-card__head">
+        <div class="lb-eval-task-title"><div><strong>{{ (selected as any).grouped ? (selected as any).group_label : modelName(selected.model_id) }}</strong><code>{{ (selected as any).grouped ? (selected as any).group_config : selected.task_id }}</code></div><el-button v-if="(selected as any).grouped" size="small" @click="resultTab = 'artifacts'">查看组内任务</el-button></div>
+        <div v-if="!(selected as any).grouped && (progressDetail || !finalStatus(selected.status))" class="lb-eval-progress" aria-live="polite">
+          <div class="lb-eval-progress__head">
             <strong>{{ selected.progress || '正在准备压测' }}</strong>
-            <span>{{ Number(progressDetail?.percent || 0).toFixed(1) }}%</span>
+            <span>{{ selectedProgress === undefined ? '等待进度' : selectedProgress.toFixed(1) + '%' }}</span>
           </div>
-          <el-progress :percentage="Number(progressDetail?.percent || 0)" :stroke-width="12" />
-          <div class="progress-stats">
+          <el-progress v-if="selectedProgress !== undefined" :percentage="selectedProgress" :stroke-width="5" :show-text="false" />
+          <div v-else class="lb-eval-progress__waiting"></div>
+          <div class="lb-eval-progress__stats">
             <span>当前档位 {{ progressDetail?.current_run ?? '—' }}/{{ progressDetail?.total_runs ?? '—' }} · {{ progressDetail?.current_run_completed ?? '—' }}/{{ progressDetail?.current_run_total ?? '—' }}</span>
-            <span>已处理 {{ progressDetail?.completed_requests ?? 0 }}</span>
+            <span>已处理 {{ progressDetail?.completed_requests ?? '—' }}</span>
             <span>总请求 {{ progressDetail?.total_requests ?? '—' }}</span>
             <span>成功 {{ progressSuccess }}</span>
             <span>失败 {{ progressFailed }}</span>
           </div>
         </div>
-        <div class="detail-actions">
-          <el-button v-if="!(selected as any).grouped && !finalStatus(selected.status)" type="danger" plain @click="cancelTask(selected.task_id)">取消任务</el-button>
-          <el-link v-if="selected.report_path" type="primary" :href="`/api/stress/reports/${selected.task_id}`" target="_blank">打开 Markdown 报告</el-link>
+        <div v-if="selected.report_path || selected.raw_result" class="lb-eval-result-actions">
+          <el-link v-if="selected.report_path" type="primary" :icon="Document" :href="`/api/stress/reports/${selected.task_id}`" target="_blank">打开 Markdown 报告</el-link>
           <el-link v-if="selected.raw_result" type="primary" :href="stressRawResultUrl(selected.task_id)" target="_blank"><el-icon><Download /></el-icon>原始结果 JSON</el-link>
         </div>
-        <el-alert v-if="selected.error" class="mt" type="error" :closable="false" :title="JSON.stringify(selected.error)" />
-        <div v-if="runsOf(selected).length" class="metric-grid mt">
-          <div class="metric-tile"><span>最高请求吞吐</span><strong>{{ formatMetric(resultSummary.best_req_throughput) }}</strong><small>req/s</small></div>
-          <div class="metric-tile"><span>最高输出吞吐</span><strong>{{ formatMetric(resultSummary.best_output_throughput) }}</strong><small>tok/s</small></div>
-          <div class="metric-tile"><span>成功请求</span><strong>{{ totals.success }}</strong><small>/ {{ totals.total }}</small></div>
-          <div class="metric-tile" :class="{ 'metric-tile--danger': totals.failed > 0 }"><span>失败请求</span><strong>{{ totals.failed }}</strong><small>requests</small></div>
+        <el-alert v-if="selected.error" class="lb-eval-alert" type="error" :closable="false" title="压测执行异常"><pre class="lb-eval-error">{{ JSON.stringify(selected.error, null, 2) }}</pre></el-alert>
+        <div v-if="runsOf(selected).length" class="lb-eval-stats">
+          <div class="lb-eval-stat"><span>最高请求吞吐</span><strong>{{ formatMetric(resultSummary.best_req_throughput) }}</strong><small>req/s</small></div>
+          <div class="lb-eval-stat"><span>最高输出吞吐</span><strong>{{ formatMetric(resultSummary.best_output_throughput) }}</strong><small>tok/s</small></div>
+          <div class="lb-eval-stat"><span>成功请求</span><strong>{{ totals.success }}</strong><small>/ {{ totals.total }} 次请求</small></div>
+          <div class="lb-eval-stat" :class="{ 'lb-eval-stat--danger': totals.failed > 0 }"><span>失败请求</span><strong>{{ totals.failed }}</strong><small>请求失败数</small></div>
         </div>
-        <el-alert v-if="totals.failed > 0" class="mt" type="warning" :closable="false" show-icon
+        <el-alert v-if="totals.failed > 0" class="lb-eval-alert" type="warning" :closable="false" show-icon
           :title="`已有 ${totals.failed} 个请求失败，请检查负载档位和原始产物`" />
-        <el-tabs v-if="runsOf(selected).length" v-model="chartTab" class="mt">
-          <el-tab-pane label="请求吞吐" name="requests"><EChart v-if="chartTab === 'requests'" :option="requestThroughputOption" height="320px" /></el-tab-pane>
-          <el-tab-pane label="Token 吞吐" name="tokens"><EChart v-if="chartTab === 'tokens'" :option="tokenThroughputOption" height="320px" /></el-tab-pane>
-          <el-tab-pane label="延迟" name="latency"><EChart v-if="chartTab === 'latency'" :option="latencyOption" height="320px" /></el-tab-pane>
-          <el-tab-pane label="成功率" name="success"><EChart v-if="chartTab === 'success'" :option="successOption" height="300px" /></el-tab-pane>
-        </el-tabs>
-        <el-table v-if="runsOf(selected).length" :data="runsOf(selected)" class="mt" border>
+        <el-tabs v-model="resultTab" class="lb-eval-tabs">
+          <el-tab-pane label="性能图表" name="charts">
+            <template v-if="runsOf(selected).length">
+              <div class="lb-eval-chart-switch"><el-segmented v-model="chartTab" :options="[{ label: '请求吞吐', value: 'requests' }, { label: 'Token 吞吐', value: 'tokens' }, { label: '延迟', value: 'latency' }, { label: '成功率', value: 'success' }]" /></div>
+              <EChart v-if="resultTab === 'charts' && chartTab === 'requests'" :option="requestThroughputOption" height="340px" />
+              <EChart v-if="resultTab === 'charts' && chartTab === 'tokens'" :option="tokenThroughputOption" height="340px" />
+              <EChart v-if="resultTab === 'charts' && chartTab === 'latency'" :option="latencyOption" height="340px" />
+              <EChart v-if="resultTab === 'charts' && chartTab === 'success'" :option="successOption" height="340px" />
+            </template>
+            <EmptyState v-else :title="finalStatus(selected.status) ? '暂无档位结果' : '等待压测结果'" description="每个档位完成后，吞吐与延迟数据会展示在这里。" />
+          </el-tab-pane>
+          <el-tab-pane label="档位明细" name="runs">
+            <p class="lb-eval-note">并发与请求速率分别展示；无效或缺失指标标为“—”。宽表可横向滚动。</p>
+        <el-table v-if="runsOf(selected).length" :data="runsOf(selected)" border>
           <el-table-column label="负载档位" width="140"><template #default="{ row }">{{ formatStressLoad(row, selectedConfig).label }}</template></el-table-column>
           <el-table-column prop="total" label="请求" width="76" />
           <el-table-column prop="success" label="成功" width="76" />
@@ -704,6 +714,16 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
           <el-table-column prop="avg_output_tokens" label="输出 Token" width="105"><template #default="{ row }">{{ formatMetric(row.avg_output_tokens) }}</template></el-table-column>
           <el-table-column prop="avg_turns" label="平均轮数" width="95"><template #default="{ row }">{{ formatMetric(row.avg_turns) }}</template></el-table-column>
         </el-table>
+            <EmptyState v-else title="暂无档位明细" description="尚未收到可展示的压测档位结果。" />
+          </el-tab-pane>
+          <el-tab-pane :label="(selected as any).grouped ? '组内任务' : '任务与产物'" name="artifacts">
+            <dl class="lb-eval-meta">
+              <div><dt>模型配置 ID</dt><dd class="lb-eval-mono">{{ selected.model_id || '—' }}</dd></div>
+              <div><dt>{{ (selected as any).grouped ? '归组记录' : '任务耗时' }}</dt><dd>{{ (selected as any).grouped ? (selected as any).group_count + ' 条任务' : formatEvaluationDuration(selected.duration_ms) }}</dd></div>
+              <div><dt>数据集</dt><dd>{{ selectedConfig.dataset || '服务端默认' }}</dd></div>
+              <div><dt>创建时间</dt><dd>{{ formatDate(selected.created_at) }}</dd></div>
+              <div v-if="!(selected as any).grouped" class="lb-eval-meta__wide"><dt>原始输出目录</dt><dd class="lb-eval-mono">{{ selected.raw_output_dir || '尚未生成' }}</dd></div>
+            </dl>
 
         <section v-if="(selected as any).grouped" class="group-members mt" aria-labelledby="group-members-title">
           <div class="section-label">
@@ -736,38 +756,29 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
             </a>
           </div>
         </section>
+          </el-tab-pane>
+        </el-tabs>
       </template>
-    </el-card>
-  </section>
+    </template>
+  </EvaluationWorkspace>
 </template>
 
 <style scoped>
 .field-help { margin: 6px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
-.mb { margin-bottom: 12px; }
-.group-subtitle { display: block; margin-top: 2px; color: var(--el-text-color-secondary); font-size: 11px; }
-.section-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 10px; font-weight: 650; }
-.dataset-card { width: 100%; color: inherit; text-align: left; font: inherit; cursor: pointer; }
-.dataset-card:focus-visible, .advanced-toggle:focus-visible, .artifact-row:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+.section-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 24px 0 14px; font-size: 13px; font-weight: 600; }
+.lb-stress-option-id { float: right; margin-left: 12px; color: var(--lb-muted); font: 10px var(--font-mono); }
+.advanced-toggle:focus-visible, .artifact-row:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
 .advanced-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; margin-top: 16px; padding: 12px 14px; border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--el-fill-color-light); color: var(--el-text-color-primary); font-weight: 650; cursor: pointer; }
 .advanced-toggle .el-icon { transition: transform .2s ease; }
 .advanced-toggle .el-icon.is-open { transform: rotate(180deg); }
 .advanced-panel { padding: 16px 4px 4px; }
-.progress-card { padding: 16px; border: 1px solid var(--el-border-color-lighter); border-radius: 10px; background: var(--el-fill-color-lighter); }
-.progress-card__head, .progress-stats { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.progress-card__head { margin-bottom: 10px; }
-.progress-stats { flex-wrap: wrap; margin-top: 8px; color: var(--el-text-color-secondary); font-size: 12px; }
-.metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.metric-tile { display: grid; gap: 5px; padding: 14px; border: 1px solid var(--el-border-color-lighter); border-radius: 10px; background: var(--lb-surface); }
-.metric-tile span, .metric-tile small { color: var(--el-text-color-secondary); }
-.metric-tile strong { font-size: 24px; font-variant-numeric: tabular-nums; }
-.metric-tile--danger strong { color: var(--el-color-danger); }
 .artifact-list { display: grid; gap: 8px; }
 .artifact-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 13px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; color: var(--el-text-color-primary); text-decoration: none; transition: border-color .2s, background-color .2s; }
 .artifact-row:hover { border-color: var(--el-color-primary-light-5); background: var(--el-color-primary-light-9); }
 .artifact-row span:first-child { display: grid; min-width: 0; }
-.artifact-row small { overflow: hidden; color: var(--el-text-color-secondary); text-overflow: ellipsis; white-space: nowrap; }
+.artifact-row strong, .artifact-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artifact-row small { color: var(--el-text-color-secondary); }
 .artifact-row__meta { display: flex; flex: none; align-items: center; gap: 8px; color: var(--el-text-color-secondary); }
-@media (max-width: 768px) { .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .artifact-row { align-items: flex-start; } }
-@media (max-width: 480px) { .metric-grid { grid-template-columns: 1fr; } .progress-stats { display: grid; grid-template-columns: 1fr 1fr; } }
+@media (max-width: 768px) { .artifact-row { align-items: flex-start; } }
 @media (prefers-reduced-motion: reduce) { .advanced-toggle .el-icon, .artifact-row { transition: none; } }
 </style>
