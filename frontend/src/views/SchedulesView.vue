@@ -141,8 +141,9 @@ onMounted(async () => {
   // 有正在跑的 suite、或即将到点的任务时每 5 秒后台刷新列表与详情。
   refreshTimer = window.setInterval(() => {
     if (document.visibilityState !== "visible" || activeReload) return;
-    const due = schedules.value.some((row) => {
-      if (row.last_suite_status && !finalStatus(row.last_suite_status)) return true;
+    // 列表行不含套件状态，只有选中任务的 last-run 详情带 last_suite_status。
+    const running = lastRun.value?.last_suite_status && !finalStatus(lastRun.value.last_suite_status);
+    const due = running || schedules.value.some((row) => {
       // next_run_at 过点超过 1 分钟视为陈旧（如调度器被禁用），不再触发刷新。
       const delta = row.next_run_at ? Date.parse(row.next_run_at) - Date.now() : -Infinity;
       return delta > -60_000 && delta < 60_000;
