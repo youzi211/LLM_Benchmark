@@ -1,8 +1,6 @@
 <script setup lang="ts">
 /**
- * 页面英雄区 (Phase 2.1)
- * 每个 tab 都有, 上方大标题 + 副标题, 右侧可放主操作 / 状态.
- * 替代原先 '直接进入表单' 的突兀感.
+ * 轻量页面标题区：标题与说明在左，主操作在右。
  */
 defineProps<{
   /** 上方小字 (eyebrow), 全部大写, 突出板块 */
@@ -33,19 +31,11 @@ defineProps<{
 <style scoped>
 .lb-page-hero {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 22px 24px;
-  margin: 0 0 20px;
-  border: 1px solid var(--lb-border);
-  border-radius: var(--lb-radius-lg);
-  background: linear-gradient(135deg, #ffffff 0%, #f8fbff 55%, #edf5ff 100%);
-  box-shadow: var(--lb-shadow);
-}
-
-:root[data-theme="dark"] .lb-page-hero {
-  background: linear-gradient(135deg, #0f1729 0%, #111a2e 55%, #0a1424 100%);
+  padding: 0;
+  margin: 0 0 24px;
 }
 
 .lb-page-hero__copy {
@@ -54,27 +44,27 @@ defineProps<{
 }
 
 .lb-page-hero .eyebrow {
-  margin: 0 0 4px;
-  color: var(--lb-accent);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.10em;
+  margin: 0 0 8px;
+  color: var(--lb-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .lb-page-hero h1 {
-  margin: 0 0 6px;
-  font-family: "Fira Code", monospace;
-  font-size: 22px;
-  line-height: 1.25;
+  margin: 0 0 8px;
+  font-family: var(--font-heading);
+  font-size: 28px;
+  line-height: 1.3;
   color: var(--lb-fg-strong);
-  font-weight: 600;
+  font-weight: 650;
 }
 
 .lb-page-hero__desc {
   margin: 0;
   color: var(--lb-muted);
-  font-size: 13.5px;
+  font-size: 13px;
   line-height: 1.55;
   max-width: 720px;
 }
@@ -98,13 +88,18 @@ defineProps<{
   flex: 0 0 auto;
 }
 
+.lb-page-hero__actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
 @media (max-width: 760px) {
   .lb-page-hero {
     flex-direction: column;
-    padding: 18px;
+    align-items: stretch;
+    gap: 16px;
   }
   .lb-page-hero h1 {
-    font-size: 18px;
+    font-size: 24px;
   }
   .lb-page-hero__actions {
     width: 100%;

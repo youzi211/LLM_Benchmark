@@ -174,7 +174,7 @@ Windows PowerShell 使用脚本启动（默认只启动主服务）：
 - 控制台也能读取已有模型配置并调用 `POST /api/suites/default`，以及跟踪最近 suite、打开最终总览报告。
 - 控制台支持创建定时一键评测计划：默认“只执行一次”，也可切换为每天/每 N 天周期执行；可为已有模型调用 `POST /api/suites/schedules`，也可将左侧临时模型参数先保存为模型配置再创建定时计划。
 - 选择 suite 后会自动读取关联的 gateway、intelligence、stress 任务结果，展示压测吞吐/延迟/成功率曲线、智力评测分数柱状图和网关 smoke 指标状态。
-- 界面跟随系统明暗主题（无手动切换），颜色统一取自 `--lb-*` 设计 token，ECharts 图表同样读取 token 渲染。
+- 控制台采用清爽的侧边导航与紧凑工具栏，概览将任务动态与服务状态分栏展示；默认亮色，支持亮色、暗色及跟随系统切换。公共颜色通过 `--lb-*` 设计 token 统一，ECharts 图表同样读取 token 渲染。
 - 前端不会使用 localStorage 保存 Key；quick suite 的 Key 仍只随本次请求发送，服务端也不会写入 `data/models.json`。但如果在“定时一键评测”中选择保存左侧模型参数，Key 会随模型配置写入本机 `data/models.json`，用于后续定时执行。
 
 ### 5. 健康检查和部署检查

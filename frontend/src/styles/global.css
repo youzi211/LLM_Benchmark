@@ -1,29 +1,30 @@
 :root {
   /* Surfaces */
-  --lb-bg: #f4f6fb;
+  --lb-bg: #f7f8fa;
   --lb-surface: #ffffff;
   --lb-surface-soft: #f8fafc;
-  --lb-surface-alt: #eef2f7;
+  --lb-surface-alt: #f1f4f8;
 
   /* Foreground */
-  --lb-fg: #1f2933;
+  --lb-fg: #334155;
   --lb-fg-soft: #475569;
-  --lb-fg-strong: #0f172a;
-  --lb-muted: #5b6b83; /* 浅色渐变底上对比度 4.8:1, 满足 WCAG AA (原 #6b7280 仅 4.2:1) */
+  --lb-fg-strong: #172033;
+  --lb-muted: #64748b;
 
   /* Lines */
-  --lb-border: #e5e7eb;
-  --lb-border-soft: rgba(148, 163, 184, 0.24);
+  --lb-border: #e5e9f0;
+  --lb-border-soft: #edf0f5;
   --lb-border-dashed: rgba(148, 163, 184, 0.30);
 
   /* Brand & semantic */
-  --lb-primary: #1e40af;  /* 品牌主色: 导航激活态、关键 CTA、焦点环、强调数字 */
+  --lb-primary: #2563eb;
+  --lb-on-primary: #ffffff;
   --lb-accent: #2563eb;
-  --lb-accent-soft: rgba(37, 99, 235, 0.10);
+  --lb-accent-soft: #eff5ff;
   --lb-accent-soft-2: rgba(37, 99, 235, 0.18);
-  --lb-success: #16a34a;
+  --lb-success: #15803d;
   --lb-success-soft: #166534;
-  --lb-warning: #d97706;
+  --lb-warning: #b45309;
   --lb-danger: #dc2626;
   --lb-danger-soft: #b91c1c;
   --lb-danger-bg: #fef2f2;
@@ -38,14 +39,11 @@
   --lb-radius: 12px;
   --lb-radius-sm: 8px;
   --lb-radius-lg: 16px;
-  --lb-shadow: 0 12px 36px rgba(15, 23, 42, 0.06);
-
-  /* Shape & elevation - refined two-layer shadow system */
-  --lb-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
-  --lb-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.06);
-  --lb-shadow-md: 0 2px 4px rgba(15, 23, 42, 0.06), 0 12px 32px rgba(15, 23, 42, 0.08);
-  --lb-shadow-lg: 0 4px 8px rgba(15, 23, 42, 0.08), 0 18px 48px rgba(15, 23, 42, 0.12);
-  --lb-shadow-hover: 0 2px 6px rgba(15, 23, 42, 0.08), 0 16px 40px rgba(15, 23, 42, 0.10);
+  --lb-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.025);
+  --lb-shadow: var(--lb-shadow-sm);
+  --lb-shadow-md: 0 4px 16px rgba(15, 23, 42, 0.05);
+  --lb-shadow-lg: 0 12px 36px rgba(15, 23, 42, 0.10);
+  --lb-shadow-hover: var(--lb-shadow-sm);
 
   /* Spacing - extended rhythm */
   --lb-gap-1: 4px;
@@ -69,9 +67,9 @@
   --lb-leading-relaxed: 1.7;
 
   /* Typography families */
-  --font-heading: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --font-body: 'Fira Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --font-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-heading: var(--font-body);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   /* Font weights */
   --font-weight-regular: 400;
@@ -86,7 +84,7 @@
   --tracking-wider: 0.08em;
 
   /* Type */
-  --lb-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --lb-mono: var(--font-mono);
 }
 
 * {
@@ -109,10 +107,8 @@ body,
   font-family: var(--font-body);
   color: var(--lb-fg);
   background-color: var(--lb-bg);
-  background-image:
-    radial-gradient(circle at 16% 0%, rgba(37, 99, 235, 0.08), transparent 28%),
-    linear-gradient(180deg, #f8fbff 0%, var(--lb-bg) 42%, #eef2f7 100%);
   font-size: 14px;
+  -webkit-font-smoothing: antialiased;
 }
 
 .lb-shell {
@@ -123,8 +119,8 @@ body,
 
 .lb-main {
   flex: 1;
-  padding: 24px 28px 48px;
-  max-width: 1480px;
+  padding: 28px 32px 40px;
+  max-width: 1600px;
   margin: 0 auto;
   width: 100%;
 }
@@ -145,21 +141,9 @@ body,
 
 .panel-card {
   min-width: 0;
-  border: 1px solid transparent;
+  border: 1px solid var(--lb-border);
   border-radius: var(--lb-radius);
-  /* Outline-style edge replaces hard border for a softer, layered surface */
   box-shadow: var(--lb-shadow);
-  outline: 1px solid var(--lb-border-soft);
-  outline-offset: -1px;
-  transition: box-shadow 250ms cubic-bezier(0.4, 0, 0.2, 1),
-              transform 200ms ease,
-              outline-color 200ms ease;
-}
-
-.panel-card:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--lb-shadow-hover);
-  outline-color: var(--lb-border);
 }
 
 .panel-card.el-card {
@@ -321,7 +305,7 @@ body,
 
 @media (max-width: 760px) {
   .lb-main {
-    padding: 12px 12px 24px;
+    padding: 20px 16px 24px;
   }
 
   .view-grid {
@@ -513,11 +497,7 @@ body,
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 18px 20px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: var(--lb-radius);
-  background: linear-gradient(135deg, #ffffff 0%, #f8fbff 55%, #edf5ff 100%);
-  box-shadow: var(--lb-shadow);
+  padding: 0 0 12px;
 }
 
 .page-hero h1 {
@@ -695,10 +675,10 @@ body,
    复用 :root 中已定义的 --lb-* token, 通过覆盖赋值实现主题切换.
    ========================================================= */
 :root[data-theme="dark"] {
-  --lb-bg: #0b1220;
-  --lb-surface: #111a2e;
-  --lb-surface-soft: #0f1729;
-  --lb-surface-alt: #182544;
+  --lb-bg: #10141d;
+  --lb-surface: #171d29;
+  --lb-surface-soft: #1c2331;
+  --lb-surface-alt: #242d3e;
 
   --lb-fg: #e2e8f0;
   --lb-fg-soft: #cbd5e1;
@@ -709,13 +689,14 @@ body,
   --lb-border-soft: rgba(148, 163, 184, 0.12);
   --lb-border-dashed: rgba(148, 163, 184, 0.22);
 
-  --lb-accent: #60a5fa;
-    --lb-primary: #60a5fa;  /* 暗色品牌主色: 焦点环与激活态在深色表面保持可见 */
+  --lb-accent: #8ab4ff;
+  --lb-primary: #8ab4ff;
+  --lb-on-primary: #10141d;
   --lb-accent-soft: rgba(96, 165, 250, 0.16);
   --lb-accent-soft-2: rgba(96, 165, 250, 0.24);
-  --lb-success: #22c55e;
+  --lb-success: #4ade80;
   --lb-success-soft: #4ade80;
-  --lb-warning: #f59e0b;
+  --lb-warning: #fbbf24;
   --lb-danger: #f87171;
   --lb-danger-soft: #ef4444;
   --lb-danger-bg: rgba(248, 113, 113, 0.10);
@@ -726,7 +707,7 @@ body,
   --lb-info: #60a5fa;
   --lb-cta: #a78bfa;
 
-  --lb-shadow: 0 12px 36px rgba(0, 0, 0, 0.32);
+  --lb-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.10);
   --lb-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.32);
   --lb-shadow-lg: 0 10px 28px rgba(0, 0, 0, 0.45);
 
@@ -736,14 +717,12 @@ body,
 :root[data-theme="dark"] html,
 :root[data-theme="dark"] body,
 :root[data-theme="dark"] #app {
-  background:
-    radial-gradient(circle at 16% 0%, rgba(96, 165, 250, 0.10), transparent 32%),
-    linear-gradient(180deg, #0b1220 0%, #060b18 42%, #050912 100%);
+  background: var(--lb-bg);
 }
 
 /* 暗色 body 显式 background-color 确保对比度检测工具能识别真实背景 */
 :root[data-theme="dark"] body {
-  background-color: #0b1220;
+  background-color: var(--lb-bg);
 }
 
 /* 暗色下的 Element Plus 表面: 让卡片 / 抽屉 / 下拉真正变暗 */
@@ -797,8 +776,7 @@ body,
 }
 
 :root[data-theme="dark"] .page-hero {
-  background: linear-gradient(135deg, #0f1729 0%, #111a2e 55%, #0a1424 100%) !important;
-  border-color: var(--lb-border) !important;
+  background: transparent;
 }
 
 :root[data-theme="dark"] .schedule-summary-card {
@@ -815,17 +793,6 @@ body,
 :root[data-theme="dark"] .lb-tabs,
 :root[data-theme="dark"] .panel-card {
   background-color: var(--lb-surface) !important;
-}
-
-/* Dark mode: softer outline + deeper elevation so cards stay visually separated on dark surfaces */
-:root[data-theme="dark"] .panel-card {
-  outline-color: var(--lb-border-soft);
-  box-shadow: var(--lb-shadow);
-}
-
-:root[data-theme="dark"] .panel-card:hover {
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45), 0 16px 40px rgba(0, 0, 0, 0.55);
-  outline-color: var(--lb-border);
 }
 
 :root[data-theme="dark"] .panel-card .el-card__header {
@@ -868,7 +835,7 @@ html, body, #app,
   .lb-conn-banner__detail { display: none; }
 
   /* 页面主区 padding 收紧 */
-  .lb-main { padding: 12px 12px 24px; }
+  .lb-main { padding: 20px 16px 24px; }
 
   /* 顶部 status dot 紧凑 */
   .lb-main-tabs .el-radio-button + .el-radio-button { margin-left: 0 !important; }
@@ -940,8 +907,7 @@ html, body, #app,
     font-size: 18px;
   }
 
-  /* 底部 nav 出现时, 主区底部加 padding 避免被遮挡 */
-  .lb-main { padding-bottom: 80px !important; }
+  /* 底部导航的安全距离由工作台页脚保留，不重复给主区添加留白。 */
 }
 
 
@@ -1004,4 +970,49 @@ html, body, #app,
 .el-table th.el-table__cell .cell,
 .el-table__empty-text {
   color: var(--lb-fg-soft);
+}
+
+/* Element Plus 与工作台共用同一套颜色，避免默认亮蓝与品牌色混用。 */
+:root[data-theme] {
+  --el-font-family: var(--font-body);
+  --el-color-primary: var(--lb-primary);
+  --el-color-primary-light-3: color-mix(in srgb, var(--lb-primary) 72%, var(--lb-surface));
+  --el-color-primary-light-5: color-mix(in srgb, var(--lb-primary) 50%, var(--lb-surface));
+  --el-color-primary-light-7: color-mix(in srgb, var(--lb-primary) 28%, var(--lb-surface));
+  --el-color-primary-light-8: color-mix(in srgb, var(--lb-primary) 18%, var(--lb-surface));
+  --el-color-primary-light-9: var(--lb-accent-soft);
+  --el-color-primary-dark-2: color-mix(in srgb, var(--lb-primary) 85%, var(--lb-fg-strong));
+  --el-color-success: var(--lb-success);
+  --el-color-warning: var(--lb-warning);
+  --el-color-danger: var(--lb-danger);
+  --el-color-error: var(--lb-danger);
+  --el-color-info: var(--lb-muted);
+  --el-color-success-light-9: color-mix(in srgb, var(--lb-success) 8%, var(--lb-surface));
+  --el-color-warning-light-9: color-mix(in srgb, var(--lb-warning) 8%, var(--lb-surface));
+  --el-color-danger-light-9: color-mix(in srgb, var(--lb-danger) 8%, var(--lb-surface));
+  --el-color-info-light-9: var(--lb-surface-soft);
+  --el-bg-color: var(--lb-surface);
+  --el-bg-color-page: var(--lb-bg);
+  --el-bg-color-overlay: var(--lb-surface);
+  --el-fill-color: var(--lb-surface-alt);
+  --el-fill-color-light: var(--lb-surface-soft);
+  --el-fill-color-lighter: var(--lb-surface-soft);
+  --el-fill-color-blank: var(--lb-surface);
+  --el-text-color-primary: var(--lb-fg-strong);
+  --el-text-color-regular: var(--lb-fg);
+  --el-text-color-secondary: var(--lb-fg-soft);
+  --el-text-color-placeholder: var(--lb-muted);
+  --el-border-color: var(--lb-border);
+  --el-border-color-light: var(--lb-border);
+  --el-border-color-lighter: var(--lb-border-soft);
+  --el-border-color-extra-light: var(--lb-border-soft);
+  --el-border-radius-base: 8px;
+  --el-box-shadow-light: var(--lb-shadow-md);
+  --el-box-shadow-lighter: var(--lb-shadow-sm);
+}
+
+.el-button--primary:not(.is-plain):not(.is-text):not(.is-link) {
+  --el-button-text-color: var(--lb-on-primary);
+  --el-button-hover-text-color: var(--lb-on-primary);
+  --el-button-active-text-color: var(--lb-on-primary);
 }

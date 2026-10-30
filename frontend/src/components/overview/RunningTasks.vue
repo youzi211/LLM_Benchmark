@@ -105,7 +105,7 @@ const goToTask = (t: OverviewRunningTask) => {
         @keydown.space.prevent="goToTask(t)"
       >
         <div class="lb-rt__row1">
-          <span class="lb-rt__type" :style="{ color: typeColor(t.type), background: typeColor(t.type) + '15' }">
+          <span class="lb-rt__type" :style="{ '--lane-color': typeColor(t.type) }">
             {{ typeLabel(t.type) }}
           </span>
           <span class="lb-rt__model">{{ t.model }}</span>
@@ -128,12 +128,13 @@ const goToTask = (t: OverviewRunningTask) => {
 
 <style scoped>
 .lb-rt {
-  padding: 18px 20px;
+  padding: 20px;
   border: 1px solid var(--lb-border);
   border-radius: var(--lb-radius);
   background: var(--lb-surface);
   box-shadow: var(--lb-shadow);
-  height: 100%;
+  min-width: 0;
+  min-height: 228px;
   display: flex;
   flex-direction: column;
 }
@@ -142,22 +143,21 @@ const goToTask = (t: OverviewRunningTask) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
-  padding-bottom: 12px;
+  margin-bottom: 4px;
+  padding-bottom: 16px;
   border-bottom: 1px solid var(--lb-border);
 }
 
 .lb-rt__head h3 {
   margin: 0;
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-heading);
   font-size: 14px;
   font-weight: 600;
   color: var(--lb-fg-strong);
 }
 
 .lb-rt__count {
-  font-family: "Fira Code", monospace;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--lb-primary);
   background: var(--lb-accent-soft);
   padding: 2px 8px;
@@ -170,30 +170,30 @@ const goToTask = (t: OverviewRunningTask) => {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
   flex: 1 1 auto;
   overflow-y: auto;
 }
 
 .lb-rt__item {
-  padding: 10px 12px;
-  border: 1px solid var(--lb-border-soft);
-  border-radius: 10px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--lb-border-soft);
   cursor: pointer;
-  transition: all 150ms ease;
+  transition: background-color 150ms ease;
 }
 
 .lb-rt__item:hover {
-  border-color: var(--lb-accent-soft-2);
   background: var(--lb-surface-soft);
-  transform: translateX(2px);
 }
+
+.lb-rt__item:last-child { border-bottom: 0; padding-bottom: 4px; }
 
 .lb-rt__row1 {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
+  min-width: 0;
 }
 
 .lb-rt__type {
@@ -202,6 +202,8 @@ const goToTask = (t: OverviewRunningTask) => {
   padding: 2px 8px;
   border-radius: 6px;
   flex-shrink: 0;
+  color: var(--lane-color);
+  background: color-mix(in srgb, var(--lane-color) 8%, var(--lb-surface));
 }
 
 .lb-rt__model {
@@ -215,7 +217,7 @@ const goToTask = (t: OverviewRunningTask) => {
 }
 
 .lb-rt__time {
-  font-family: "Fira Code", monospace;
+  font-variant-numeric: tabular-nums;
   font-size: 11.5px;
   color: var(--lb-muted);
   flex-shrink: 0;
@@ -225,18 +227,23 @@ const goToTask = (t: OverviewRunningTask) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: 9px;
+  gap: 12px;
 }
 
 .lb-rt__stage {
   font-size: 12px;
-  color: var(--lb-fg-soft);
+  color: var(--lb-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lb-rt__pct {
-  font-family: "Fira Code", monospace;
+  font-variant-numeric: tabular-nums;
   font-size: 11.5px;
   color: var(--lb-muted);
+  flex-shrink: 0;
 }
 
 .lb-rt__bar {
@@ -259,14 +266,20 @@ const goToTask = (t: OverviewRunningTask) => {
   align-items: center;
   justify-content: center;
   padding: 28px 16px;
+  min-height: 144px;
   color: var(--lb-muted);
   text-align: center;
 }
 
 .lb-rt__empty-icon {
-  font-size: 36px;
-  margin-bottom: 8px;
-  opacity: 0.5;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--lb-surface-soft);
+  font-size: 22px;
+  margin-bottom: 10px;
 }
 
 .lb-rt__empty p {

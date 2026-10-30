@@ -1,11 +1,10 @@
 <script setup lang="ts">
 /**
- * 服务健康面板 (Phase 3.1)
- * 显示 API / EvalScope / Scheduler / Sandbox 状态, 每个可点击 retry 或跳配置.
+ * 服务健康信息面板，保留真实重试与配置入口。
  */
 import { computed } from "vue";
 import StatusDot from "@/components/common/StatusDot.vue";
-import { ArrowRight, Refresh, Setting } from "@element-plus/icons-vue";
+import { Refresh, Setting } from "@element-plus/icons-vue";
 
 interface Service {
   key: string;
@@ -16,33 +15,27 @@ interface Service {
 }
 
 const props = withDefaults(defineProps<{
-  services?: Service[];
+  services: Service[];
   loading?: boolean;
 }>(), {
-  services: () => [
-    { key: "api",      name: "FastAPI 网关",  state: "ok",  detail: "127.0.0.1:8020",  latencyMs: 12 },
-    { key: "models",   name: "模型 API",      state: "ok",  detail: "已配置 3 个",       latencyMs: 280 },
-    { key: "evalscope",name: "EvalScope",     state: "off", detail: "未运行, 见评测环境" },
-    { key: "scheduler",name: "调度服务",      state: "ok",  detail: "APScheduler",        latencyMs: 8 },
-  ],
   loading: false,
 });
 
-const emit = defineEmits<{
-  (e: "retry", key: string): void;
-  (e: "configure", key: string): void;
-}>();
-
 const okCount = computed(() => props.services.filter(s => s.state === "ok").length);
 const total = computed(() => props.services.length);
+const emit = defineEmits<{
+  retry: [key: string];
+  configure: [key: string];
+}>();
+const stateLabels = { ok: "正常", warn: "需关注", fail: "异常", pending: "检查中", off: "未启用" };
 </script>
 
 <template>
   <div class="lb-sh">
     <div class="lb-sh__head">
       <h3>服务健康</h3>
-      <span class="lb-sh__summary" :class="{ 'lb-sh__summary--full': okCount === total }">
-        {{ okCount }} / {{ total }} 在线
+      <span class="lb-sh__summary" :class="{ 'lb-sh__summary--full': total > 0 && okCount === total }">
+        {{ okCount }} / {{ total }} 正常
       </span>
     </div>
 
@@ -52,7 +45,7 @@ const total = computed(() => props.services.length);
 
     <ul v-else class="lb-sh__list">
       <li v-for="svc in services" :key="svc.key" class="lb-sh__item">
-        <StatusDot :state="svc.state" :size="8" :pulse="svc.state === 'ok'" />
+        <StatusDot :state="svc.state" :size="7" />
         <div class="lb-sh__meta">
           <div class="lb-sh__name">{{ svc.name }}</div>
           <div class="lb-sh__detail" :title="svc.detail">{{ svc.detail }}</div>
@@ -60,46 +53,26 @@ const total = computed(() => props.services.length);
         <div v-if="svc.latencyMs !== undefined" class="lb-sh__lat">
           {{ svc.latencyMs }}<span>ms</span>
         </div>
+        <span class="lb-sh__state" :class="`lb-sh__state--${svc.state}`">{{ stateLabels[svc.state] }}</span>
         <div class="lb-sh__actions">
-          <el-button
-            v-if="svc.state === 'fail' || svc.state === 'off'"
-            size="small"
-            text
-            type="primary"
-            @click="emit('retry', svc.key)"
-            title="重试"
-          >
-            <el-icon><Refresh /></el-icon>
-          </el-button>
-          <el-button
-            size="small"
-            text
-            @click="emit('configure', svc.key)"
-            title="配置"
-          >
-            <el-icon><Setting /></el-icon>
-          </el-button>
-          <el-icon class="lb-sh__arrow"><ArrowRight /></el-icon>
+          <el-button v-if="svc.state === 'fail' || svc.state === 'off' || svc.state === 'warn'" text circle size="small" :icon="Refresh" :aria-label="`重试${svc.name}`" :title="`重试${svc.name}`" @click="emit('retry', svc.key)" />
+          <el-button text circle size="small" :icon="Setting" :aria-label="`配置${svc.name}`" :title="`配置${svc.name}`" @click="emit('configure', svc.key)" />
         </div>
       </li>
     </ul>
 
-    <div class="lb-sh__foot">
-      <el-link type="primary" underline="never" @click="emit('configure', 'all')">
-        查看完整诊断 <el-icon class="lb-sh__arrow"><ArrowRight /></el-icon>
-      </el-link>
-    </div>
+    <div class="lb-sh__foot">配置请使用顶部「评测环境」入口</div>
   </div>
 </template>
 
 <style scoped>
 .lb-sh {
-  padding: 18px 20px;
+  padding: 20px;
   border: 1px solid var(--lb-border);
   border-radius: var(--lb-radius);
   background: var(--lb-surface);
   box-shadow: var(--lb-shadow);
-  height: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
@@ -108,30 +81,27 @@ const total = computed(() => props.services.length);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
-  padding-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 4px;
+  padding-bottom: 16px;
   border-bottom: 1px solid var(--lb-border);
 }
 
 .lb-sh__head h3 {
   margin: 0;
-  font-family: "Fira Code", monospace;
+  font-family: var(--font-heading);
   font-size: 14px;
   font-weight: 600;
   color: var(--lb-fg-strong);
 }
 
 .lb-sh__summary {
-  font-family: "Fira Code", monospace;
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--lb-warning-bg, rgba(217, 119, 6, 0.10));
-  color: var(--lb-warning);
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--lb-muted);
 }
 
 .lb-sh__summary--full {
-  background: var(--lb-success-tint);
   color: var(--lb-success);
 }
 
@@ -141,7 +111,7 @@ const total = computed(() => props.services.length);
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0;
   flex: 1 1 auto;
 }
 
@@ -149,14 +119,11 @@ const total = computed(() => props.services.length);
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 8px;
-  border-radius: 8px;
-  transition: background 150ms ease;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--lb-border-soft);
 }
 
-.lb-sh__item:hover {
-  background: var(--lb-surface-soft);
-}
+.lb-sh__item:last-child { border-bottom: 0; }
 
 .lb-sh__meta {
   flex: 1 1 auto;
@@ -164,16 +131,16 @@ const total = computed(() => props.services.length);
 }
 
 .lb-sh__name {
-  font-size: 13.5px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--lb-fg-strong);
-  line-height: 1.3;
+  line-height: 1.5;
 }
 
 .lb-sh__detail {
-  font-size: 11.5px;
+  margin-top: 3px;
+  font-size: 11px;
   color: var(--lb-muted);
-  font-family: "Fira Code", monospace;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -191,22 +158,12 @@ const total = computed(() => props.services.length);
   margin-left: 2px;
 }
 
-.lb-sh__actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  color: var(--lb-muted);
-}
-
-.lb-sh__arrow {
-  font-size: 14px;
-  opacity: 0;
-  transition: opacity 150ms ease;
-}
-
-.lb-sh__item:hover .lb-sh__arrow {
-  opacity: 1;
-}
+.lb-sh__state { flex-shrink: 0; font-size: 10px; color: var(--lb-muted); }
+.lb-sh__state--ok { color: var(--lb-success); }
+.lb-sh__state--warn { color: var(--lb-warning); }
+.lb-sh__state--fail { color: var(--lb-danger); }
+.lb-sh__actions { display: flex; flex-shrink: 0; gap: 2px; }
+.lb-sh__actions :deep(.el-button + .el-button) { margin-left: 0; }
 
 .lb-sh__skel {
   height: 44px;
@@ -222,9 +179,10 @@ const total = computed(() => props.services.length);
 }
 
 .lb-sh__foot {
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: 4px;
+  padding-top: 14px;
   border-top: 1px solid var(--lb-border);
-  text-align: center;
+  color: var(--lb-muted);
+  font-size: 11px;
 }
 </style>
