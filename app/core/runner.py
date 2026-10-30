@@ -41,11 +41,36 @@ class TaskRunner:
         self.reports_dir = reports_dir or Path(os.getenv("LLM_BENCHMARK_REPORTS_DIR", "reports"))
         self.adapter_factory = adapter_factory or create_adapter
 
-    async def run(self, model_id: str, plan_id: str = "gateway_acceptance_v1", metric_ids: list[str] | None = None) -> TaskResult:
+    async def run(
+        self,
+        model_id: str,
+        plan_id: str = "gateway_acceptance_v1",
+        metric_ids: list[str] | None = None,
+        task_id: str | None = None,
+    ) -> TaskResult:
         started_at = utc_now()
         start = now_monotonic()
         resolved = resolve_metric_ids(plan_id, metric_ids)
-        result = TaskResult(task_id=new_task_id(), status="completed", model_id=model_id, plan_id=plan_id, metric_ids=resolved, started_at=started_at)
+        result = self.task_store.get(task_id) if task_id else None
+        if result is None:
+            result = TaskResult(
+                task_id=task_id or new_task_id(),
+                status="running",
+                model_id=model_id,
+                plan_id=plan_id,
+                metric_ids=resolved,
+                started_at=started_at,
+            )
+        else:
+            result.status = "running"
+            result.model_id = model_id
+            result.plan_id = plan_id
+            result.metric_ids = resolved
+            result.started_at = started_at
+            result.finished_at = None
+            result.duration_ms = None
+            result.error = None
+        self.task_store.save(result)
         model = self.model_store.get(model_id)
         if model is None:
             result.status = "error"
@@ -77,30 +102,42 @@ class TaskRunner:
         selected = set(resolved)
         metric_results: list[MetricResult] = []
 
+        def save_progress() -> None:
+            result.results = list(metric_results)
+            self.task_store.save(result)
+
         if "connectivity" in selected:
             metric_results.append(await run_connectivity_probe(adapter))
+            save_progress()
         if "token_usage_accuracy" in selected:
             metric_results.append(await run_usage_probe(adapter))
+            save_progress()
         if "cache_behavior" in selected:
             metric_results.append(await run_cache_behavior_probe(adapter, model))
+            save_progress()
         if "latency_breakdown" in selected or "stream_spec" in selected:
             latency, spec = await run_stream_probe(adapter)
             if "latency_breakdown" in selected:
                 metric_results.append(latency)
             if "stream_spec" in selected:
                 metric_results.append(spec)
+            save_progress()
         if "output_length" in selected:
             metric_results.append(await run_output_length_probe(adapter, model))
+            save_progress()
         if "context_length" in selected:
             metric_results.append(await run_context_length_probe(adapter, model))
+            save_progress()
         if "error_handling" in selected:
             metric_results.append(await run_error_handling_probe(model, self.adapter_factory))
+            save_progress()
         if "concurrency" in selected or "rate_limit" in selected:
             concurrency, rate_limit = await run_concurrency_probe(adapter, model)
             if "concurrency" in selected:
                 metric_results.append(concurrency)
             if "rate_limit" in selected:
                 metric_results.append(rate_limit)
+            save_progress()
 
         order = {metric_id: index for index, metric_id in enumerate(resolved)}
         metric_results.sort(key=lambda item: order.get(item.metric_id, 999))
@@ -113,5 +150,6 @@ class TaskRunner:
         result.analysis = analysis.model_dump(mode="json")
         report_path = write_markdown_report(result, self.reports_dir, facts=facts, analysis=analysis)
         result.report_path = str(report_path)
+        result.status = "completed"
         self.task_store.save(result)
         return result

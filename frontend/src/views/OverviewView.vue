@@ -28,6 +28,7 @@ import {
   type OverviewLane,
   type OverviewTaskSources,
 } from "@/overview/taskOverview";
+import { taskDetailLocation } from "@/utils/taskCenter";
 
 const router = useRouter();
 const store = useModelsStore();
@@ -150,11 +151,12 @@ function statusType(s?: string): "success" | "warning" | "danger" | "info" {
 const recentItems = computed(() =>
   taskSummary.value.recentTasks.map(({ task, lane }) => ({
     task,
+    location: taskDetailLocation(lane, task.task_id),
     lane: lane === "stress"
-      ? { label: "压测", path: "/stress" }
+      ? { label: "压测" }
       : lane === "intelligence"
-        ? { label: "能力", path: "/intelligence" }
-        : { label: "基础", path: "/basic" },
+        ? { label: "能力" }
+        : { label: "基础" },
   })),
 );
 
@@ -255,7 +257,7 @@ function goNew() {
       <div class="lb-overview__recent">
         <div class="lb-overview__panel-head">
           <h3>最近结束</h3>
-          <el-link type="primary" underline="never" @click="router.push('/basic')">
+          <el-link type="primary" underline="never" @click="router.push('/tasks')">
             查看全部 <el-icon><ArrowRight /></el-icon>
           </el-link>
         </div>
@@ -264,7 +266,11 @@ function goNew() {
             v-for="item in recentItems"
             :key="item.task.task_id"
             class="lb-overview__recent-item"
-            @click="router.push(item.lane.path)"
+            role="button"
+            tabindex="0"
+            @click="router.push(item.location)"
+            @keydown.enter="router.push(item.location)"
+            @keydown.space.prevent="router.push(item.location)"
           >
             <StatusDot :state="statusType(item.task.status) === 'success' ? 'ok' : statusType(item.task.status) === 'danger' ? 'fail' : 'pending'" :size="7" />
             <div class="lb-overview__recent-meta">

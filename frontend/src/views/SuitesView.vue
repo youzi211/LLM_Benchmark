@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { useRoute, useRouter } from "vue-router";
 import { useModelsStore } from "@/stores/models";
 import DatasetPicker from "@/components/common/DatasetPicker.vue";
 import PageHero from "@/components/layouts/PageHero.vue";
 import Stepper from "@/components/layouts/Stepper.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import StatusTag from "@/components/common/StatusTag.vue";
+import { taskDetailLocation, type TaskCenterLane } from "@/utils/taskCenter";
 import {
   cancelSuite,
   fetchDatasets,
@@ -23,6 +25,8 @@ import {
 } from "@/api/evaluations";
 
 const store = useModelsStore();
+const router = useRouter();
+const route = useRoute();
 const loading = ref(false);
 const submitting = ref(false);
 const tasks = ref<Record<string, any>[]>([]);
@@ -150,6 +154,13 @@ async function selectTask(row: Record<string, any>) {
   selected.value = await getSuite(row.suite_id);
 }
 
+watch(() => route.query.suite_id, async (id) => {
+  if (typeof id === "string" && id) {
+    try { selected.value = await getSuite(id); }
+    catch (err) { ElMessage.error("加载评测失败: " + String((err as Error)?.message || err)); }
+  }
+}, { immediate: true });
+
 function buildPayload() {
   if (!form.value.runGateway && !form.value.runIntelligence && !form.value.runStress) {
     throw new Error("至少选择一条评测线");
@@ -241,6 +252,18 @@ async function cancelTask(suiteId: string) {
 }
 
 const steps = computed(() => (selected.value?.steps as any[]) || []);
+
+function stepLane(name?: string): TaskCenterLane | null {
+  if (name === "gateway") return "basic";
+  if (name === "intelligence") return "intelligence";
+  if (name === "stress") return "stress";
+  return null;
+}
+
+function openStep(step: Record<string, any>) {
+  const lane = stepLane(step.name);
+  if (lane && step.task_id) router.push(taskDetailLocation(lane, String(step.task_id)));
+}
 
 onMounted(() => {
   loadDatasets();
@@ -439,6 +462,7 @@ onMounted(() => {
               <StatusTag :status="step.status" compact />
             </div>
             <p v-if="step.message" class="muted step-msg">{{ step.message }}</p>
+            <el-link v-if="step.task_id && stepLane(step.name)" type="primary" @click="openStep(step)">在控制台查看</el-link>
             <el-link v-if="step.task_id && step.name === 'gateway'" type="primary" :href="`/api/reports/${step.task_id}`" target="_blank">查看网关报告</el-link>
             <el-link v-if="step.task_id && step.name === 'intelligence'" type="primary" :href="`/api/intelligence/tasks/${step.task_id}/result`" target="_blank">查看能力评测结果</el-link>
             <el-link v-if="step.task_id && step.name === 'stress'" type="primary" :href="`/api/stress/reports/${step.task_id}`" target="_blank">查看压测报告</el-link>

@@ -35,6 +35,22 @@ export async function runBasic(payload: Record<string, unknown>) {
   return data;
 }
 
+export interface BasicTaskSubmission {
+  task_id: string;
+  job_id: string;
+  status: Status;
+}
+
+export async function submitBasic(payload: Record<string, unknown>): Promise<BasicTaskSubmission> {
+  const { data } = await http.post("/tasks/run-async", payload);
+  return data as BasicTaskSubmission;
+}
+
+export async function cancelBasicTask(taskId: string): Promise<TaskLike> {
+  const { data } = await http.post(`/tasks/${encodeURIComponent(taskId)}/cancel`);
+  return data;
+}
+
 export async function listBasicTasks(limit = 50): Promise<TaskLike[]> {
   const { data } = await http.get(`/tasks?limit=${limit}`);
   return Array.isArray(data) ? data : [];

@@ -131,19 +131,17 @@ body,
 
 .view-grid {
   display: grid;
-  grid-template-columns: minmax(320px, 0.92fr) minmax(360px, 1fr) minmax(0, 1.35fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
   gap: var(--lb-gap-5);
-  align-items: stretch;
-  grid-auto-rows: 1fr;
+  align-items: start;
 }
 
-/* Equal-height columns: every grid child fills its track and stacks content vertically */
 .view-grid > * {
-  height: 100%;
+  min-width: 0;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
 }
+
+.view-grid:not(.view-grid--two) > .detail-card { grid-column: 1 / -1; }
 
 .panel-card {
   min-width: 0;
@@ -164,11 +162,8 @@ body,
   outline-color: var(--lb-border);
 }
 
-/* el-card fills the flex column so the body can scroll independently */
 .panel-card.el-card {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
+  height: auto;
 }
 
 .detail-card {
@@ -187,7 +182,6 @@ body,
   padding: 20px;
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
 }
 
 .card-title,
@@ -551,9 +545,7 @@ body,
   gap: 8px;
 }
 
-.schedules-grid {
-  align-items: stretch;
-}
+.schedules-grid { align-items: start; }
 
 .detail-empty {
   display: grid;
@@ -934,6 +926,9 @@ html, body, #app,
     transition: color 150ms ease, background 150ms ease;
     line-height: 1.1;
   }
+
+  .lb-mobile-nav > .el-dropdown { flex: 1 1 0; display: flex; }
+  .lb-mobile-nav > .el-dropdown > .lb-mobile-nav__item { width: 100%; }
 
   .lb-mobile-nav__item:hover,
   .lb-mobile-nav__item--active {

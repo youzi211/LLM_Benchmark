@@ -7,6 +7,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { VideoPlay, WarningFilled } from "@element-plus/icons-vue";
 import type { OverviewRunningTask } from "@/overview/taskOverview";
+import { taskDetailLocation } from "@/utils/taskCenter";
 
 const props = withDefaults(defineProps<{
   tasks?: OverviewRunningTask[];
@@ -62,8 +63,7 @@ const progressColor = (p?: number) => {
 };
 
 const goToTask = (t: OverviewRunningTask) => {
-  const path = t.type === "basic" ? "/basic" : t.type === "stress" ? "/stress" : "/intelligence";
-  router.push(path);
+  router.push(taskDetailLocation(t.type, t.id));
 };
 </script>
 
@@ -94,7 +94,16 @@ const goToTask = (t: OverviewRunningTask) => {
     </div>
 
     <ul v-else class="lb-rt__list">
-      <li v-for="t in visible" :key="t.id" class="lb-rt__item" @click="goToTask(t)">
+      <li
+        v-for="t in visible"
+        :key="t.id"
+        class="lb-rt__item"
+        role="button"
+        tabindex="0"
+        @click="goToTask(t)"
+        @keydown.enter="goToTask(t)"
+        @keydown.space.prevent="goToTask(t)"
+      >
         <div class="lb-rt__row1">
           <span class="lb-rt__type" :style="{ color: typeColor(t.type), background: typeColor(t.type) + '15' }">
             {{ typeLabel(t.type) }}

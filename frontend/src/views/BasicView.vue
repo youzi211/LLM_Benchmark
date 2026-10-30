@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
-import { ElMessage } from "element-plus";
-import { useRouter } from "vue-router";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { useModelsStore } from "@/stores/models";
 import { useToast } from "@/composables/useToast";
 import PageHero from "@/components/layouts/PageHero.vue";
@@ -11,8 +10,10 @@ import EmptyState from "@/components/common/EmptyState.vue";
 import TaskTimeline from "@/components/common/TaskTimeline.vue";
 import MarkdownReport from "@/components/common/MarkdownReport.vue";
 import { Search } from "@element-plus/icons-vue";
-import { formatDate, getBasicTask, listBasicTasks, runBasic, type TaskLike } from "@/api/evaluations";
+import { cancelBasicTask, formatDate, getBasicTask, listBasicTasks, submitBasic, type TaskLike } from "@/api/evaluations";
+import { taskIdFromQuery } from "@/utils/taskCenter";
 
+const route = useRoute();
 const router = useRouter();
 const toast = useToast();
 const store = useModelsStore();
@@ -26,12 +27,19 @@ const metricIds = ref("");
 const statusFilter = ref<string>("all");
 const queryText = ref<string>("");
 const selectedIds = ref<string[]>([]);
+const activeTaskId = ref<string | null>(null);
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
+let pollGeneration = 0;
+
+function isActiveTask(task: TaskLike | null): boolean {
+  return Boolean(task && ["queued", "running", "pending"].includes(String(task.status)));
+}
 
 const statusFilterOptions = computed(() => {
   const t = tasks.value;
   return [
     { value: "all",       label: "全部",     count: t.length },
-    { value: "running",   label: "运行中",   count: t.filter(x => x.status === "running").length },
+    { value: "running",   label: "运行中",   count: t.filter(x => ["queued", "running", "pending"].includes(String(x.status))).length },
     { value: "completed", label: "已完成",   count: t.filter(x => x.status === "completed").length },
     { value: "failed",    label: "失败",     count: t.filter(x => ["failed", "error"].includes(String(x.status))).length },
   ];
@@ -42,6 +50,8 @@ const filteredTasks = computed(() => {
   if (statusFilter.value !== "all") {
     if (statusFilter.value === "failed") {
       out = out.filter(t => ["failed", "error"].includes(String(t.status)));
+    } else if (statusFilter.value === "running") {
+      out = out.filter(t => ["queued", "running", "pending"].includes(String(t.status)));
     } else {
       out = out.filter(t => t.status === statusFilter.value);
     }
@@ -71,6 +81,10 @@ async function reload() {
   try {
     tasks.value = await listBasicTasks();
     if (selected.value) selected.value = await getBasicTask(selected.value.task_id);
+    if (!activeTaskId.value && !taskIdFromQuery(route.query.task_id)) {
+      const running = tasks.value.find(isActiveTask);
+      if (running) beginPolling(running.task_id);
+    }
   } catch (err) {
     toast.error("加载任务失败: " + String((err as Error)?.message || err));
   } finally {
@@ -93,10 +107,12 @@ async function submit() {
     const payload: Record<string, unknown> = { model_id: store.currentId, plan_id: planId.value };
     const metrics = splitMetricIds();
     if (metrics?.length) payload.metric_ids = metrics;
-    const task = await runBasic(payload);
-    toast.success(`基础评测完成: ${task.task_id}`);
+    const accepted = await submitBasic(payload);
+    toast.info(`评测已提交: ${accepted.task_id}`);
+    activeTaskId.value = accepted.task_id;
     await reload();
-    selected.value = task;
+    selected.value = await getBasicTask(accepted.task_id);
+    beginPolling(accepted.task_id);
   } catch (err) {
     toast.error(err instanceof Error ? err.message : String(err));
   } finally {
@@ -106,6 +122,82 @@ async function submit() {
 
 async function selectTask(row: TaskLike) {
   selected.value = await getBasicTask(row.task_id);
+  if (isActiveTask(selected.value)) beginPolling(selected.value.task_id);
+}
+
+async function selectTaskAndSync(row: TaskLike) {
+  await selectTask(row);
+  if (taskIdFromQuery(route.query.task_id) === row.task_id) return;
+  await router.replace({ query: { ...route.query, task_id: row.task_id } });
+}
+
+async function selectRequestedTask() {
+  const taskId = taskIdFromQuery(route.query.task_id);
+  if (!taskId || selected.value?.task_id === taskId) return;
+  try {
+    selected.value = await getBasicTask(taskId);
+    if (isActiveTask(selected.value)) beginPolling(taskId);
+  } catch (err) {
+    toast.error("加载任务详情失败: " + String((err as Error)?.message || err));
+  }
+}
+
+function stopPolling() {
+  pollGeneration += 1;
+  if (pollTimer) clearTimeout(pollTimer);
+  pollTimer = null;
+}
+
+function beginPolling(taskId: string) {
+  stopPolling();
+  activeTaskId.value = taskId;
+  const generation = pollGeneration;
+  let failures = 0;
+
+  const tick = async () => {
+    if (generation !== pollGeneration) return;
+    pollTimer = null;
+    try {
+      const task = await getBasicTask(taskId);
+      if (generation !== pollGeneration) return;
+      failures = 0;
+      const index = tasks.value.findIndex((item) => item.task_id === taskId);
+      if (index >= 0) tasks.value[index] = task;
+      if (selected.value?.task_id === taskId) selected.value = task;
+      if (isActiveTask(task)) {
+        pollTimer = setTimeout(tick, 1_500);
+        return;
+      }
+      stopPolling();
+      activeTaskId.value = null;
+      await reload();
+      if (task.status === "completed") toast.success(`基础评测完成: ${task.task_id}`);
+      else toast.warning(`基础评测未完成: ${task.status || "unknown"}`);
+    } catch (err) {
+      if (generation !== pollGeneration) return;
+      failures += 1;
+      if (failures === 1) {
+        toast.error("任务状态刷新失败，将自动重试: " + String((err as Error)?.message || err));
+      }
+      pollTimer = setTimeout(tick, Math.min(5_000, 1_500 * failures));
+    }
+  };
+
+  void tick();
+}
+
+async function cancelSelected() {
+  if (!selected.value || !isActiveTask(selected.value)) return;
+  try {
+    await cancelBasicTask(selected.value.task_id);
+    stopPolling();
+    activeTaskId.value = null;
+    await reload();
+    selected.value = await getBasicTask(selected.value.task_id);
+    toast.info("任务已取消");
+  } catch (err) {
+    toast.error("取消任务失败: " + String((err as Error)?.message || err));
+  }
 }
 
 const reportSource = ref<string>("");
@@ -145,7 +237,12 @@ function buildReport(t: any): string {
   return out.join("\n");
 }
 watch(selected, (v) => { reportSource.value = v ? buildReport(v) : ""; }, { immediate: true });
-onMounted(reload);
+watch(() => route.query.task_id, () => { void selectRequestedTask(); });
+onMounted(async () => {
+  await reload();
+  await selectRequestedTask();
+});
+onBeforeUnmount(stopPolling);
 </script>
 
 <template>
@@ -156,7 +253,9 @@ onMounted(reload);
   >
     <template #actions>
       <el-button size="small" @click="reload">刷新</el-button>
-      <el-button type="primary" :loading="submitting" @click="submit">开始基础评测</el-button>
+      <el-button type="primary" :loading="submitting" :disabled="Boolean(activeTaskId)" @click="submit">
+        {{ activeTaskId ? "评测运行中" : "开始基础评测" }}
+      </el-button>
     </template>
   </PageHero>
   <section class="view-grid">
@@ -205,7 +304,7 @@ onMounted(reload);
         highlight-current-row
         :row-key="(r: TaskLike) => r.task_id"
         @selection-change="(rows: TaskLike[]) => (selectedIds = rows.map(r => r.task_id))"
-        @row-click="selectTask"
+        @row-click="selectTaskAndSync"
         empty-text=""
       >
         <el-table-column type="selection" width="40" />
@@ -244,7 +343,10 @@ onMounted(reload);
       <template v-else>
         <div class="lb-detail__head">
           <div class="lb-detail__id">{{ selected.task_id }}</div>
-          <StatusTag :status="selected.status ?? 'pending'" />
+          <div class="lb-detail__head-actions">
+            <StatusTag :status="selected.status ?? 'pending'" />
+            <el-button v-if="isActiveTask(selected)" size="small" type="danger" plain @click="cancelSelected">取消任务</el-button>
+          </div>
         </div>
         <div class="lb-detail__meta">
           <div class="lb-detail__meta-item">
@@ -266,6 +368,9 @@ onMounted(reload);
         </div>
 
         <TaskTimeline :status="selected.status" :started-at="selected.started_at" :finished-at="selected.finished_at" :error="selected.error" />
+        <div v-if="isActiveTask(selected)" class="lb-detail__running" role="status" aria-live="polite">
+          任务正在后台运行，已完成的指标会自动更新。
+        </div>
 
         <div class="lb-detail__section-title">指标结果 <span class="lb-detail__section-count">{{ Array.isArray(selected.results) ? selected.results.length : 0 }} 个</span></div>
         <div v-if="Array.isArray(selected.results) && selected.results.length" class="lb-detail__metrics">
@@ -279,9 +384,9 @@ onMounted(reload);
         </div>
         <div v-else class="lb-detail__no-metrics">该任务暂无指标结果</div>
 
-        <el-alert v-if="selected.error" class="lb-detail__alert" type="error" :closable="false">
+        <el-alert v-if="selected.error" class="lb-detail__alert" :type="selected.status === 'interrupted' ? 'warning' : 'error'" :closable="false">
           <template #title>
-            <div class="lb-detail__alert-title">执行错误</div>
+            <div class="lb-detail__alert-title">{{ selected.status === "interrupted" ? "任务已取消" : "执行错误" }}</div>
           </template>
           <pre class="lb-detail__alert-body">{{ JSON.stringify(selected.error, null, 2) }}</pre>
         </el-alert>
@@ -350,6 +455,11 @@ onMounted(reload);
   border-radius: 10px;
   border: 1px solid var(--lb-border-soft);
 }
+.lb-detail__head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .lb-detail__id {
   font-family: "Fira Code", monospace;
   font-size: 13.5px;
@@ -361,6 +471,15 @@ onMounted(reload);
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px 16px;
   margin-bottom: 14px;
+}
+.lb-detail__running {
+  padding: 9px 12px;
+  margin-bottom: 12px;
+  font-size: 12.5px;
+  color: var(--lb-primary);
+  background: var(--lb-accent-soft);
+  border: 1px solid var(--lb-accent-soft-2);
+  border-radius: 8px;
 }
 .lb-detail__meta-item {
   display: flex;

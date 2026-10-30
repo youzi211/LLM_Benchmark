@@ -24,10 +24,20 @@ class JobExecutor:
         self.evalscope_max_concurrency = int(os.getenv("LLM_BENCHMARK_EVALSCOPE_JOB_MAX_CONCURRENCY", str(default_max)))
         self._suite_semaphore = asyncio.Semaphore(self.suite_max_concurrency)
         self._evalscope_semaphore = asyncio.Semaphore(self.evalscope_max_concurrency)
+        self._basic_semaphore = asyncio.Semaphore(default_max)
         self._tasks: dict[str, asyncio.Task] = {}
 
-    def submit_sync(self, *, job_type: JobType, target_id: str | None, payload: dict[str, Any], func: Callable[[], T]) -> JobRecord:
-        job = self.store.save(JobRecord(job_type=job_type, target_id=target_id, payload=payload))
+    def submit_sync(
+        self,
+        *,
+        job_type: JobType,
+        target_id: str | None,
+        payload: dict[str, Any],
+        func: Callable[[], T],
+        job_id: str | None = None,
+    ) -> JobRecord:
+        record = {"job_id": job_id} if job_id else {}
+        job = self.store.save(JobRecord(job_type=job_type, target_id=target_id, payload=payload, **record))
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -36,8 +46,17 @@ class JobExecutor:
         self._tasks[job.job_id] = task
         return job
 
-    def submit_async(self, *, job_type: JobType, target_id: str | None, payload: dict[str, Any], func: Callable[[], Any]) -> JobRecord:
-        job = self.store.save(JobRecord(job_type=job_type, target_id=target_id, payload=payload))
+    def submit_async(
+        self,
+        *,
+        job_type: JobType,
+        target_id: str | None,
+        payload: dict[str, Any],
+        func: Callable[[], Any],
+        job_id: str | None = None,
+    ) -> JobRecord:
+        record = {"job_id": job_id} if job_id else {}
+        job = self.store.save(JobRecord(job_type=job_type, target_id=target_id, payload=payload, **record))
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -50,6 +69,8 @@ class JobExecutor:
     def _semaphore_for(self, job_type: JobType) -> asyncio.Semaphore:
         if job_type == "suite":
             return self._suite_semaphore
+        if job_type == "basic":
+            return self._basic_semaphore
         return self._evalscope_semaphore
 
     def _run_sync_without_loop(self, job: JobRecord, func: Callable[[], T]) -> JobRecord:

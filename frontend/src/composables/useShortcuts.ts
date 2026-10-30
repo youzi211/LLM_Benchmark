@@ -5,6 +5,7 @@ import { useRouter } from "vue-router";
  * 全局键盘快捷键 (Phase 4.1)
  * - g b / g s / g i: 跳转 基础/压测/能力 评测
  * - g o: 跳转 概览
+ * - g t: 跳转 任务中心
  * - g u: 跳转 一键评测
  * - g d: 跳转 定时任务
  * - ?: 显示帮助
@@ -40,6 +41,7 @@ export function useShortcuts() {
         s: "/stress",
         i: "/intelligence",
         o: "/overview",
+        t: "/tasks",
         u: "/suites",
         d: "/schedules",
       };

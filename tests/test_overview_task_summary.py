@@ -8,9 +8,19 @@ from app.main import app
 from app.stress.schemas import StressTask
 
 
+def freeze_summary_time(monkeypatch, routes_overview):
+    build = routes_overview.build_task_overview_summary
+    monkeypatch.setattr(
+        routes_overview,
+        "build_task_overview_summary",
+        lambda **kwargs: build(**kwargs, now=datetime(2026, 10, 29, 9, 0, tzinfo=UTC)),
+    )
+
+
 def test_overview_task_summary_counts_all_tasks_before_list_truncation(monkeypatch):
     from app.api import routes_overview
 
+    freeze_summary_time(monkeypatch, routes_overview)
     now = datetime(2026, 10, 29, 9, 0, tzinfo=UTC)
     basic = [
         TaskResult(
@@ -69,6 +79,7 @@ def test_overview_task_summary_counts_all_tasks_before_list_truncation(monkeypat
 def test_overview_task_summary_uses_shanghai_date_boundary(monkeypatch):
     from app.api import routes_overview
 
+    freeze_summary_time(monkeypatch, routes_overview)
     class Store:
         def __init__(self, tasks):
             self.tasks = tasks

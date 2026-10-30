@@ -10,9 +10,9 @@ import { useToast } from "@/composables/useToast";
 import PageHero from "@/components/layouts/PageHero.vue";
 import StatusTag from "@/components/common/StatusTag.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
-import StatusDot from "@/components/common/StatusDot.vue";
 import { Close, Download } from "@element-plus/icons-vue";
 import { getBasicTask, getStressTask, getIntelligenceTask, type TaskLike } from "@/api/evaluations";
+import { comparisonCsv, comparisonMetrics, type ComparisonMetric, type TaskComparisonType } from "@/utils/taskComparison";
 
 const route = useRoute();
 const router = useRouter();
@@ -20,7 +20,7 @@ const toast = useToast();
 
 interface Column {
   id: string;
-  type: "basic" | "stress" | "intelligence";
+  type: TaskComparisonType;
   task: TaskLike | null;
   loading: boolean;
   error?: string;
@@ -86,20 +86,7 @@ function removeCol(id: string) {
 
 function exportCsv() {
   if (!columns.value.length) return;
-  const header = ["任务 ID", "类型", "模型", "状态", "耗时(ms)", "指标数"];
-  const rows = columns.value.map(c => {
-    const t = c.task;
-    return [
-      c.id,
-      c.type,
-      t?.model_id || "-",
-      t?.status || "-",
-      t?.duration_ms ? Math.round(Number(t.duration_ms)) : "-",
-      Array.isArray(t?.results) ? t.results.length : 0,
-    ];
-  });
-  const csv = [header, ...rows].map(r => r.map(cell => `"${String(cell).replace(/"/g, "''")}"`).join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const blob = new Blob(["\uFEFF", comparisonCsv(columns.value)], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url; a.download = `task-compare-${Date.now()}.csv`;
@@ -108,22 +95,18 @@ function exportCsv() {
   toast.success("已导出 CSV");
 }
 
-// 收集所有出现过的指标 key
-const allMetricKeys = computed(() => {
-  const set = new Set<string>();
+const allMetrics = computed(() => {
+  const metrics = new Map<string, ComparisonMetric>();
   columns.value.forEach(c => {
-    if (Array.isArray(c.task?.results)) {
-      c.task!.results.forEach((m: any) => {
-        if (m.metric_name) set.add(m.metric_name);
-      });
-    }
+    comparisonMetrics(c.type, c.task).forEach((metric) => {
+      if (!metrics.has(metric.key)) metrics.set(metric.key, metric);
+    });
   });
-  return Array.from(set);
+  return Array.from(metrics.values());
 });
 
 function metricFor(col: Column, key: string) {
-  if (!col.task || !Array.isArray(col.task.results)) return null;
-  return col.task.results.find((m: any) => m.metric_name === key) || null;
+  return comparisonMetrics(col.type, col.task).find((metric) => metric.key === key) || null;
 }
 
 function getModelName(col: Column) {
@@ -133,10 +116,10 @@ function getStatus(c: Column) {
   return c.task?.status || "-";
 }
 function getDuration(c: Column) {
-  return c.task?.duration_ms ? Math.round(Number(c.task.duration_ms)) + " ms" : "-";
+  return c.task?.duration_ms != null ? Math.round(Number(c.task.duration_ms)) + " ms" : "-";
 }
 function getMetricCount(c: Column) {
-  return Array.isArray(c.task?.results) ? c.task!.results.length : 0;
+  return comparisonMetrics(c.type, c.task).length;
 }
 </script>
 
@@ -194,7 +177,7 @@ function getMetricCount(c: Column) {
     </div>
 
     <!-- 指标横向对比表 -->
-    <div v-if="columns.length && allMetricKeys.length" class="lb-cmp__table-wrap">
+    <div v-if="columns.length && allMetrics.length" class="lb-cmp__table-wrap">
       <h3 class="lb-cmp__table-title">指标对比</h3>
       <div class="lb-cmp__table-scroll">
         <table class="lb-cmp__table">
@@ -208,15 +191,14 @@ function getMetricCount(c: Column) {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="key in allMetricKeys" :key="key">
-              <td class="lb-cmp__td-key">{{ key }}</td>
+            <tr v-for="metric in allMetrics" :key="metric.key">
+              <td class="lb-cmp__td-key">{{ metric.label }}</td>
               <td v-for="col in columns" :key="col.id" class="lb-cmp__td-cell">
-                <template v-if="metricFor(col, key)">
+                <template v-if="metricFor(col, metric.key)">
                   <div class="lb-cmp__cell-head">
-                    <StatusTag :status="metricFor(col, key).status" compact />
-                    <StatusDot :state="metricFor(col, key).status === 'completed' ? 'ok' : metricFor(col, key).status === 'failed' ? 'fail' : 'pending'" :size="6" :pulse="false" />
+                    <StatusTag :status="metricFor(col, metric.key)!.status" compact />
                   </div>
-                  <div class="lb-cmp__cell-summary" :title="metricFor(col, key).summary">{{ metricFor(col, key).summary || '—' }}</div>
+                  <div class="lb-cmp__cell-summary" :title="metricFor(col, metric.key)!.summary">{{ metricFor(col, metric.key)!.summary || '—' }}</div>
                 </template>
                 <span v-else class="lb-cmp__cell-empty">—</span>
               </td>
@@ -227,7 +209,7 @@ function getMetricCount(c: Column) {
     </div>
 
     <EmptyState
-      v-else-if="!loading && columns.length && !allMetricKeys.length"
+      v-else-if="!loading && columns.length && !allMetrics.length"
       title="这些任务都没有指标结果"
       description="选中的任务可能还未完成, 或不包含结构化指标。"
       variant="list"

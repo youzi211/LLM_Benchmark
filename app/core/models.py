@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.core.statuses import Protocol
+from app.core.statuses import Protocol, TaskStatus
 
 
 def utc_now() -> datetime:
@@ -161,7 +161,8 @@ class TaskResult(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
     task_id: str
-    status: Literal["completed", "error"]
+    status: TaskStatus
+    job_id: str | None = None
     model_id: str
     model_config_name: str | None = None
     upstream_model_name: str | None = None

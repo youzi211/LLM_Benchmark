@@ -163,9 +163,10 @@ Windows PowerShell 使用脚本启动（默认只启动主服务）：
 主服务只提供 `/api/*` JSON 接口，不挂载任何页面（访问 `http://<主服务地址>:8020/` 返回 404）。Web 控制台是 `frontend/` 下的 Vue 3 工程，本地用 `cd frontend && npm install && npm run dev` 启动，默认 `http://127.0.0.1:5174/`，通过 vite 代理访问 8020 上的 `/api`（hash 路由，实际地址形如 `http://127.0.0.1:5174/#/overview`）。页面与导航：
 
 - **概览**（`/overview`）：三条评测线的任务状态、运行中任务和系统健康汇总。
-- **基础评测 / 压测评测 / 能力评测**（`/basic`、`/stress`、`/intelligence`）：分别提交并跟踪网关 smoke、EvalScope perf 压测和 EvalScope 能力评测任务。
+- **任务中心**（`/tasks`）：合并基础、压测、能力三类任务，支持按评测线、状态和关键词筛选，并深链路到对应任务详情。
+- **基础评测 / 压测评测 / 能力评测**（`/basic`、`/stress`、`/intelligence`）：分别提交并跟踪网关 smoke、EvalScope perf 压测和 EvalScope 能力评测任务；基础评测采用异步提交、单任务轮询和主动取消。
 - **一键完整评测 / 定时任务**（`/suites`、`/schedules`）：串起三条线生成统一总览报告；创建一次性或周期性定时评测计划。
-- **任务对比**（`/compare`）：基础评测或能力评测页勾选多个任务后对比。
+- **任务对比**（`/compare`）：基础评测、压测评测或能力评测页勾选多个任务后对比。
 - **设计系统**（`/style-guide`）：仅 dev 构建可见的 UI token 与组件示例页。
 
 控制台能力：
@@ -361,6 +362,8 @@ GET    /api/plans
 GET    /api/plans/{plan_id}
 
 POST   /api/tasks/run
+POST   /api/tasks/run-async
+POST   /api/tasks/{task_id}/cancel
 GET    /api/tasks
 GET    /api/tasks/{task_id}
 

@@ -36,6 +36,7 @@ const groups = [
       { keys: ["G", "S"], desc: "跳到 压测评测" },
       { keys: ["G", "I"], desc: "跳到 能力评测" },
       { keys: ["G", "O"], desc: "跳到 概览" },
+      { keys: ["G", "T"], desc: "跳到 任务中心" },
       { keys: ["G", "U"], desc: "跳到 一键完整评测" },
       { keys: ["G", "D"], desc: "跳到 定时任务" },
     ],

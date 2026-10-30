@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import PageHero from "@/components/layouts/PageHero.vue";
 import StatusTag from "@/components/common/StatusTag.vue";
 import CronPreview from "@/components/schedules/CronPreview.vue";
@@ -20,6 +21,7 @@ import {
 } from "@/api/evaluations";
 
 const loading = ref(false);
+const router = useRouter();
 const drawerVisible = ref(false);
 const schedules = ref<Record<string, any>[]>([]);
 const selected = ref<Record<string, any> | null>(null);
@@ -159,6 +161,7 @@ function profileLimitLabel(p?: SuiteProfile | null) {
       <el-card class="panel-card" shadow="never">
         <div class="lb-sched-count">{{ schedules.length }} 个任务</div>
         <el-table
+          class="schedule-table"
           v-loading="loading"
           :data="schedules"
           height="580"
@@ -166,27 +169,13 @@ function profileLimitLabel(p?: SuiteProfile | null) {
           :empty-text="''"
           @row-click="selectSchedule"
         >
-          <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
-          <el-table-column label="评测内容" min-width="140">
-            <template #default="{ row }">
-              <div class="lane-tags">
-                <el-tag v-for="lane in scheduleLanes(row)" :key="lane" size="small" effect="plain">{{ lane }}</el-tag>
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column prop="profile" label="Profile" min-width="120" show-overflow-tooltip />
-          <el-table-column label="Cron" min-width="130">
-            <template #default="{ row }">
-              <code v-if="row.cron || row.cron_expr" class="lb-sched-cron">{{ row.cron || row.cron_expr }}</code>
-              <span v-else class="lb-sched-cron-empty">—</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="状态" width="90">
+          <el-table-column prop="name" label="名称" min-width="110" show-overflow-tooltip />
+          <el-table-column label="状态" width="76">
             <template #default="{ row }">
               <StatusTag :status="row.enabled ? 'completed' : 'pending'" :label="row.enabled ? '启用' : '停用'" />
             </template>
           </el-table-column>
-          <el-table-column label="下次运行" min-width="150">
+          <el-table-column label="下次运行" min-width="145">
             <template #default="{ row }">
               <div class="lb-sched-next">
                 <div class="lb-sched-next__time">{{ formatDate(row.next_run_at) }}</div>
@@ -194,13 +183,21 @@ function profileLimitLabel(p?: SuiteProfile | null) {
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="120" fixed="right">
+          <el-table-column label="最近运行" min-width="120">
             <template #default="{ row }">
-              <el-button size="small" type="primary" plain @click.stop="trigger(row.schedule_id)">触发</el-button>
-              <el-button size="small" type="danger" plain @click.stop="remove(row.schedule_id)">删除</el-button>
+              <span v-if="row.last_error">触发失败</span>
+              <span v-else>{{ row.last_run_at ? formatDate(row.last_run_at) : '尚未运行' }}</span>
             </template>
           </el-table-column>
         </el-table>
+        <div class="schedule-mobile-list">
+          <button v-for="row in schedules" :key="row.schedule_id" type="button" class="schedule-mobile-row" @click="selectSchedule(row)">
+            <strong>{{ row.name }}</strong>
+            <StatusTag :status="row.enabled ? 'completed' : 'pending'" :label="row.enabled ? '启用' : '停用'" />
+            <span>下次：{{ formatDate(row.next_run_at) }}</span>
+            <span>最近：{{ row.last_error ? '触发失败' : row.last_run_at ? formatDate(row.last_run_at) : '尚未运行' }}</span>
+          </button>
+        </div>
         <EmptyState
           v-if="!loading && schedules.length === 0"
           title="还没有定时任务"
@@ -226,6 +223,11 @@ function profileLimitLabel(p?: SuiteProfile | null) {
               <h2>{{ selected.name }}</h2>
             </div>
             <el-tag :type="selected.enabled ? 'success' : 'info'">{{ selected.enabled ? "启用" : "停用" }}</el-tag>
+          </div>
+          <div class="detail-actions">
+            <el-button type="primary" plain @click="trigger(selected.schedule_id)">立即触发</el-button>
+            <el-button v-if="selected.last_suite_id" @click="router.push({ path: '/suites', query: { suite_id: selected.last_suite_id } })">查看最近评测</el-button>
+            <el-button type="danger" plain @click="remove(selected.schedule_id)">删除</el-button>
           </div>
 
           <el-descriptions :column="2" border>
@@ -314,5 +316,18 @@ function profileLimitLabel(p?: SuiteProfile | null) {
   margin-bottom: 12px;
   font-size: 13px;
   color: var(--lb-muted, #909399);
+}
+.schedule-mobile-list { display: none; }
+@media (max-width: 760px) {
+  .schedule-table { display: none; }
+  .schedule-mobile-list { display: grid; gap: 8px; }
+  .schedule-mobile-row {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px;
+    width: 100%; padding: 12px; text-align: left; color: var(--lb-fg);
+    background: var(--lb-surface); border: 1px solid var(--lb-border); border-radius: 8px;
+    cursor: pointer;
+  }
+  .schedule-mobile-row strong { overflow-wrap: anywhere; }
+  .schedule-mobile-row span { font-size: 12px; }
 }
 </style>

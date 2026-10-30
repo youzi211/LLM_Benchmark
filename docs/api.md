@@ -17,7 +17,7 @@
 主服务只提供 `/api/*` JSON 接口，不挂载任何页面（`GET /`、`GET /ui/` 均返回 404）。Web 控制台源码在 `frontend/`（Vue 3 + Vite），本地用 `npm run dev` 启动在 5174 端口，通过 vite 代理访问 8020 的 `/api`。
 
 - 控制台主界面按三条评测线组织：基础评测、压测评测、能力评测。三条线共用顶部的已保存模型选择器（`GET /api/models`）。
-- 基础评测页调用 `POST /api/tasks/run`、`GET /api/tasks`、`GET /api/tasks/{task_id}` 和 `GET /api/reports/{task_id}`。
+- 基础评测页调用 `POST /api/tasks/run-async` 提交后台任务，轮询 `GET /api/tasks/{task_id}` 获取进度，并通过 `POST /api/tasks/{task_id}/cancel` 取消运行中的任务；任务列表和报告分别使用 `GET /api/tasks`、`GET /api/reports/{task_id}`。
 - 压测评测页调用 `GET /api/stress/evalscope/health`、`POST /api/stress/tasks/default`、`GET /api/stress/tasks`、`GET /api/stress/tasks/{task_id}`、`GET /api/stress/tasks/{task_id}/result`、`POST /api/stress/tasks/{task_id}/cancel`、`GET /api/stress/tasks/{task_id}/raw-result`、`GET /api/stress/tasks/{task_id}/artifacts`、`GET /api/stress/tasks/{task_id}/artifacts/{artifact_path}` 和 `GET /api/stress/reports/{task_id}`。
 - 能力评测页调用 `GET /api/intelligence/evalscope/health`、`GET /api/intelligence/evalscope/config`、`PUT /api/intelligence/evalscope/config`、`GET /api/intelligence/evalscope/judge-config`、`GET /api/intelligence/evalscope/judge-health`、`GET /api/intelligence/evalscope/sandbox-health`、`GET /api/intelligence/datasets`、`POST /api/intelligence/tasks/default`、`POST /api/intelligence/tasks`、`GET /api/intelligence/tasks`、`GET /api/intelligence/tasks/{task_id}`、`GET /api/intelligence/tasks/{task_id}/progress`、`GET /api/intelligence/tasks/{task_id}/result`、`POST /api/intelligence/tasks/{task_id}/cancel` 和 `GET /api/intelligence/reports/{task_id}`；数据集元信息会展示描述、本地可用状态、本地路径、本地 subset 列表和当前配置的 `subset_list`。
 - 一键完整评测和定时任务作为辅助入口保留，分别调用 `/api/suites/default`、`/api/suites/quick`、`/api/suites`、`/api/suites/{suite_id}/report`、`/api/suites/{suite_id}/cancel` 以及 `/api/suites/schedules*`。
@@ -102,7 +102,8 @@ enabled, declared_context_tokens, declared_max_output_tokens, concurrency_levels
 | 字段 | 类型 | 说明 |
 |---|---:|---|
 | `task_id` | string | 任务 ID，例如 `task_yyyymmddhhmmss_xxxxxxxx`。 |
-| `status` | string | 任务状态：`completed` 或 `error`。 |
+| `job_id` | string/null | 异步执行对应的后台任务 ID。 |
+| `status` | string | 任务状态：`queued`、`running`、`completed`、`error` 或 `interrupted`。 |
 | `model_id` | string | 本地模型配置 ID。 |
 | `model_config_name` | string/null | 模型配置名称。 |
 | `upstream_model_name` | string/null | 传给上游接口的 `model` 名称。 |
@@ -459,6 +460,38 @@ enabled, declared_context_tokens, declared_max_output_tokens, concurrency_levels
 | 协议不支持 | `200` | `TaskResult.status = error`，`error.code = invalid_protocol` |
 | 单个指标失败 | `200` | `TaskResult.status = completed`，对应 `MetricResult.status = error` |
 | 报告分析模型失败 | `200` | `TaskResult.status` 不受影响，`analysis.analysis_status = error` |
+
+### POST `/api/tasks/run-async`
+
+异步提交一次基础评测。请求体与 `RunTaskRequest` 相同。接口先持久化 `queued` 状态的 `TaskResult` 和后台 Job，再立即返回；前端应轮询 `GET /api/tasks/{task_id}` 获取任务进度和最终状态。
+
+#### 请求示例
+
+```json
+{
+  "model_id": "demo-chat",
+  "plan_id": "gateway_acceptance_v1",
+  "metric_ids": ["connectivity", "token_usage_accuracy"]
+}
+```
+
+#### 成功响应
+
+`202 Accepted`
+
+```json
+{
+  "task_id": "task_20261029065532_005bbb51",
+  "job_id": "job_20261029065532_1234abcd",
+  "status": "queued"
+}
+```
+
+非法计划或指标仍会在提交阶段返回 `400`。模型不存在、模型禁用、协议不支持等业务错误会写入任务结果，最终通过任务详情读取。
+
+### POST `/api/tasks/{task_id}/cancel`
+
+取消排队中或运行中的基础评测任务。接口会取消后台 Job，并把任务状态更新为 `interrupted`；已经结束的任务保持原状态并直接返回。任务不存在时返回 `404 task_not_found`。
 
 ### GET `/api/tasks`
 

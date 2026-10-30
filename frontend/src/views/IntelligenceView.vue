@@ -1,16 +1,17 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onUnmounted, ref } from "vue";
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useModelsStore } from "@/stores/models";
 import PageHero from "@/components/layouts/PageHero.vue";
 import StatusTag from "@/components/common/StatusTag.vue";
 import FilterChips from "@/components/common/FilterChips.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useToast } from "@/composables/useToast";
 import { Search } from "@element-plus/icons-vue";
 import DatasetPicker from "@/components/common/DatasetPicker.vue";
 import { shouldShowTaskListEmpty, taskById } from "@/utils/taskListState";
+import { taskIdFromQuery } from "@/utils/taskCenter";
 import {
   cancelIntelligenceTask,
   fetchDatasets,
@@ -181,6 +182,7 @@ async function submit() {
   }
 }
 
+const route = useRoute();
 const router = useRouter();
 const toast = useToast();
 
@@ -242,6 +244,18 @@ async function selectTask(taskId: string, refreshList = false) {
   }
 }
 
+async function selectTaskAndSync(taskId: string) {
+  await selectTask(taskId);
+  if (selected.value?.task_id !== taskId || taskIdFromQuery(route.query.task_id) === taskId) return;
+  await router.replace({ query: { ...route.query, task_id: taskId } });
+}
+
+async function selectRequestedTask() {
+  const taskId = taskIdFromQuery(route.query.task_id);
+  if (!taskId || selected.value?.task_id === taskId) return;
+  await selectTask(taskId);
+}
+
 async function cancelTask(taskId: string) {
   try {
     await ElMessageBox.confirm(`确认取消能力评测任务 ${taskId}？`, "取消确认", { type: "warning" });
@@ -258,6 +272,7 @@ async function cancelTask(taskId: string) {
 
 onMounted(async () => {
   await Promise.allSettled([loadDatasetMeta(), reload()]);
+  await selectRequestedTask();
   refreshTimer = window.setInterval(() => {
     if (document.visibilityState !== "visible" || activeReload) return;
     if (tasks.value.some((task) => !finalStatus(task.status)) || (selected.value && !finalStatus(selected.value.status))) {
@@ -269,17 +284,18 @@ onMounted(async () => {
 onUnmounted(() => {
   if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
 });
+
+watch(() => route.query.task_id, () => { void selectRequestedTask(); });
 </script>
 
 <template>
   <PageHero
     eyebrow="INTELLIGENCE EVAL"
     title="能力评测"
-    description="基于 EvalScope 的能力维度评估, 覆盖 BBH / MMLU / GSM8K / ARC 等公开数据集。适合在模型升级或大版本切换时建立能力基线。"
+    description="基于 EvalScope 评估模型能力；可选择的数据集以当前本地环境为准。"
   >
     <template #actions>
       <el-button size="small" :loading="refreshing" @click="reload()">刷新</el-button>
-      <el-button type="primary" :loading="submitting" @click="submit">启动能力评测</el-button>
     </template>
   </PageHero>
   <section class="view-grid">
@@ -333,11 +349,11 @@ onUnmounted(() => {
         <el-button size="small" @click="selectedIds = []">取消</el-button>
       </div>
       <el-table v-loading="loading" :data="filteredTasks" height="440" :row-key="(r: any) => r.task_id"
-        @selection-change="(rows: TaskLike[]) => (selectedIds = rows.map(r => r.task_id))" highlight-current-row @row-click="(row: any) => selectTask(row.task_id)">
-        <el-table-column prop="task_id" label="任务" min-width="210" show-overflow-tooltip />
-        <el-table-column prop="model_id" label="模型" width="140" show-overflow-tooltip />
-        <el-table-column label="状态" width="110"><template #default="{ row }"><StatusTag :status="row.status" /></template></el-table-column>
-        <el-table-column label="进度" min-width="180" show-overflow-tooltip><template #default="{ row }">{{ row.progress || '-' }}</template></el-table-column>
+        @selection-change="(rows: TaskLike[]) => (selectedIds = rows.map(r => r.task_id))" highlight-current-row @row-click="(row: any) => selectTaskAndSync(row.task_id)">
+        <el-table-column prop="task_id" label="任务" min-width="130" show-overflow-tooltip />
+        <el-table-column prop="model_id" label="模型" min-width="100" show-overflow-tooltip />
+        <el-table-column label="状态" width="90"><template #default="{ row }"><StatusTag :status="row.status" /></template></el-table-column>
+        <el-table-column label="进度" min-width="120" show-overflow-tooltip><template #default="{ row }">{{ row.progress || '-' }}</template></el-table-column>
       </el-table>
       <EmptyState
         v-if="shouldShowTaskListEmpty(loading, listError, filteredTasks.length)"
@@ -372,6 +388,17 @@ onUnmounted(() => {
           <el-link v-if="selected.report_path" type="primary" :href="`/api/intelligence/reports/${selected.task_id}`" target="_blank">打开 Markdown 报告</el-link>
         </div>
         <el-alert v-if="selected.error" class="mt" type="error" :closable="false" :title="JSON.stringify(selected.error)" />
+        <el-table v-if="(selected.normalized_result as any)?.dataset_results?.length" :data="(selected.normalized_result as any).dataset_results" class="mt">
+          <el-table-column label="数据集" min-width="120"><template #default="{ row }">{{ row.pretty_name || row.dataset }}</template></el-table-column>
+          <el-table-column label="类别" min-width="120"><template #default="{ row }">{{ row.categories?.join('、') || '—' }}</template></el-table-column>
+          <el-table-column label="得分" min-width="100"><template #default="{ row }">{{ row.score ?? '未取得分数' }}</template></el-table-column>
+        </el-table>
+        <el-table v-if="(selected.normalized_result as any)?.category_summaries?.length" :data="(selected.normalized_result as any).category_summaries" class="mt">
+          <el-table-column prop="category" label="类别" min-width="120" />
+          <el-table-column prop="dataset_count" label="数据集数" min-width="100" />
+          <el-table-column prop="scored_dataset_count" label="已评分数" min-width="100" />
+          <el-table-column label="平均分" min-width="100"><template #default="{ row }">{{ row.average_score ?? '未取得分数' }}</template></el-table-column>
+        </el-table>
         <EChart v-if="(selected.normalized_result as any)?.dataset_results?.length" class="mt" :option="scoreOption" height="360px" />
       </template>
     </el-card>

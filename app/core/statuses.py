@@ -1,7 +1,7 @@
 from typing import Literal
 
 MetricStatus = Literal["completed", "error", "skipped"]
-TaskStatus = Literal["completed", "error"]
+TaskStatus = Literal["queued", "running", "completed", "error", "interrupted"]
 Protocol = Literal["chat_completions", "responses"]
 
 STATUS_COMPLETED = "completed"

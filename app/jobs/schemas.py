@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from app.core.models import utc_now
 
 JobStatus = Literal["queued", "running", "completed", "failed", "interrupted"]
-JobType = Literal["suite", "intelligence", "stress"]
+JobType = Literal["suite", "intelligence", "stress", "basic"]
 
 
 def new_job_id() -> str:

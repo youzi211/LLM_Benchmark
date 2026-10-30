@@ -50,6 +50,7 @@ const themeLabel = computed(() => {
 
 const mainTabs = [
   { name: "overview", label: "概览", path: "/overview" },
+  { name: "tasks", label: "任务中心", path: "/tasks" },
   { name: "basic", label: "基础评测", path: "/basic" },
   { name: "stress", label: "压测评测", path: "/stress" },
   { name: "intelligence", label: "能力评测", path: "/intelligence" },
@@ -300,5 +301,11 @@ onUnmounted(() => {
   .lb-model-control :deep(.el-select) {
     flex: 1 1 220px;
   }
+
+  .lb-main-tabs {
+    display: none;
+  }
+
+  .lb-tabs { display: none; }
 }
 </style>

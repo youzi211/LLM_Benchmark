@@ -30,6 +30,7 @@ function pick(v: string) {
       :class="{ 'lb-fc__chip--on': modelValue === opt.value }"
       @click="pick(opt.value)"
       :type="'button'"
+      :aria-pressed="modelValue === opt.value"
     >
       <span>{{ opt.label }}</span>
       <span v-if="showCount && opt.count !== undefined" class="lb-fc__count">{{ opt.count }}</span>

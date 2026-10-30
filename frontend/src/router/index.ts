@@ -12,6 +12,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: "概览", tab: "overview" },
   },
   {
+    path: "/tasks",
+    name: "tasks",
+    component: () => import("@/views/TaskCenterView.vue"),
+    meta: { title: "任务中心", tab: "tasks" },
+  },
+  {
     path: "/basic",
     name: "basic",
     component: () => import("@/views/BasicView.vue"),

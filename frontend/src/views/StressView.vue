@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onUnmounted, ref } from "vue";
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useModelsStore } from "@/stores/models";
 import PageHero from "@/components/layouts/PageHero.vue";
 import StatusTag from "@/components/common/StatusTag.vue";
 import FilterChips from "@/components/common/FilterChips.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useToast } from "@/composables/useToast";
 import { ArrowDown, Download, Search } from "@element-plus/icons-vue";
 import {
@@ -19,6 +19,7 @@ import {
   stressStatusLabel,
 } from "@/stress/stressView";
 import { shouldShowTaskListEmpty, taskById } from "@/utils/taskListState";
+import { taskIdFromQuery } from "@/utils/taskCenter";
 import {
   cancelStressTask,
   fetchStressDatasets,
@@ -46,6 +47,7 @@ const submitting = ref(false);
 const tasks = ref<TaskLike[]>([]);
 const selected = ref<TaskLike | null>(null);
 const groupByConfig = ref(true);
+const chartTab = ref("requests");
 const selectedGroupKey = ref<string | null>(null);
 let refreshTimer: number | undefined;
 let activeReload: Promise<void> | null = null;
@@ -323,6 +325,7 @@ async function submit() {
   }
 }
 
+const route = useRoute();
 const router = useRouter();
 const toast = useToast();
 
@@ -406,6 +409,20 @@ async function selectTask(taskId: string, refreshList = false) {
   }
 }
 
+async function selectTaskAndSync(taskId: string) {
+  groupByConfig.value = false;
+  await selectTask(taskId);
+  if (selected.value?.task_id !== taskId || taskIdFromQuery(route.query.task_id) === taskId) return;
+  await router.replace({ query: { ...route.query, task_id: taskId } });
+}
+
+async function selectRequestedTask() {
+  const taskId = taskIdFromQuery(route.query.task_id);
+  if (!taskId || selected.value?.task_id === taskId) return;
+  groupByConfig.value = false;
+  await selectTask(taskId);
+}
+
 function selectGroup(task: TaskLike) {
   selectionVersion++;
   selectedGroupKey.value = String((task as any).group_key);
@@ -435,6 +452,7 @@ function pickDataset(name: string) {
 
 onMounted(async () => {
   await Promise.allSettled([loadDatasets(), reload()]);
+  await selectRequestedTask();
   refreshTimer = window.setInterval(() => {
     if (document.visibilityState !== "visible" || activeReload) return;
     if (tasks.value.some((task) => !finalStatus(task.status)) || (selected.value && !finalStatus(selected.value.status))) {
@@ -446,6 +464,8 @@ onMounted(async () => {
 onUnmounted(() => {
   if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
 });
+
+watch(() => route.query.task_id, () => { void selectRequestedTask(); });
 </script>
 
 <template>
@@ -456,7 +476,6 @@ onUnmounted(() => {
   >
     <template #actions>
       <el-button size="small" :loading="refreshing" @click="reload()">刷新</el-button>
-      <el-button type="primary" :loading="submitting" @click="submit">启动压测</el-button>
     </template>
   </PageHero>
   <section class="view-grid">
@@ -570,12 +589,12 @@ onUnmounted(() => {
       </div>
       <el-table v-loading="loading" :data="filteredTasks" height="440" :row-key="(r: any) => r.task_id" highlight-current-row
         @selection-change="(rows: TaskLike[]) => (selectedIds = rows.map(r => r.task_id))"
-        @row-click="(row: any) => row.grouped ? selectGroup(row) : selectTask(row.task_id)"
+        @row-click="(row: any) => row.grouped ? selectGroup(row) : selectTaskAndSync(row.task_id)"
         empty-text="">
         <el-table-column v-if="!groupByConfig" type="selection" width="40" />
         <el-table-column prop="task_id" label="任务" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">
-            <span v-if="row.grouped"><strong>{{ row.group_label }}</strong><small class="group-subtitle">{{ row.group_count }} 条记录 · {{ runsOf(row as any).length }} 个档位</small></span>
+            <span v-if="row.grouped"><strong>{{ row.group_label }}</strong><small class="group-subtitle">{{ row.group_config }} · {{ row.group_count }} 条记录 · {{ runsOf(row as any).length }} 个档位</small></span>
             <span v-else class="lb-tl__id">{{ row.task_id }}</span>
           </template>
         </el-table-column>
@@ -640,12 +659,14 @@ onUnmounted(() => {
           <div class="metric-tile"><span>成功请求</span><strong>{{ totals.success }}</strong><small>/ {{ totals.total }}</small></div>
           <div class="metric-tile" :class="{ 'metric-tile--danger': totals.failed > 0 }"><span>失败请求</span><strong>{{ totals.failed }}</strong><small>requests</small></div>
         </div>
-        <el-row v-if="runsOf(selected).length" :gutter="16" class="mt">
-          <el-col :xs="24" :lg="12"><EChart :option="requestThroughputOption" height="320px" /></el-col>
-          <el-col :xs="24" :lg="12"><EChart :option="tokenThroughputOption" height="320px" /></el-col>
-          <el-col :span="24"><EChart :option="latencyOption" height="320px" /></el-col>
-          <el-col :span="24"><EChart :option="successOption" height="300px" /></el-col>
-        </el-row>
+        <el-alert v-if="totals.failed > 0" class="mt" type="warning" :closable="false" show-icon
+          :title="`已有 ${totals.failed} 个请求失败，请检查负载档位和原始产物`" />
+        <el-tabs v-if="runsOf(selected).length" v-model="chartTab" class="mt">
+          <el-tab-pane label="请求吞吐" name="requests"><EChart v-if="chartTab === 'requests'" :option="requestThroughputOption" height="320px" /></el-tab-pane>
+          <el-tab-pane label="Token 吞吐" name="tokens"><EChart v-if="chartTab === 'tokens'" :option="tokenThroughputOption" height="320px" /></el-tab-pane>
+          <el-tab-pane label="延迟" name="latency"><EChart v-if="chartTab === 'latency'" :option="latencyOption" height="320px" /></el-tab-pane>
+          <el-tab-pane label="成功率" name="success"><EChart v-if="chartTab === 'success'" :option="successOption" height="300px" /></el-tab-pane>
+        </el-tabs>
         <el-table v-if="runsOf(selected).length" :data="runsOf(selected)" class="mt" border>
           <el-table-column label="负载档位" width="140"><template #default="{ row }">{{ formatStressLoad(row, selectedConfig).label }}</template></el-table-column>
           <el-table-column prop="total" label="请求" width="76" />
@@ -668,7 +689,7 @@ onUnmounted(() => {
             <span id="group-members-title">组内任务</span>
             <el-tag size="small" effect="plain">{{ groupMembers.length }} 条任务</el-tag>
           </div>
-          <el-table :data="groupMembers" size="small" row-key="task_id" @row-click="(row: TaskLike) => selectTask(row.task_id)">
+          <el-table :data="groupMembers" size="small" row-key="task_id" @row-click="(row: TaskLike) => selectTaskAndSync(row.task_id)">
             <el-table-column prop="task_id" label="任务 ID" min-width="180" show-overflow-tooltip />
             <el-table-column label="状态" width="105"><template #default="{ row }"><StatusTag :status="row.status" compact /></template></el-table-column>
             <el-table-column label="错误" min-width="170" show-overflow-tooltip>
@@ -676,7 +697,7 @@ onUnmounted(() => {
             </el-table-column>
             <el-table-column label="操作" width="130" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" @click.stop="selectTask(row.task_id)">查看</el-button>
+                <el-button link type="primary" @click.stop="selectTaskAndSync(row.task_id)">查看</el-button>
                 <el-button v-if="!finalStatus(row.status)" link type="danger" @click.stop="cancelTask(row.task_id)">取消</el-button>
               </template>
             </el-table-column>
