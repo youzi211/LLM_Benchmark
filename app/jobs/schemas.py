@@ -26,4 +26,5 @@ class JobRecord(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
     started_at: datetime | None = None
     completed_at: datetime | None = None
+    cancel_requested_at: datetime | None = None
     error: dict[str, Any] | None = None

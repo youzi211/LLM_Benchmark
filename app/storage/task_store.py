@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from app.core.models import TaskResult
-from app.storage.file_utils import read_json_file, write_json_file_atomic
+from app.storage.file_utils import read_json_file, write_json_file_atomic, save_record
 
 
 class TaskStore:
@@ -17,8 +17,7 @@ class TaskStore:
         return self.directory / f"{task_id}.json"
 
     def save(self, result: TaskResult) -> TaskResult:
-        write_json_file_atomic(self._path(result.task_id), result.model_dump(mode="json"))
-        return result
+        return save_record(self._path(result.task_id), result)
 
     def get(self, task_id: str) -> TaskResult | None:
         path = self._path(task_id)

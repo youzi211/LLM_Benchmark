@@ -1,5 +1,5 @@
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def now_monotonic() -> float:
@@ -13,4 +13,4 @@ def elapsed_ms(start: float) -> float:
 def timestamp_elapsed_ms(start: datetime, end: datetime | None) -> float | None:
     if end is None:
         return None
-    return round(max(0.0, (end - start).total_seconds() * 1000), 3)
+    return round(max(0.0, (end.astimezone(timezone.utc) - start.astimezone(timezone.utc)).total_seconds() * 1000), 3)

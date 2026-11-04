@@ -128,7 +128,8 @@ def test_overview_report_combines_gateway_intelligence_and_stress(temp_data_dirs
     assert "EvalScope 能力评测" in text
     assert "EvalScope 压测" in text
     assert "接入验收完成：共 2 项，异常 0 项" in text
-    assert "平均 Score 75.00" in text
+    assert "不同指标分别展示" in text
+    assert "平均 Score 75.00" not in text
     assert "最大无失败并发：5" in text
     assert "/api/reports/task_gateway" in text
     assert "/api/intelligence/reports/intel_task_demo" in text

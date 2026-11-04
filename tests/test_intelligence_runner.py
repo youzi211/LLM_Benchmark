@@ -77,7 +77,8 @@ async def test_intelligence_runner_runs_evalscope_in_process_and_generates_repor
     assert executor.calls[0]["limit"] == 3
     assert executor.calls[0]["eval_batch_size"] == 2
     assert task.normalized_result.dataset_results[0].dataset == "gsm8k"
-    assert task.normalized_result.dataset_results[0].score == 80.0
+    assert task.normalized_result.dataset_results[0].score == 0.8
+    assert task.normalized_result.dataset_results[0].display_multiplier == 100
     assert task.normalized_result.category_summaries
     assert task.report_path is not None
     report_text = open(task.report_path, encoding="utf-8").read()
@@ -103,6 +104,7 @@ async def test_intelligence_runner_maps_responses_endpoint(tmp_path):
 
 @pytest.mark.asyncio
 async def test_intelligence_runner_refreshes_evalscope_progress_file(tmp_path):
+    model_store = _model_store(tmp_path / "models.json")
     outputs_dir = tmp_path / "outputs"
     task_store = IntelligenceTaskStore(tmp_path / "intelligence_tasks")
     config_store = EvalScopeConfigStore(tmp_path / "evalscope.json")
@@ -132,7 +134,7 @@ async def test_intelligence_runner_refreshes_evalscope_progress_file(tmp_path):
         encoding="utf-8",
     )
     runner = IntelligenceRunner(
-        model_store=_model_store(tmp_path / "models.json"),
+        model_store=model_store,
         task_store=task_store,
         config_store=config_store,
         executor=FakeIntelligenceExecutor(),
@@ -285,10 +287,11 @@ async def test_intelligence_runner_cancel_marks_task_and_prevents_late_overwrite
 
     cancelled = await runner.cancel(task.task_id)
 
-    assert cancelled.status == "interrupted"
-    assert cancelled.progress == "任务已取消"
+    assert cancelled.status == "running"
+    assert cancelled.cancel_requested_at is not None
+    assert "取消中" in cancelled.progress
     job = next(item for item in job_executor.store.list(limit=10) if item.target_id == task.task_id)
-    assert job.status == "interrupted"
+    assert job.status == "running"
     executor.release.set()
     await job_executor.wait(job.job_id, timeout=1)
     assert task_store.get(task.task_id).status == "interrupted"

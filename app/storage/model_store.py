@@ -3,9 +3,18 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Any
+from functools import wraps
 
 from app.core.models import ModelConfig, ModelConfigCreate, ModelConfigUpdate, utc_now
-from app.storage.file_utils import read_json_file, write_json_file_atomic
+from app.storage.file_utils import read_json_file, write_json_file_atomic, file_lock
+
+
+def locked_write(method):
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with file_lock(self.path):
+            return method(self, *args, **kwargs)
+    return wrapped
 
 
 class ModelStore:
@@ -40,19 +49,24 @@ class ModelStore:
         value = self._load_data().get("analysis_model_id")
         return value if isinstance(value, str) else None
 
+    @locked_write
     def set_analysis_model_id(self, model_id: str | None) -> None:
         models = self._load()
         if model_id is not None and not any(m.id == model_id for m in models):
             raise KeyError(f"model_not_found:{model_id}")
         self._write(models, model_id)
 
-    def list(self) -> list[ModelConfig]:
-        return self._load()
+    def list(self, *, include_archived: bool = False) -> list[ModelConfig]:
+        return [m for m in self._load() if include_archived or m.archived_at is None]
 
     def get(self, model_id: str) -> ModelConfig | None:
         return next((m for m in self._load() if m.id == model_id), None)
 
+    @locked_write
     def create(self, config: ModelConfigCreate) -> ModelConfig:
+        from app.overview.model_evaluations import has_history
+        if has_history(config.id, self.path.parent):
+            raise ValueError(f"model_id_reserved:{config.id}")
         models = self._load()
         if any(m.id == config.id for m in models):
             raise ValueError(f"model_already_exists:{config.id}")
@@ -61,6 +75,7 @@ class ModelStore:
         self._save(models)
         return created
 
+    @locked_write
     def update(self, model_id: str, patch: ModelConfigUpdate) -> ModelConfig:
         models = self._load()
         for index, model in enumerate(models):
@@ -74,7 +89,11 @@ class ModelStore:
                 return updated
         raise KeyError(f"model_not_found:{model_id}")
 
+    @locked_write
     def delete(self, model_id: str) -> bool:
+        from app.overview.model_evaluations import has_history
+        if has_history(model_id, self.path.parent):
+            raise ValueError(f"model_has_history:{model_id}")
         models = self._load()
         filtered = [m for m in models if m.id != model_id]
         if len(filtered) == len(models):
@@ -84,3 +103,15 @@ class ModelStore:
         else:
             self._save(filtered)
         return True
+
+
+    @locked_write
+    def archive(self, model_id: str, *, restore: bool = False) -> ModelConfig:
+        models = self._load()
+        for i, model in enumerate(models):
+            if model.id == model_id:
+                updated = model.model_copy(update={"archived_at": None if restore else utc_now(), "updated_at": utc_now()})
+                models[i] = updated
+                self._save(models)
+                return updated
+        raise KeyError(model_id)

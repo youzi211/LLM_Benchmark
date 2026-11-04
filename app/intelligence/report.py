@@ -38,8 +38,7 @@ def write_intelligence_report(task: IntelligenceTask, reports_dir: Path | None =
     if result and result.dataset_results:
         scored = [item.score for item in result.dataset_results if item.score is not None]
         if scored:
-            avg = sum(scored) / len(scored)
-            lines.append(f"- 已获取 {len(result.dataset_results)} 个数据集结果，其中 {len(scored)} 个带分数，平均分：`{avg:.4f}`。")
+            lines.append(f"- 已获取 {len(result.dataset_results)} 个数据集结果，其中 {len(scored)} 个带主指标；不同指标不合成为平均分。")
         else:
             lines.append(f"- 已获取 {len(result.dataset_results)} 个数据集结果，但未提取到统一 score 字段。")
     elif task.status in {"pending", "running"}:
@@ -86,13 +85,13 @@ def write_intelligence_report(task: IntelligenceTask, reports_dir: Path | None =
 
     lines.append("## 3. 数据集分数表")
     lines.append("")
-    lines.append("| 数据集 | 展示名 | 分类 | 需要 Judge | Score |")
-    lines.append("|---|---|---|---|---:|")
+    lines.append("| 数据集 | 展示名 | 分类 | 需要 Judge | Score | 主指标 | 单位 | 样本数 |")
+    lines.append("|---|---|---|---|---:|---|---|---:|")
     if result and result.dataset_results:
         for item in result.dataset_results:
             lines.append(
                 f"| `{_cell(item.dataset)}` | {_cell(item.pretty_name or item.dataset)} | {_cell(', '.join(item.categories) or '-')} | "
-                f"{_cell(item.needs_judge)} | {_score(item.score)} |"
+                f"{_cell(item.needs_judge)} | {_score(item.score * item.display_multiplier if item.score is not None else None)} | {_cell(item.metric_id or '未知')} | {_cell(item.unit or '未知')} | {_cell(item.sample_count)} |"
             )
     else:
         lines.append("| - | - | - | - | - |")

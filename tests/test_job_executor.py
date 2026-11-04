@@ -88,8 +88,9 @@ async def test_job_executor_cancel_running_sync_job_marks_interrupted(tmp_path):
     cancelled = await executor.cancel(job.job_id)
 
     assert cancelled is not None
-    assert cancelled.status == "interrupted"
-    assert store.get(job.job_id).status == "interrupted"
+    assert cancelled.status == "running"
+    assert cancelled.cancel_requested_at is not None
+    assert store.get(job.job_id).status == "running"
     release.set()
     finished = await executor.wait(job.job_id, timeout=1)
     assert finished is not None

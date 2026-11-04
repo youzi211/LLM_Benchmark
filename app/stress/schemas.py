@@ -219,6 +219,10 @@ class StressNormalizedResult(BaseModel):
 
 
 class StressTask(BaseModel):
+    cancel_requested_at: datetime | None = None
+    execution_snapshot: dict[str, Any] | None = None
+    job_id: str | None = None
+
     model_config = ConfigDict(protected_namespaces=())
 
     task_id: str

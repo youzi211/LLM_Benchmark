@@ -76,6 +76,13 @@ class IntelligenceDatasetResult(BaseModel):
     categories: list[str] = Field(default_factory=list)
     needs_judge: bool | None = None
     score: float | None = None
+    metric_id: str | None = None
+    unit: str | None = None
+    direction: str | None = None
+    sample_count: int | None = None
+    display_multiplier: float = 1.0
+    complete: bool | None = None
+    unavailable_reason: str | None = None
 
 
 class IntelligenceCategorySummary(BaseModel):
@@ -122,6 +129,10 @@ class IntelligenceNormalizedResult(BaseModel):
 
 
 class IntelligenceTask(BaseModel):
+    cancel_requested_at: datetime | None = None
+    execution_snapshot: dict[str, Any] | None = None
+    job_id: str | None = None
+
     model_config = ConfigDict(protected_namespaces=())
 
     task_id: str

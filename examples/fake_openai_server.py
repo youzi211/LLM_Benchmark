@@ -52,6 +52,9 @@ async def chat_completions(request: Request, authorization: str | None = Header(
             yield "data: [DONE]\n\n"
         return StreamingResponse(events(), media_type="text/event-stream")
     return {
+        "id": "chatcmpl-local-fake",
+        "object": "chat.completion",
+        "model": body.get("model", "fake"),
         "choices": [{"message": {"content": content}, "finish_reason": "stop"}],
         "usage": {"prompt_tokens": 10, "completion_tokens": 12, "total_tokens": 22},
     }

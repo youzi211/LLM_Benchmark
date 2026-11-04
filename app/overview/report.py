@@ -72,12 +72,6 @@ def _gateway_component(task: TaskResult | None, requested_id: str | None) -> Ove
     )
 
 
-def _average_score(values: list[float]) -> float | None:
-    if not values:
-        return None
-    return sum(values) / len(values)
-
-
 def _intelligence_component(task: IntelligenceTask | None, requested_id: str | None) -> OverviewComponent:
     if task is None:
         return OverviewComponent(
@@ -92,19 +86,14 @@ def _intelligence_component(task: IntelligenceTask | None, requested_id: str | N
     result = task.normalized_result
     dataset_count = len(result.dataset_results) if result else 0
     scored = [item.score for item in result.dataset_results if item.score is not None] if result else []
-    avg_score = _average_score(scored)
+    avg_score = None
     categories = result.category_summaries if result else []
     summary = "能力评测尚未形成标准化结果。"
     if result:
-        summary = f"能力评测{task.status}：数据集 {dataset_count} 个，有分数 {len(scored)} 个，平均 Score {_fmt(avg_score)}。"
+        summary = f"能力评测{task.status}：数据集 {dataset_count} 个，有分数 {len(scored)} 个；不同指标分别展示。"
     highlights = []
-    if categories:
-        top_categories = sorted(
-            [item for item in categories if item.average_score is not None],
-            key=lambda item: item.average_score or 0,
-            reverse=True,
-        )[:3]
-        highlights.extend([f"{item.category}: {_fmt(item.average_score)}" for item in top_categories])
+    if result:
+        highlights = [f"{item.dataset}: {_fmt(item.score * item.display_multiplier if item.score is not None else None)} {item.unit or '单位未知'}" for item in result.dataset_results[:3]]
     warnings = []
     if task.status == "failed" and task.error:
         warnings.append(str(task.error.get("message") or task.error))

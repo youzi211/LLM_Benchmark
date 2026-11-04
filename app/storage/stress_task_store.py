@@ -5,7 +5,7 @@ import os
 from collections.abc import Iterator
 from pathlib import Path
 
-from app.storage.file_utils import read_json_file, write_json_file_atomic
+from app.storage.file_utils import read_json_file, write_json_file_atomic, save_record
 from app.stress.schemas import StressTask
 from app.utils.timing import timestamp_elapsed_ms
 from app.utils.json_sanitize import make_json_safe
@@ -19,8 +19,7 @@ class StressTaskStore:
         return self.directory / f"{task_id}.json"
 
     def save(self, task: StressTask) -> StressTask:
-        write_json_file_atomic(self._path(task.task_id), make_json_safe(task.model_dump(mode="json")))
-        return task
+        return save_record(self._path(task.task_id), task)
 
     def get(self, task_id: str) -> StressTask | None:
         path = self._path(task_id)

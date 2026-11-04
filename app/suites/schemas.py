@@ -236,6 +236,9 @@ class SuiteStep(BaseModel):
 
 
 class SuiteRun(BaseModel):
+    cancel_requested_at: datetime | None = None
+    execution_snapshot: dict[str, Any] | None = None
+
     suite_id: str = Field(default_factory=new_suite_id)
     model_id: str
     title: str | None = None

@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Callable
 
 from app.adapters.base import BaseAdapter, create_adapter
-from app.core.models import MetricResult, TaskResult, utc_now
+from app.core.snapshots import execution_snapshot
+from app.core.models import ModelConfig, MetricResult, TaskResult, utc_now
 from app.core.registry import resolve_metric_ids
 from app.core.statuses import SUPPORTED_PROTOCOLS
 from app.metrics.probes import (
@@ -47,6 +48,7 @@ class TaskRunner:
         plan_id: str = "gateway_acceptance_v1",
         metric_ids: list[str] | None = None,
         task_id: str | None = None,
+        model_config: ModelConfig | None = None,
     ) -> TaskResult:
         started_at = utc_now()
         start = now_monotonic()
@@ -71,7 +73,7 @@ class TaskRunner:
             result.duration_ms = None
             result.error = None
         self.task_store.save(result)
-        model = self.model_store.get(model_id)
+        model = model_config or self.model_store.get(model_id)
         if model is None:
             result.status = "error"
             result.error = {"code": "model_not_found", "message": f"Model config not found: {model_id}"}
@@ -79,7 +81,7 @@ class TaskRunner:
             result.duration_ms = elapsed_ms(start)
             self.task_store.save(result)
             return result
-        if not model.enabled:
+        if not model.enabled or model.archived_at is not None:
             result.status = "error"
             result.error = {"code": "model_disabled", "message": f"Model config is disabled: {model_id}"}
             result.finished_at = utc_now()
@@ -89,6 +91,9 @@ class TaskRunner:
         result.model_config_name = model.name
         result.upstream_model_name = model.model
         result.protocol = model.protocol
+        result.execution_snapshot = result.execution_snapshot or execution_snapshot(model, "basic", {
+            "plan_id": plan_id, "metric_ids": resolved, "concurrency_levels": model.concurrency_levels,
+            "declared_context_tokens": model.declared_context_tokens, "declared_max_output_tokens": model.declared_max_output_tokens})
 
         if model.protocol not in SUPPORTED_PROTOCOLS:
             result.status = "error"

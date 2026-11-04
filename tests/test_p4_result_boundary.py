@@ -166,7 +166,7 @@ async def test_runners_keep_full_raw_result_at_task_level_and_save_output_dir(tm
 
     stress_output_dir = tmp_path / "outputs" / "stress"
     stress_runner = StressRunner(
-        model_store=_model_store(tmp_path / "stress-models.json"),
+        model_store=intelligence_runner.model_store,
         task_store=StressTaskStore(tmp_path / "stress_tasks"),
         executor=BoundaryStressExecutor(stress_output_dir),
         reports_dir=tmp_path / "stress-reports",

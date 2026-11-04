@@ -88,8 +88,10 @@ def get_evalscope_config():
 
 @router.put("/evalscope/config")
 def update_evalscope_config(config: EvalScopeConfig):
+    from app.storage.file_utils import file_lock
     store = EvalScopeConfigStore()
-    saved = store.save(_merge_evalscope_config_update(store.load(), config))
+    with file_lock(store.path):
+        saved = store.save(_merge_evalscope_config_update(store.load(), config))
     return _public_evalscope_config(saved)
 
 
