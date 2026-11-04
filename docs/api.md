@@ -621,7 +621,7 @@ GET /api/tasks?limit=20
 {
   "status": "ok",
   "mode": "in_process",
-  "evalscope_version": "1.10.0"
+  "evalscope_version": "1.14.1"
 }
 ```
 
@@ -644,7 +644,7 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 |---|---:|---|
 | `judge_model_config_id` | string/null | LLM-as-Judge 使用的已保存模型配置 ID；为空时回退到 `data/models.json` 顶层 `analysis_model_id`。 |
 | `judge_generation_config` | object | Judge 生成参数，例如 `temperature`、`max_tokens`。 |
-| `judge_worker_num` | integer | Judge 并发 worker 数，范围 1-128。 |
+| `judge_worker_num` | integer | Judge 数据集的兼容并发设置，范围 1-128；映射到原生 eval_batch_size，同时影响推理与 Judge，任务显式值优先。 |
 | `sandbox_enabled` | boolean | 是否启用 EvalScope 代码执行 sandbox。 |
 | `sandbox_type` | string | sandbox engine，默认 `docker`。 |
 | `sandbox_manager_config` | object | 透传给 EvalScope sandbox manager 的配置，例如 `{ "base_url": "http://10.182.17.2:1234" }`。 |
@@ -1393,3 +1393,56 @@ $overview = Invoke-RestMethod -Uri 'http://127.0.0.1:8020/api/overview/reports' 
 Invoke-WebRequest -Uri "http://127.0.0.1:8020/api/overview/reports/$($overview.overview_id)/markdown" -OutFile "overview.md"
 ```
 
+
+
+## 模型工作台 API
+
+- GET `/api/model-evaluations`：search、include_archived（默认 false）、page（默认 1）、page_size（默认 25，最大 100）；返回 total、items。
+- GET `/api/model-evaluations/{model_id}`：按 basic、intelligence、stress 返回 latest_success、latest_attempt、partial_result、task_count；coverage 为完整成功链路数。
+- GET `/api/model-evaluations/{model_id}/history`：支持 lane、page、page_size；结果带 task_url、report_url、脱敏执行快照与小型指标表。
+- POST `/api/model-comparisons`：传入 2–4 个唯一 model_ids，及可选 task_overrides（模型 ID → 链路 → 任务 ID）；只能选择属于该模型和链路的终态任务。返回 models、逐链路 comparability（equal / different / unknown）及原因。
+- POST `/api/models/{model_id}/archive`：归档模型，保留密钥配置及历史，禁止新建评测。默认分析模型、显式 Judge 或启用的定时任务仍引用该模型时返回 409 model_in_use 及 references。
+- POST `/api/models/{model_id}/restore`：恢复模型，保留归档前 enabled 状态。
+
+模型 ID 存在历史记录时，DELETE 模型返回 409 model_has_history；重建已删除但有历史的 ID 返回 409 model_id_reserved。GET 模型列表新增 include_archived，默认只返回未归档配置。只读历史模型仍可通过模型工作台查询和对比。
+
+latest_success 选择完整、有有效结果的 completed 任务，以完成时间和任务 ID 排序；新失败、运行中及部分执行不会覆盖它。缺少完整成功结果时，partial_result 单独提供部分证据。指标差不等于执行失败，包括压测请求全失败的测量结果，仍保留请求计数和错误诊断。
+
+取消同步评测返回原非终态状态及 cancel_requested_at，表示取消中；运行线程退出后才写 interrupted 并释放并发名额。排队任务立即 interrupted。历史结果 GET 不补写报告或修改任务文件。
+
+EvalScope 固定 1.14.1；judge_worker_num 是兼容配置名，在 Judge 数据集映射为 eval_batch_size，同时影响推理与评分并发。任务显式 eval_batch_size 优先。
+
+### 工作台响应口径
+
+模型摘要包含 `model_id`、`name`、`upstream_model`、`protocol`、`enabled`、`archived`、`historical_only`、`coverage`、`lanes`。名称只作展示，同名模型按 ID 独立统计。仅有套件历史的 ID 也保留为历史模型；不会自动恢复其配置或凭据。
+
+每条链路的证据结构：
+
+| 字段 | 含义 |
+|---|---|
+| `task_id` / `model_id` / `lane` | 原任务归属及链路 |
+| `status` / `cancel_requested_at` | 执行状态与取消请求；非终态有取消标记时展示“取消中” |
+| `created_at` / `completed_at` | 原记录时间，缺失为 null；不填入查询时刻 |
+| `timestamp_timezone_known` | 原完成时间是否包含时区；旧无时区时间仅在排序时按服务本地时间解释，不改写文件 |
+| `valid` / `complete` | 是否存在可用证据、所选任务是否完整；不表示模型质量达标 |
+| `metrics` | 小型明细：网关检查结果、数据集主指标或压测负载点 |
+| `snapshot` / `conditions_known` | 提交时脱敏执行快照；旧任务缺失时为 null / false |
+| `load_mode` | 压测 open / closed / unknown，其他链路为 null |
+| `task_url` / `report_url` | 原任务及报告；无报告时 report_url 为 null |
+
+能力指标保留 `metric_id`、原始 `score`、`unit`、`direction`、`display_multiplier`、`sample_count`、`complete` 和 `unavailable_reason`；显示值为 score × display_multiplier。缺少声明主指标时不猜测总分，v2 报告不从顶层 score 取值。未知单位、样本量及方向保持 null。原始 EvalScope 报告仍只在任务归档和输出目录保存。
+
+### 指定历史结果对比
+
+```json
+{
+  "model_ids": ["candidate-a", "candidate-b"],
+  "task_overrides": {
+    "candidate-a": {"intelligence": "intel_task_example"}
+  }
+}
+```
+
+未指定的链路使用该模型默认成功结果，若无完整成功则采用可用部分结果。响应各链路增加 `selected`，并返回 `comparability`：`equal` 表示已知条件一致，`different` 表示检测到条件差异，`unknown` 表示缺结果、缺快照或版本信息不足。比较包含数据集、采样、生成参数、Judge、沙箱、负载、协议及超时；不对不同单位合成能力分，不产生模型总排名。
+
+重复模型、数量不在 2–4 之间、覆盖项不属于选中模型、任务归属或链路不符、任务尚未结束均返回 422。模型及历史均不存在返回 404。API 返回数值、条件和来源，不返回 ECharts 配置。
