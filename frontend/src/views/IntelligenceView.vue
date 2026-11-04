@@ -291,7 +291,7 @@ async function cancelTask(taskId: string) {
   try {
     await ElMessageBox.confirm(`确认取消能力评测任务 ${taskId}？`, "取消确认", { type: "warning" });
     await cancelIntelligenceTask(taskId);
-    ElMessage.success("已取消");
+    ElMessage.success("已提交取消请求");
     await reload();
     await selectTask(taskId, false);
   } catch (err) {
@@ -385,7 +385,7 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
         @selection-change="(rows: TaskLike[]) => selectedIds = rows.map(row => row.task_id)" highlight-current-row @row-click="(row: any, column) => column?.type !== 'selection' && selectTaskAndSync(row.task_id)">
         <el-table-column type="selection" width="36" :reserve-selection="true" />
         <el-table-column prop="task_id" label="任务 / 模型" min-width="130" show-overflow-tooltip><template #default="{ row }"><button type="button" class="lb-eval-task-link" :aria-label="`查看任务 ${row.task_id}`" @click.stop="selectTaskAndSync(row.task_id)"><strong>{{ modelName(row.model_id) }}</strong><small>{{ row.task_id }}</small></button></template></el-table-column>
-        <el-table-column label="状态" width="84"><template #default="{ row }"><StatusTag :status="row.status" compact /></template></el-table-column>
+        <el-table-column label="状态" width="84"><template #default="{ row }"><StatusTag :cancelling="Boolean(row.cancel_requested_at)" :status="row.status" compact /></template></el-table-column>
         <el-table-column label="数据集" width="76"><template #default="{ row }"><span class="lb-eval-numeric">{{ Array.isArray(row.datasets) ? row.datasets.length + ' 个' : '—' }}</span></template></el-table-column>
         <template #empty><EmptyState
           v-if="shouldShowTaskListEmpty(loading, listError, filteredTasks.length)" :title="hasFilters ? '无匹配任务' : '暂无能力评测任务'"
@@ -395,7 +395,7 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
       </el-table>
     </template>
 
-    <template #detail-actions><StatusTag v-if="selected" :status="selected.status ?? 'pending'" /><el-button v-if="selected && !finalStatus(selected.status)" size="small" type="danger" plain @click="cancelTask(selected.task_id)">取消任务</el-button></template>
+    <template #detail-actions><StatusTag v-if="selected" :cancelling="Boolean(selected.cancel_requested_at)" :status="selected.status ?? 'pending'" /><el-button v-if="selected && !finalStatus(selected.status)" size="small" type="danger" plain @click="cancelTask(selected.task_id)">取消任务</el-button></template>
     <template #detail>
       <EmptyState v-if="!selected" title="尚未选择任务" description="选择一条能力评测任务，查看进度、数据集得分与分类结果。" />
       <template v-else>

@@ -398,7 +398,7 @@ onBeforeUnmount(stopPolling);
           </template>
         </el-table-column>
         <el-table-column label="状态" width="84">
-          <template #default="{ row }"><StatusTag :status="row.status" compact /></template>
+          <template #default="{ row }"><StatusTag :cancelling="Boolean(row.cancel_requested_at)" :status="row.status" compact /></template>
         </el-table-column>
         <el-table-column label="耗时" width="76">
           <template #default="{ row }">
@@ -412,7 +412,7 @@ onBeforeUnmount(stopPolling);
     </template>
 
     <template #detail-actions>
-      <StatusTag v-if="selected" :status="selected.status ?? 'pending'" />
+      <StatusTag v-if="selected" :cancelling="Boolean(selected.cancel_requested_at)" :status="selected.status ?? 'pending'" />
       <el-button v-if="isActiveTask(selected)" size="small" type="danger" plain @click="cancelSelected">取消任务</el-button>
     </template>
     <template #detail>

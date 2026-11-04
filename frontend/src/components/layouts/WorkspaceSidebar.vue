@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRoute } from "vue-router";
-import { Brush, Calendar, Connection, Cpu, DataAnalysis, DataLine, Grid, Operation, Switch, Tickets } from "@element-plus/icons-vue";
+import { Brush, Calendar, Connection, Cpu, DataAnalysis, DataLine, Grid, Setting, Operation, Switch, Tickets } from "@element-plus/icons-vue";
 
 const route = useRoute();
 const emit = defineEmits<{ navigate: [] }>();
@@ -9,7 +9,9 @@ const groups = [
   {
     label: "工作空间",
     items: [
-      { label: "概览", path: "/overview", icon: Grid },
+      { label: "模型工作台", path: "/models", icon: Grid },
+      { label: "模型对比", path: "/model-compare", icon: Switch },
+      { label: "运行概览", path: "/overview", icon: DataAnalysis },
       { label: "任务中心", path: "/tasks", icon: Tickets },
       { label: "任务对比", path: "/compare", icon: Switch },
     ],
@@ -29,12 +31,13 @@ const groups = [
       { label: "定时任务", path: "/schedules", icon: Calendar },
     ],
   },
+  { label: "系统配置", items: [{ label: "Judge LLM / 沙箱", path: "/settings/evaluation", icon: Setting }] },
 ];
 </script>
 
 <template>
   <div class="lb-workspace-sidebar">
-    <router-link to="/overview" class="lb-workspace-brand" aria-label="LLM Benchmark 首页" @click="emit('navigate')">
+    <router-link to="/models" class="lb-workspace-brand" aria-label="LLM Benchmark 首页" @click="emit('navigate')">
       <span class="lb-workspace-brand__mark"><el-icon><DataAnalysis /></el-icon></span>
       <span class="lb-workspace-brand__copy">
         <strong>Benchmark<span>LLM</span></strong>
@@ -50,8 +53,8 @@ const groups = [
           :key="item.path"
           :to="item.path"
           class="lb-workspace-nav__link"
-          :class="{ 'is-active': route.path === item.path }"
-          :aria-current="route.path === item.path ? 'page' : undefined"
+          :class="{ 'is-active': (route.path === item.path || (item.path === '/models' && route.path.startsWith('/models/'))) }"
+          :aria-current="(route.path === item.path || (item.path === '/models' && route.path.startsWith('/models/'))) ? 'page' : undefined"
           @click="emit('navigate')"
         >
           <el-icon aria-hidden="true"><component :is="item.icon" /></el-icon>

@@ -3,8 +3,12 @@ import { createRouter, createWebHashHistory, type RouteRecordRaw } from "vue-rou
 const routes: RouteRecordRaw[] = [
   {
     path: "/",
-    redirect: "/overview",
+    redirect: "/models",
   },
+  { path: "/models", name: "models", component: () => import("@/views/ModelsView.vue"), meta: { title: "模型工作台" } },
+  { path: "/models/:modelId", name: "model-detail", component: () => import("@/views/ModelDetailView.vue"), meta: { title: "模型详情" } },
+  { path: "/model-compare", name: "model-compare", component: () => import("@/views/ModelCompareView.vue"), meta: { title: "模型对比" } },
+  { path: "/settings/evaluation", name: "evaluation-settings", component: () => import("@/views/EvaluationSettingsView.vue"), meta: { title: "评测环境" } },
   {
     path: "/overview",
     name: "overview",

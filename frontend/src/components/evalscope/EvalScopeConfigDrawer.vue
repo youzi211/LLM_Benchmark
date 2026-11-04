@@ -205,6 +205,7 @@ watch(
   (open) => {
     if (open) void loadConfig();
   },
+  { immediate: true },
 );
 </script>
 
@@ -234,7 +235,7 @@ watch(
           <div class="inline-control-row">
             <el-select v-model="form.judge_model_config_id" clearable placeholder="使用默认 analysis_model 或选择模型" class="full-width" :loading="store.loading">
               <el-option label="使用默认 analysis_model" value="" />
-              <el-option v-for="m in store.models" :key="m.id" :label="m.name ?? m.model ?? m.id" :value="m.id">
+              <el-option v-for="m in store.models" :key="m.id" :label="`${m.id} · ${m.name || m.model}`" :value="m.id">
                 <span>{{ m.name ?? m.model ?? m.id }}</span>
                 <span class="muted option-side">{{ m.id }}</span>
               </el-option>
@@ -245,8 +246,8 @@ watch(
         </el-form-item>
         <el-row :gutter="12">
           <el-col :span="12">
-            <el-form-item label="Judge worker 数">
-              <el-input-number v-model="form.judge_worker_num" :min="1" :max="128" class="full-width" />
+            <el-form-item label="Judge 数据集评测并发">
+              <el-input-number v-model="form.judge_worker_num" :min="1" :max="128" class="full-width" /><div class="form-help">推理与 Judge 共享并发；任务显式设置的 eval_batch_size 优先。</div>
             </el-form-item>
           </el-col>
           <el-col :span="12">

@@ -13,7 +13,7 @@ const router = useRouter();
 interface Tab { name: string; label: string; path: string; icon: unknown; }
 
 const tabs: Tab[] = [
-  { name: "overview",     label: "概览", path: "/overview",     icon: Odometer },
+  { name: "models",     label: "模型", path: "/models",     icon: Odometer },
   { name: "tasks",        label: "任务", path: "/tasks",        icon: Tickets },
   { name: "suites", label: "新建", path: "/suites", icon: VideoPlay },
   { name: "schedules", label: "定时", path: "/schedules", icon: Calendar },
@@ -45,6 +45,8 @@ function go(t: Tab) {
         <el-icon class="lb-mobile-nav__icon"><MoreFilled /></el-icon><span>更多</span>
       </button>
       <template #dropdown><el-dropdown-menu>
+        <el-dropdown-item command="/model-compare">模型对比</el-dropdown-item>
+        <el-dropdown-item command="/settings/evaluation">Judge LLM / 沙箱</el-dropdown-item>
         <el-dropdown-item command="/basic">基础评测</el-dropdown-item>
         <el-dropdown-item command="/stress">压测评测</el-dropdown-item>
         <el-dropdown-item command="/intelligence">能力评测</el-dropdown-item>

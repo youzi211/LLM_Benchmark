@@ -128,7 +128,7 @@ onUnmounted(() => {
               aria-label="当前模型"
               @change="onSelectModel"
             >
-              <el-option v-for="m in store.models" :key="m.id" :label="m.name ?? m.model ?? m.id" :value="m.id" />
+              <el-option v-for="m in store.models" :key="m.id" :label="`${m.id} · ${m.name || m.model}`" :value="m.id" />
             </el-select>
             <el-tooltip content="刷新模型" placement="bottom">
               <el-button text circle :icon="Refresh" :loading="store.loading" aria-label="刷新模型" @click="store.load(true)" />
@@ -172,10 +172,12 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.lb-shell--workspace { display: grid; grid-template-columns: 224px minmax(0, 1fr); align-items: start; }
-.lb-desktop-sidebar { position: sticky; top: 0; height: 100dvh; overflow-y: auto; background: var(--lb-surface); border-right: 1px solid var(--lb-border); }
-.lb-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 100vh; }
+.lb-shell--workspace { display: grid; grid-template-columns: 224px minmax(0, 1fr); height: 100dvh; min-height: 0; overflow: hidden; }
+.lb-desktop-sidebar { height: 100%; min-height: 0; overflow-y: auto; background: var(--lb-surface); border-right: 1px solid var(--lb-border); }
+.lb-workspace { display: flex; flex-direction: column; min-width: 0; height: 100%; min-height: 0; overflow: hidden; }
 .lb-workspace-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 72px; padding: 16px 32px; background: var(--lb-surface); border-bottom: 1px solid var(--lb-border); }
+.lb-main { min-height: 0; overflow: auto; overscroll-behavior: contain; max-width: none; }
+.lb-workspace-header, .lb-workspace-footer { flex-shrink: 0; }
 .lb-header-leading, .lb-breadcrumb, .lb-workspace-toolbar, .lb-model-picker, .lb-toolbar-utilities { display: flex; align-items: center; }
 .lb-header-leading { gap: 12px; flex-shrink: 0; }
 .lb-breadcrumb { gap: 12px; color: var(--lb-fg-strong); font-size: 12px; white-space: nowrap; }
