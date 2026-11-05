@@ -9,6 +9,7 @@ const props = withDefaults(defineProps<{
   status: Status;
   /** 可选覆盖显示文字, 默认用 status 本身 */
   label?: string;
+  cancelling?: boolean;
   /** 是否显示左侧小圆点 (默认 true) */
   showDot?: boolean;
   /** 紧凑模式 (padding 减半) */
@@ -39,7 +40,7 @@ const LABELS: Record<string, string> = {
 <template>
   <span class="lb-status-tag" :class="{ 'lb-status-tag--compact': compact }" :style="{ color: colorOf(status).color, background: colorOf(status).bg }">
     <span v-if="showDot" class="lb-status-tag__dot" :style="{ background: colorOf(status).color }" />
-    <span>{{ label ?? LABELS[status] ?? status }}</span>
+    <span>{{ cancelling && ['pending', 'queued', 'running'].includes(status) ? '取消中' : label ?? LABELS[status] ?? status }}</span>
   </span>
 </template>
 

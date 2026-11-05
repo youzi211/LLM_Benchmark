@@ -21,7 +21,7 @@ class JobExecutor:
         default_max = max_concurrency or int(os.getenv("LLM_BENCHMARK_JOB_MAX_CONCURRENCY", "2"))
         self.max_concurrency = default_max
         self.suite_max_concurrency = int(os.getenv("LLM_BENCHMARK_SUITE_JOB_MAX_CONCURRENCY", str(default_max)))
-        self.evalscope_max_concurrency = int(os.getenv("LLM_BENCHMARK_EVALSCOPE_JOB_MAX_CONCURRENCY", str(default_max)))
+        self.evalscope_max_concurrency = int(os.getenv("LLM_BENCHMARK_EVALSCOPE_JOB_MAX_CONCURRENCY", "1"))
         self._suite_semaphore = asyncio.Semaphore(self.suite_max_concurrency)
         self._evalscope_semaphore = asyncio.Semaphore(self.evalscope_max_concurrency)
         self._basic_semaphore = asyncio.Semaphore(default_max)
@@ -44,6 +44,7 @@ class JobExecutor:
             return self._run_sync_without_loop(job, func)
         task = loop.create_task(self._run_job(job.job_id, lambda: asyncio.to_thread(func)))
         self._tasks[job.job_id] = task
+        task.add_done_callback(lambda _: self._tasks.pop(job.job_id, None))
         return job
 
     def submit_async(
@@ -64,6 +65,7 @@ class JobExecutor:
             return self.store.get(job.job_id) or job
         task = loop.create_task(self._run_job(job.job_id, func))
         self._tasks[job.job_id] = task
+        task.add_done_callback(lambda _: self._tasks.pop(job.job_id, None))
         return job
 
     def _semaphore_for(self, job_type: JobType) -> asyncio.Semaphore:
@@ -97,11 +99,20 @@ class JobExecutor:
             try:
                 result = func()
                 if asyncio.iscoroutine(result) or isinstance(result, asyncio.Future):
-                    await result
+                    if job.job_type == "basic":
+                        await result
+                    else:
+                        worker = asyncio.ensure_future(result)
+                        try:
+                            await asyncio.shield(worker)
+                        except asyncio.CancelledError:
+                            # Python cannot stop a running thread; retain its slot until it exits.
+                            await asyncio.shield(worker)
+                            raise
                 job = self.store.get(job_id) or job
                 if job.status == "interrupted":
                     return
-                job.status = "completed"
+                job.status = "interrupted" if job.cancel_requested_at else "completed"
                 job.completed_at = utc_now()
                 job.error = None
                 self.store.save(job)
@@ -129,13 +140,16 @@ class JobExecutor:
         if job.status in {"completed", "failed", "interrupted"}:
             return job
 
-        job.status = "interrupted"
-        job.completed_at = utc_now()
+        job.cancel_requested_at = job.cancel_requested_at or utc_now()
+        immediate = job.status == "queued" or job.job_type == "basic"
+        if immediate:
+            job.status = "interrupted"
+            job.completed_at = utc_now()
         job.error = {"message": "job cancelled by user", "type": "CancelledError"}
         self.store.save(job)
 
         task = self._tasks.get(job_id)
-        if task is not None and not task.done():
+        if immediate and task is not None and not task.done():
             task.cancel()
             # Give the task one event-loop turn to run its cancellation handler.
             await asyncio.sleep(0)
@@ -168,7 +182,7 @@ class JobExecutor:
                 pass
         for task in still_pending:
             task.cancel()
-        for job in self.store.list(limit=1000):
+        for job in self.store.list(limit=None):
             if job.status in {"queued", "running"}:
                 job.status = "interrupted"
                 job.completed_at = utc_now()

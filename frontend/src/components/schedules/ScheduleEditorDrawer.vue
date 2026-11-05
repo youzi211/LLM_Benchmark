@@ -387,7 +387,7 @@ onMounted(() => {
             </el-form-item>
             <el-form-item label="模型">
               <el-select v-model="form.model_id" placeholder="选择模型" class="full-width" :loading="store.loading">
-                <el-option v-for="m in store.models" :key="m.id" :label="m.name ?? m.model ?? m.id" :value="m.id" />
+                <el-option v-for="m in store.models" :key="m.id" :label="`${m.id} · ${m.name || m.model}`" :value="m.id" />
               </el-select>
             </el-form-item>
             <el-form-item label="Profile">

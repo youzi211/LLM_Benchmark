@@ -10,6 +10,7 @@ export type Lane = typeof lanes[number]["lane"];
 export interface UiApi {
   scenario: "normal" | "empty" | "failed";
   seedActive: boolean;
+  cooperativeCancel: boolean;
   submissions: Array<{ path: string; body: Record<string, unknown> }>;
   unexpected: string[];
   pageErrors: string[];
@@ -58,7 +59,7 @@ function initialTasks(): Record<Lane, Array<Record<string, any>>> {
 }
 
 async function installApi(page: Page): Promise<UiApi> {
-  const state: UiApi = { scenario: "normal", seedActive: true, submissions: [], unexpected: [], pageErrors: [] };
+  const state: UiApi = { scenario: "normal", seedActive: true, cooperativeCancel: false, submissions: [], unexpected: [], pageErrors: [] };
   const records = initialTasks();
   const allowedOrigin = new URL(process.env.LLM_BENCHMARK_UI_BASE_URL || "http://127.0.0.1:5186").origin;
   page.on("pageerror", (error) => state.pageErrors.push(error.message));
@@ -74,6 +75,25 @@ async function installApi(page: Page): Promise<UiApi> {
     }
     const pathname = url.pathname;
     const method = request.method();
+    const workspaceModel = (id: string) => ({
+      model_id: id, name: "同名测试模型", upstream_model: "fixture", protocol: "chat_completions", archived: false, historical_only: false, enabled: true, coverage: 3,
+      lanes: Object.fromEntries(lanes.map(({ lane }) => {
+        const task = records[lane][0];
+        const metrics = lane === "stress" ? runs : lane === "basic" ? [{ metric_id: "connectivity", status: "error", summary: "不支持，保留证据" }] : [{ dataset: "gsm8k", metric_id: "accuracy", unit: "%", direction: "higher_is_better", score: .8, display_multiplier: 100, sample_count: 20 }];
+        const evidence = { task_id: task.task_id, model_id: id, lane, status: "completed", complete: true, created_at: task.created_at, completed_at: task.completed_at, metrics,
+          snapshot: { evalscope_version: "1.14.1", conditions: { open_loop: false, dataset: "fixture", parallel: [1, 5] } }, report_url: null, task_url: `/api/${lane}/tasks/${task.task_id}` };
+        return [lane, state.scenario === "empty"
+          ? { latest_success: null, latest_attempt: null, partial_result: null, task_count: 0, selected: null }
+          : { latest_success: evidence, latest_attempt: { ...evidence, status: "failed" }, partial_result: null, task_count: 9, selected: evidence }];
+      }))
+    });
+    if (pathname === "/api/model-evaluations") return route.fulfill({ json: { total: 2, items: [workspaceModel("ui-model"), workspaceModel("ui-reference")] } });
+    if (pathname.startsWith("/api/model-evaluations/")) {
+      const id = pathname.split("/")[3]; const model = workspaceModel(id);
+      return route.fulfill({ json: pathname.endsWith("/history") ? { total: 3, items: Object.values(model.lanes).map((l: any) => l.latest_success) } : model });
+    }
+    if (pathname === "/api/model-comparisons") return route.fulfill({ json: { models: request.postDataJSON().model_ids.map(workspaceModel), comparability: Object.fromEntries(lanes.map(l => [l.lane, { status: "different", reasons: ["测试负载条件差异"] }])) } });
+    if (pathname === "/api/intelligence/evalscope/config") return route.fulfill({ json: { judge_model_config_id: "ui-reference", judge_worker_num: 5, judge_generation_config: { temperature: 0, max_tokens: 4096 }, sandbox_enabled: false, sandbox_type: "docker", sandbox_manager_config: {}, dataset_args: {} } });
     const definition = lanes.find((item) => pathname === item.list || pathname.startsWith(`${item.list}/`));
     if (method === "GET") {
       if (definition && pathname === definition.list) {
@@ -109,7 +129,8 @@ async function installApi(page: Page): Promise<UiApi> {
         const taskId = pathname.slice(definition.list.length + 1).split("/")[0];
         const task = records[definition.lane].find((row) => row.task_id === taskId);
         if (task) {
-          task.status = "interrupted";
+          task.status = state.cooperativeCancel ? "running" : "interrupted";
+          task.cancel_requested_at = "2026-11-04T08:00:00Z";
           state.submissions.push({ path: pathname, body });
           return route.fulfill({ json: task });
         }

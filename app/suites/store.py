@@ -6,7 +6,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.core.models import utc_now
-from app.storage.file_utils import read_json_file, write_json_file_atomic
+from app.storage.file_utils import read_json_file, write_json_file_atomic, save_record
 from app.suites.schemas import SuiteRun, SuiteSchedule, SuiteScheduleCreate
 from app.suites.profiles import apply_profile_to_schedule_request
 
@@ -19,8 +19,7 @@ class SuiteRunStore:
         return self.directory / f"{suite_id}.json"
 
     def save(self, suite: SuiteRun) -> SuiteRun:
-        write_json_file_atomic(self._path(suite.suite_id), suite.model_dump(mode="json"))
-        return suite
+        return save_record(self._path(suite.suite_id), suite)
 
     def get(self, suite_id: str) -> SuiteRun | None:
         path = self._path(suite_id)
@@ -28,7 +27,7 @@ class SuiteRunStore:
             return None
         return SuiteRun.model_validate(read_json_file(path, {}))
 
-    def list(self, limit: int = 50) -> list[SuiteRun]:
+    def list(self, limit: int | None = 50) -> list[SuiteRun]:
         if not self.directory.exists():
             return []
         suites: list[SuiteRun] = []
@@ -38,7 +37,7 @@ class SuiteRunStore:
             except Exception:
                 continue
         suites.sort(key=lambda item: (item.created_at, item.suite_id), reverse=True)
-        return suites[:limit]
+        return suites if limit is None else suites[:limit]
 
 
 class SuiteScheduleStore:
@@ -83,7 +82,7 @@ class SuiteScheduleStore:
             return None
         return SuiteSchedule.model_validate(read_json_file(path, {}))
 
-    def list(self, limit: int = 50) -> list[SuiteSchedule]:
+    def list(self, limit: int | None = 50) -> list[SuiteSchedule]:
         if not self.directory.exists():
             return []
         schedules: list[SuiteSchedule] = []
@@ -93,7 +92,7 @@ class SuiteScheduleStore:
             except Exception:
                 continue
         schedules.sort(key=lambda item: (item.next_run_at, item.schedule_id))
-        return schedules[:limit]
+        return schedules if limit is None else schedules[:limit]
 
     def delete(self, schedule_id: str) -> bool:
         path = self._path(schedule_id)
@@ -104,7 +103,7 @@ class SuiteScheduleStore:
 
     def due(self, now: datetime | None = None) -> list[SuiteSchedule]:
         now = now or utc_now()
-        return [item for item in self.list(limit=1000) if item.enabled and item.next_run_at <= now]
+        return [item for item in self.list(limit=None) if item.enabled and item.next_run_at <= now]
 
 
 def compute_next_run_at(time_of_day: str, timezone_name: str, *, now: datetime | None = None, interval_days: int = 1) -> datetime:

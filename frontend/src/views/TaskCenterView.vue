@@ -208,7 +208,7 @@ onMounted(reload);
         </el-table-column>
         <el-table-column prop="model" label="模型" min-width="150" show-overflow-tooltip />
         <el-table-column label="状态" width="112">
-          <template #default="{ row }"><StatusTag :status="row.status" compact /></template>
+          <template #default="{ row }"><StatusTag :cancelling="Boolean(row.task.cancel_requested_at)" :status="row.status" compact /></template>
         </el-table-column>
         <el-table-column label="最近活动" width="176">
           <template #default="{ row }">

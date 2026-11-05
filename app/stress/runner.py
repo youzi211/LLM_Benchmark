@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
 
+from app.core.snapshots import execution_snapshot
 from app.core.models import ModelConfig, utc_now
 from app.evalscope_defaults import DEFAULT_STRESS_DATASET, LOCAL_RESOLVABLE_STRESS_DATASETS
 from app.intelligence.config_store import EvalScopeConfigStore
@@ -233,7 +234,7 @@ class StressRunner:
         model = self.model_store.get(model_id)
         if model is None:
             raise ValueError(f"model_not_found:{model_id}")
-        if not model.enabled:
+        if not model.enabled or model.archived_at is not None:
             raise ValueError(f"model_disabled:{model_id}")
 
         payload = self._build_payload(model, options)
@@ -246,6 +247,7 @@ class StressRunner:
             protocol=model.protocol,
             evalscope_base_url=IN_PROCESS_EVALSCOPE,
             request_config=self._public_request_config(payload),
+            execution_snapshot=execution_snapshot(model, "stress", {k: v for k, v in self._public_request_config(payload).items() if k not in {"model", "url", "api_url", "api_key"}}),
             status="pending",
             progress="任务已创建，等待本地 EvalScope 执行",
             raw_output_dir=str(outputs_root(self.config) / "stress" / task_id),
@@ -257,12 +259,16 @@ class StressRunner:
 
     def _start(self, task_id: str, payload: StressRemoteSubmitPayload) -> None:
         if self.run_in_background:
-            get_job_executor().submit_sync(
+            job = get_job_executor().submit_sync(
                 job_type="stress",
                 target_id=task_id,
                 payload={"task_id": task_id},
                 func=lambda: self._execute(task_id, payload),
             )
+            task = self.task_store.get(task_id)
+            if task is not None:
+                task.job_id = job.job_id
+                self.task_store.save(task)
         else:
             self._execute(task_id, payload)
 
@@ -299,9 +305,6 @@ class StressRunner:
                     "message": "EvalScope 压测请求全部失败",
                     "failed_requests": failed_requests,
                 }
-                task.status = "failed"
-                task.error = failure
-                task.normalized_result.status = "failed"
                 if not task.normalized_result.errors:
                     task.normalized_result.errors.append(failure)
             task = self._with_completion(task, _parse_dt(raw_result.get("completed_at")) or utc_now())
@@ -325,6 +328,11 @@ class StressRunner:
             if latest is not None and latest.status == "interrupted":
                 should_save = False
             if should_save:
+                if latest is not None and latest.cancel_requested_at:
+                    task.cancel_requested_at = latest.cancel_requested_at
+                    task.status = "interrupted"
+                    task.completed_at = utc_now()
+                    task.progress = "任务已取消"
                 task.updated_at = utc_now()
                 self.task_store.save(task)
 
@@ -394,16 +402,18 @@ class StressRunner:
             return task
 
         job_executor = get_job_executor()
-        active_job = next(
-            (
-                job
-                for job in job_executor.store.list(limit=10000)
-                if job.job_type == "stress" and job.target_id == task_id and job.status not in {"completed", "failed", "interrupted"}
-            ),
-            None,
-        )
+        active_job = job_executor.store.get(task.job_id) if task.job_id else None
+        if active_job is None:
+            active_job = next((job for job in job_executor.store.list(limit=None)
+                               if job.target_id == task_id and job.status in {"queued", "running"}), None)
+        task.cancel_requested_at = utc_now()
+        self.task_store.save(task)
         if active_job is not None:
-            await job_executor.cancel(active_job.job_id)
+            active_job = await job_executor.cancel(active_job.job_id)
+            if active_job is not None and active_job.status == "running":
+                task.progress = "取消中，等待当前评测退出"
+                self.task_store.save(task)
+                return task
 
         task = self.task_store.get(task_id) or task
         if task.status not in TERMINAL_STATUSES:
@@ -430,20 +440,11 @@ class StressRunner:
                 percent = progress.percent if progress.percent is not None else 0
                 task.progress = f"压测进行中：{completed}/{total}（{percent:.1f}%）"
             task.updated_at = utc_now()
-            self.task_store.save(task)
         return task
 
-    async def fetch_result(self, task_id: str) -> StressTask | None:
-        task = self.task_store.get(task_id)
-        if task is None:
-            return None
-        task = self._maybe_renormalize(task)
-        if task.status in TERMINAL_STATUSES and not task.report_path:
-            report_path = write_stress_report(task, self.reports_dir)
-            task.report_path = str(report_path)
-            task.updated_at = utc_now()
-            self.task_store.save(task)
-        return task
+    async def fetch_result(self, task_id: str):
+        return self._maybe_renormalize(self.task_store.get(task_id))
+
 
     @staticmethod
     def _with_completion(task: StressTask, completed_at: datetime) -> StressTask:
@@ -470,7 +471,7 @@ class StressRunner:
         if task.normalized_result is not None and task.normalized_result.runs:
             if not self._needs_metric_backfill(task.normalized_result, fresh):
                 return task
-        return self._apply_metric_backfill(task, fresh)
+        return task.model_copy(update={"normalized_result": fresh})
 
     @staticmethod
     def _needs_metric_backfill(current: StressNormalizedResult, fresh: StressNormalizedResult) -> bool:
@@ -481,17 +482,6 @@ class StressRunner:
             for existing, updated in zip(current.runs, fresh.runs)
             for field in LEGACY_DISPLAY_METRIC_FIELDS
         )
-
-    def _apply_metric_backfill(self, task: StressTask, fresh: StressNormalizedResult) -> StressTask:
-        updated = task.model_copy(update={"normalized_result": fresh, "updated_at": utc_now()})
-        try:
-            report_path = write_stress_report(updated, self.reports_dir)
-        except Exception:
-            logger.warning("Stress report rewrite failed for task %s", task.task_id, exc_info=True)
-        else:
-            updated = updated.model_copy(update={"report_path": str(report_path)})
-        self.task_store.save(updated)
-        return updated
 
     def _load_progress(self, output_dir: Path) -> StressProgress | None:
         """Read EvalScope's atomic progress snapshot without breaking task queries on races."""

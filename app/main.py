@@ -9,6 +9,7 @@ from app.api.routes_intelligence import router as intelligence_router
 from app.api.routes_jobs import router as jobs_router
 from app.api.routes_metrics import router as metrics_router
 from app.api.routes_overview import router as overview_router
+from app.api.routes_model_evaluations import router as model_evaluations_router
 from app.api.routes_models import router as models_router
 from app.api.routes_reports import router as reports_router
 from app.api.routes_stress import router as stress_router
@@ -33,6 +34,7 @@ def health():
 
 
 app.include_router(models_router, prefix="/api")
+app.include_router(model_evaluations_router, prefix="/api")
 app.include_router(health_router, prefix="/api")
 app.include_router(metrics_router, prefix="/api")
 app.include_router(overview_router, prefix="/api")
@@ -47,6 +49,8 @@ app.include_router(suites_router, prefix="/api")
 
 @app.on_event("startup")
 async def startup_scheduler():
+    from app.jobs.recovery import reconcile_startup
+    reconcile_startup()
     start_scheduler()
 
 

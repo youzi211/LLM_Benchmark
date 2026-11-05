@@ -1,3 +1,36 @@
+/* Professional model workspace */
+.mw-page { display: flex; flex-direction: column; gap: 20px; min-width: 0; padding-bottom: 20px; }
+.mw-title { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.mw-title h1 { margin: 4px 0 8px; font-size: 26px; font-weight: 650; overflow-wrap: anywhere; }
+.mw-title p { margin: 0; color: var(--lb-muted); font-size: 13px; line-height: 1.7; }
+.mw-eyebrow { font-size: 10px !important; letter-spacing: .13em; color: var(--lb-muted); }
+.mw-mono, .mw-id, .mw-page code, .mw-page pre { font-family: ui-monospace, Consolas, monospace; }
+.mw-id { display: inline-block; margin-bottom: 5px; font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.mw-muted { color: var(--lb-muted); font-size: 12px; line-height: 1.8; }
+.mw-tools, .mw-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.mw-tools > .el-input { width: 260px; }
+.mw-tools > .el-checkbox { margin-right: auto; }
+.mw-kpis, .mw-lane-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.mw-kpis > div, .mw-panel { padding: 20px; border: 1px solid var(--lb-border); border-radius: 8px; background: var(--lb-surface); min-width: 0; }
+.mw-kpis span { display: block; font-size: 12px; color: var(--lb-muted); }
+.mw-kpis strong { display: block; margin-top: 12px; font-size: 28px; font-variant-numeric: tabular-nums; }
+.mw-kpis small { font-size: 16px; color: var(--lb-muted); font-weight: 400; }
+.mw-panel h2 { margin: 0 0 14px; font-size: 16px; }
+.mw-panel h3 { margin: 0 0 16px; font-size: 14px; }
+.mw-panel p { line-height: 1.8; }
+.mw-chart-grid, .mw-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.mw-evidence { display: flex; flex-direction: column; gap: 18px; }
+.mw-source { border-left: 3px solid var(--lb-border); padding: 10px 14px; background: var(--lb-surface); }
+.mw-source > div:first-child { display: flex; align-items: center; flex-wrap: wrap; gap: 15px; font-size: 12px; }
+.mw-page details summary { cursor: pointer; font-size: 12px; padding: 8px 0; }
+.mw-page pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; max-height: 360px; overflow: auto; color: var(--lb-fg); }
+.mw-override { display: grid; grid-template-columns: minmax(110px, 1fr) repeat(3, minmax(160px, 2fr)); gap: 10px; align-items: center; margin: 12px 0; }
+.mw-page .el-table { border: 1px solid var(--lb-border); border-radius: 6px; font-variant-numeric: tabular-nums; }
+.mw-page .el-pagination { align-self: flex-end; }
+@media (max-width: 1200px) { .mw-lane-cards { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .mw-chart-grid, .mw-settings-grid { grid-template-columns: 1fr; } .mw-override { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .mw-title { align-items: flex-start; flex-direction: column; } .mw-kpis { gap: 8px; } .mw-kpis > div { padding: 12px; } .mw-kpis strong { font-size: 22px; } .mw-page .el-pagination { align-self: flex-start; max-width: 100%; } }
+
 :root {
   /* Surfaces */
   --lb-bg: #f7f8fa;

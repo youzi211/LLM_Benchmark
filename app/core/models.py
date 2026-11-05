@@ -75,6 +75,7 @@ class ModelConfigUpdate(BaseModel):
 
 
 class ModelConfig(ModelConfigCreate):
+    archived_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -158,6 +159,9 @@ class MetricResult(BaseModel):
 
 
 class TaskResult(BaseModel):
+    cancel_requested_at: datetime | None = None
+    execution_snapshot: dict[str, Any] | None = None
+
     model_config = ConfigDict(protected_namespaces=())
 
     task_id: str

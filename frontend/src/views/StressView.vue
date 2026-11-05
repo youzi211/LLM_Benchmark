@@ -475,7 +475,7 @@ async function cancelTask(taskId: string) {
   try {
     await ElMessageBox.confirm(`确认取消压测任务 ${taskId}？`, "取消确认", { type: "warning" });
     await cancelStressTask(taskId);
-    ElMessage.success("已取消");
+    ElMessage.success("已提交取消请求");
     await reload();
     await selectTask(taskId, false);
   } catch (err) {
@@ -631,7 +631,7 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
           </template>
         </el-table-column>
         <el-table-column label="状态" width="84">
-          <template #default="{ row }"><StatusTag :status="row.status" :label="stressStatusLabel(row.status, row.grouped)" compact /></template>
+          <template #default="{ row }"><StatusTag :cancelling="Boolean(row.cancel_requested_at)" :status="row.status" :label="stressStatusLabel(row.status, row.grouped)" compact /></template>
         </el-table-column>
         <el-table-column label="耗时" width="76">
           <template #default="{ row }"><span class="lb-eval-numeric" :title="row.duration_ms != null ? `${row.duration_ms} ms` : undefined">{{ formatEvaluationDuration(row.duration_ms) }}</span></template>
@@ -647,7 +647,7 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
       </el-table>
     </template>
 
-    <template #detail-actions><StatusTag v-if="selected" :status="selected.status ?? 'pending'" :label="stressStatusLabel(selected.status, Boolean((selected as any).grouped))" /><el-button v-if="selected && !(selected as any).grouped && !finalStatus(selected.status)" size="small" type="danger" plain @click="cancelTask(selected.task_id)">取消任务</el-button></template>
+    <template #detail-actions><StatusTag v-if="selected" :cancelling="Boolean(selected.cancel_requested_at)" :status="selected.status ?? 'pending'" :label="stressStatusLabel(selected.status, Boolean((selected as any).grouped))" /><el-button v-if="selected && !(selected as any).grouped && !finalStatus(selected.status)" size="small" type="danger" plain @click="cancelTask(selected.task_id)">取消任务</el-button></template>
     <template #detail>
       <EmptyState
         v-if="!selected"
@@ -732,7 +732,7 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
           </div>
           <el-table :data="groupMembers" size="small" row-key="task_id" @row-click="(row: TaskLike) => selectTaskAndSync(row.task_id)">
             <el-table-column prop="task_id" label="任务 ID" min-width="180" show-overflow-tooltip />
-            <el-table-column label="状态" width="105"><template #default="{ row }"><StatusTag :status="row.status" compact /></template></el-table-column>
+            <el-table-column label="状态" width="105"><template #default="{ row }"><StatusTag :cancelling="Boolean(row.cancel_requested_at)" :status="row.status" compact /></template></el-table-column>
             <el-table-column label="错误" min-width="170" show-overflow-tooltip>
               <template #default="{ row }">{{ formatTaskError(row.error) }}</template>
             </el-table-column>

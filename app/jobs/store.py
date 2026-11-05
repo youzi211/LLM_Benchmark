@@ -5,7 +5,7 @@ from pathlib import Path
 
 from app.core.models import utc_now
 from app.jobs.schemas import JobRecord
-from app.storage.file_utils import read_json_file, write_json_file_atomic
+from app.storage.file_utils import read_json_file, write_json_file_atomic, save_record
 
 
 class JobStore:
@@ -17,8 +17,7 @@ class JobStore:
 
     def save(self, job: JobRecord) -> JobRecord:
         job.updated_at = utc_now()
-        write_json_file_atomic(self._path(job.job_id), job.model_dump(mode="json"))
-        return job
+        return save_record(self._path(job.job_id), job)
 
     def get(self, job_id: str) -> JobRecord | None:
         path = self._path(job_id)
@@ -26,7 +25,7 @@ class JobStore:
             return None
         return JobRecord.model_validate(read_json_file(path, {}))
 
-    def list(self, limit: int = 50) -> list[JobRecord]:
+    def list(self, limit: int | None = 50) -> list[JobRecord]:
         if not self.directory.exists():
             return []
         jobs: list[JobRecord] = []
@@ -36,4 +35,4 @@ class JobStore:
             except Exception:
                 continue
         jobs.sort(key=lambda item: (item.created_at, item.job_id), reverse=True)
-        return jobs[:limit]
+        return jobs if limit is None else jobs[:limit]

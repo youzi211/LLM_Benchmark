@@ -6,7 +6,7 @@ import os
 import re
 import subprocess
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -53,7 +53,7 @@ def _load_evalscope_benchmarks() -> dict[str, dict[str, Any]]:
     for name, meta in BENCHMARK_REGISTRY.items():
         tags = [_tag_str(t) for t in (meta.tags or [])]
         needs_judge = (
-            getattr(meta.data_adapter, 'llm_judge_default', False)
+            getattr(getattr(meta.data_adapter, 'scoring_policy', None), 'judge_by_default', False) or getattr(meta.data_adapter, 'llm_judge_default', False)
             if meta.data_adapter
             else False
         )
@@ -70,6 +70,7 @@ def _load_evalscope_benchmarks() -> dict[str, dict[str, Any]]:
 
         result[name] = {
             'name': name,
+            'evaluation_version': getattr(meta, 'evaluation_version', None),
             'pretty_name': meta.pretty_name or name,
             'description': short_desc,
             'categories': tags,
@@ -539,7 +540,7 @@ class EvalScopeIntelligenceExecutor:
         except Exception as exc:  # pragma: no cover - depends on optional local install
             raise EvalScopeDirectError(f"evalscope_import_failed:{redact_text(str(exc))}") from exc
 
-        started = datetime.now().isoformat()
+        started = datetime.now(timezone.utc).isoformat()
         output_base = outputs_root(self.config) / "intelligence" / task_id
         output_base.mkdir(parents=True, exist_ok=True)
         local_paths = self._local_paths()
@@ -548,6 +549,10 @@ class EvalScopeIntelligenceExecutor:
         errors: list[dict[str, Any]] = []
 
         for dataset_index, dataset in enumerate(datasets, start=1):
+            from app.storage.intelligence_task_store import IntelligenceTaskStore
+            current = IntelligenceTaskStore().get(task_id)
+            if current is not None and current.cancel_requested_at:
+                break
             dataset_work_dir = output_base / dataset
             cfg_data = self._task_config_data(
                 model=model,
@@ -621,7 +626,7 @@ class EvalScopeIntelligenceExecutor:
 
         status = "failed" if errors and not results else "completed"
         report_table = self._report_table(report_map)
-        completed = datetime.now().isoformat()
+        completed = datetime.now(timezone.utc).isoformat()
         return {
             "task_id": task_id,
             "model": model,
@@ -683,9 +688,8 @@ class EvalScopeIntelligenceExecutor:
                 "manager_config": dict(self.config.sandbox_manager_config or {}),
             }
         if _dataset_needs_judge(dataset) and judge_model_args:
-            data["judge_strategy"] = "llm"
-            data["judge_model_args"] = judge_model_args
-            data["judge_worker_num"] = self.config.judge_worker_num
+            data["judge"] = {"strategy": "llm", "models": [judge_model_args]}
+            data["eval_batch_size"] = eval_batch_size or self.config.judge_worker_num
         return data
 
     def _dataset_args(self, *, dataset: str, local_paths: dict[str, str], user_dataset_args: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:

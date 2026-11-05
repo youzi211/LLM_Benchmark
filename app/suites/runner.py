@@ -51,10 +51,26 @@ class SuiteRunner:
         self.poll_interval_seconds = poll_interval_seconds
 
     async def start_default(self, request: SuiteDefaultRunRequest, *, schedule_id: str | None = None) -> SuiteRun:
+        from app.suites.transient_model_store import TransientModelStore
+        from app.core.snapshots import execution_snapshot
+        model_store = getattr(self.gateway_runner, "model_store", None)
+        snapshot = None
+        if model_store is not None:
+            model = model_store.get(request.model_id)
+            if model is None:
+                raise ValueError(f"model_not_found:{request.model_id}")
+            if not model.enabled or model.archived_at is not None:
+                raise ValueError(f"model_disabled:{request.model_id}")
+            frozen = TransientModelStore([m.model_copy(deep=True) for m in model_store.list()], analysis_model_id=model_store.get_analysis_model_id())
+            for runner in (self.gateway_runner, self.intelligence_runner, self.stress_runner):
+                if hasattr(runner, "model_store"):
+                    runner.model_store = frozen
+            snapshot = execution_snapshot(model, "suite", request.model_dump(mode="json"))
         suite = SuiteRun(
+            execution_snapshot=snapshot,
             model_id=request.model_id,
             title=request.title,
-            request=request,
+            request=request.model_copy(deep=True),
             schedule_id=schedule_id,
             steps=self._initial_steps(request),
         )
@@ -73,16 +89,31 @@ class SuiteRunner:
         self.suite_store.save(suite)
 
         try:
+            latest = self.suite_store.get(suite_id)
+            if latest is not None and latest.cancel_requested_at:
+                self._mark_interrupted(latest)
+                return latest
             if suite.request.run_gateway:
                 await self._run_gateway(suite)
+            latest = self.suite_store.get(suite_id)
+            if latest is not None and latest.cancel_requested_at:
+                self._mark_interrupted(latest)
+                return latest
             if suite.request.run_stress:
                 await self._run_stress(suite)
+            latest = self.suite_store.get(suite_id)
+            if latest is not None and latest.cancel_requested_at:
+                self._mark_interrupted(latest)
+                return latest
             if suite.request.run_intelligence:
                 await self._run_intelligence(suite)
             latest = self.suite_store.get(suite_id)
             if latest is not None and latest.status == "interrupted":
                 suite = latest
                 return suite
+            if latest is not None and latest.cancel_requested_at:
+                self._mark_interrupted(latest)
+                return latest
             self._write_overview(suite)
             suite.status = "partial" if suite.errors else "completed"
         except asyncio.CancelledError:
@@ -126,7 +157,12 @@ class SuiteRunner:
         if suite.job_id:
             await get_job_executor().cancel(suite.job_id)
         await self._cancel_child_tasks(suite)
-        self._mark_interrupted(suite)
+        suite = self.suite_store.get(suite_id) or suite
+        suite.cancel_requested_at = utc_now()
+        if suite.status == "queued":
+            self._mark_interrupted(suite)
+        else:
+            self.suite_store.save(suite)
         return self.suite_store.get(suite_id) or suite
 
     async def _cancel_child_tasks(self, suite: SuiteRun) -> None:

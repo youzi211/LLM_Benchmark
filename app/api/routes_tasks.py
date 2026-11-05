@@ -62,13 +62,14 @@ def _finish_failed(task_id: str, exc: Exception) -> None:
     store.save(task)
 
 
-async def _execute_basic_task(task_id: str, request: RunTaskRequest) -> None:
+async def _execute_basic_task(task_id: str, request: RunTaskRequest, model_config=None) -> None:
     try:
         await TaskRunner().run(
             model_id=request.model_id,
             plan_id=request.plan_id,
             metric_ids=request.metric_ids,
             task_id=task_id,
+            model_config=model_config,
         )
     except asyncio.CancelledError:
         _finish_interrupted(task_id)
@@ -85,12 +86,21 @@ async def run_task_async(request: RunTaskRequest):
     except ValueError as exc:
         _raise_task_value_error(exc)
 
+    from app.storage.model_store import ModelStore
+    from app.core.snapshots import execution_snapshot
+    model = ModelStore().get(request.model_id)
+    if model is not None and model.archived_at is not None:
+        raise api_error(409, "model_archived", "归档模型不能发起评测")
+    snapshot = execution_snapshot(model, "basic", {"plan_id": request.plan_id, "metric_ids": resolved,
+            "concurrency_levels": model.concurrency_levels, "declared_context_tokens": model.declared_context_tokens,
+            "declared_max_output_tokens": model.declared_max_output_tokens}) if model else None
     task_id = new_task_id()
     job_id = new_job_id()
     store = TaskStore()
     task = TaskResult(
         task_id=task_id,
         job_id=job_id,
+        execution_snapshot=snapshot,
         status="queued",
         model_id=request.model_id,
         plan_id=request.plan_id,
@@ -104,7 +114,7 @@ async def run_task_async(request: RunTaskRequest):
             job_id=job_id,
             target_id=task_id,
             payload=request.model_dump(mode="json"),
-            func=lambda: _execute_basic_task(task_id, request),
+            func=lambda: _execute_basic_task(task_id, request, model),
         )
     except Exception as exc:
         _finish_failed(task_id, exc)

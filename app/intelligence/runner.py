@@ -8,6 +8,9 @@ from typing import Any, Callable, Protocol
 from uuid import uuid4
 
 from app.adapters.base import create_adapter
+from app.intelligence.report_summary import primary_summary
+from app.core.snapshots import execution_snapshot
+from app.evalscope_defaults import DEFAULT_EVAL_BATCH_SIZE, DEFAULT_GENERATION_CONFIG, DEFAULT_INTELLIGENCE_DATASET_ARGS
 from app.core.models import AdapterRequest, ModelConfig, utc_now
 from app.intelligence.config_store import EvalScopeConfigStore
 from app.jobs.executor import get_job_executor
@@ -115,7 +118,7 @@ class IntelligenceRunner:
         model = self.model_store.get(model_id)
         if model is None:
             raise ValueError(f"model_not_found:{model_id}")
-        if not model.enabled:
+        if not model.enabled or model.archived_at is not None:
             raise ValueError(f"model_disabled:{model_id}")
         return model
 
@@ -147,7 +150,7 @@ class IntelligenceRunner:
             if model is None:
                 missing.append(model_id)
                 continue
-            if not model.enabled:
+            if not model.enabled or model.archived_at is not None:
                 disabled.append(model_id)
                 continue
             return model, source, None
@@ -189,9 +192,25 @@ class IntelligenceRunner:
                 "api_key": judge_model.api_key or "EMPTY",
                 "generation_config": self.config.judge_generation_config,
             }
+        metadata = self._local_dataset_metadata()
+        effective_args = {d: {**DEFAULT_INTELLIGENCE_DATASET_ARGS.get(d, {}), **self.config.dataset_args.get(d, {}), **(dataset_args or {}).get(d, {})} for d in datasets}
+        for dataset, args in effective_args.items():
+            if not args.get("local_path") and metadata.get(dataset, {}).get("local_path"):
+                args["local_path"] = metadata[dataset]["local_path"]
+        snapshot = execution_snapshot(model, "intelligence", {
+            "datasets": list(datasets), "limit": limit, "dataset_args": effective_args,
+            "generation_config": generation_config or DEFAULT_GENERATION_CONFIG,
+            "eval_batch_size": {d: eval_batch_size or (self.config.judge_worker_num if d in required_judge_datasets else DEFAULT_EVAL_BATCH_SIZE) for d in datasets},
+            "benchmark_versions": {d: metadata.get(d, {}).get("evaluation_version") for d in datasets},
+            "seed": 42, "judge_model_id": judge_model.id if judge_model else None,
+            "judge_model": judge_model.model if judge_model else None,
+            "judge_generation_config": self.config.judge_generation_config,
+            "sandbox": {"enabled": self.config.sandbox_enabled, "engine": self.config.sandbox_type,
+                        "pool_size": self.config.sandbox_pool_size, "manager_config": self.config.sandbox_manager_config}})
         task_id = new_intelligence_task_id()
         task = IntelligenceTask(
             task_id=task_id,
+            execution_snapshot=snapshot,
             evalscope_task_id=None,
             model_id=model.id,
             model_config_name=model.name,
@@ -241,12 +260,16 @@ class IntelligenceRunner:
 
     def _start(self, task_id: str, **kwargs: Any) -> None:
         if self.run_in_background:
-            get_job_executor().submit_sync(
+            job = get_job_executor().submit_sync(
                 job_type="intelligence",
                 target_id=task_id,
                 payload={"task_id": task_id},
                 func=lambda: self._execute(task_id, **kwargs),
             )
+            task = self.task_store.get(task_id)
+            if task is not None:
+                task.job_id = job.job_id
+                self.task_store.save(task)
         else:
             self._execute(task_id, **kwargs)
 
@@ -357,6 +380,11 @@ class IntelligenceRunner:
             if latest is not None and latest.status == "interrupted":
                 should_save = False
             if should_save:
+                if latest is not None and latest.cancel_requested_at:
+                    task.cancel_requested_at = latest.cancel_requested_at
+                    task.status = "interrupted"
+                    task.completed_at = utc_now()
+                    task.progress = "任务已取消"
                 task.updated_at = utc_now()
                 self.task_store.save(task)
 
@@ -390,7 +418,6 @@ class IntelligenceRunner:
         if detail.message:
             task.progress = detail.message
         task.updated_at = utc_now()
-        self.task_store.save(task)
         return task
 
 
@@ -402,16 +429,18 @@ class IntelligenceRunner:
             return task
 
         job_executor = get_job_executor()
-        active_job = next(
-            (
-                job
-                for job in job_executor.store.list(limit=10000)
-                if job.job_type == "intelligence" and job.target_id == task_id and job.status not in {"completed", "failed", "interrupted"}
-            ),
-            None,
-        )
+        active_job = job_executor.store.get(task.job_id) if task.job_id else None
+        if active_job is None:
+            active_job = next((job for job in job_executor.store.list(limit=None)
+                               if job.target_id == task_id and job.status in {"queued", "running"}), None)
+        task.cancel_requested_at = utc_now()
+        self.task_store.save(task)
         if active_job is not None:
-            await job_executor.cancel(active_job.job_id)
+            active_job = await job_executor.cancel(active_job.job_id)
+            if active_job is not None and active_job.status == "running":
+                task.progress = "取消中，等待当前评测退出"
+                self.task_store.save(task)
+                return task
 
         task = self.task_store.get(task_id) or task
         if task.status not in TERMINAL_STATUSES:
@@ -442,16 +471,10 @@ class IntelligenceRunner:
             return None
         return self._refresh_progress_from_output(task)
 
-    async def fetch_result(self, task_id: str) -> IntelligenceTask | None:
-        task = await self.refresh_status(task_id)
-        if task is None:
-            return None
-        if task.status in TERMINAL_STATUSES and not task.report_path:
-            report_path = write_intelligence_report(task, self.reports_dir, judge_status=self._judge_status(task.datasets))
-            task.report_path = str(report_path)
-            task.updated_at = utc_now()
-            self.task_store.save(task)
-        return task
+    async def fetch_result(self, task_id: str):
+        task = self.task_store.get(task_id)
+        return self._maybe_renormalize(task) if hasattr(self, "_maybe_renormalize") else task
+
 
     def _local_dataset_metadata(self) -> dict[str, dict[str, Any]]:
         data = dataset_metadata(self.config)
@@ -535,7 +558,7 @@ class IntelligenceRunner:
                     pretty_name=meta.get("pretty_name") or report.get("dataset_name") or dataset,
                     categories=[str(item) for item in categories],
                     needs_judge=meta.get("needs_judge"),
-                    score=report.get("score") if isinstance(report.get("score"), (int, float)) else None,
+                    **primary_summary(report),
                 )
             )
         return IntelligenceNormalizedResult(
@@ -571,7 +594,7 @@ class IntelligenceRunner:
                     category=category,
                     dataset_count=len(rows),
                     scored_dataset_count=len(scores),
-                    average_score=(sum(scores) / len(scores)) if scores else None,
+                    average_score=None,
                 )
             )
         return summaries

@@ -443,15 +443,15 @@ async def test_suite_runner_cancel_marks_current_step_and_cascades_child_tasks(t
 
     cancelled = await runner.cancel(suite.suite_id)
 
-    assert cancelled.status == "interrupted"
-    assert cancelled.current_step is None
-    assert cancelled.completed_at is not None
+    assert cancelled.status == "running"
+    assert cancelled.cancel_requested_at is not None
+    assert cancelled.current_step == "stress"
+    assert cancelled.completed_at is None
     assert stress_runner.cancelled_task_ids == ["stress_task_suite"]
     assert intelligence_runner.cancelled_task_ids == ["intel_task_suite"]
     steps = {step.name: step for step in cancelled.steps}
-    assert steps["stress"].status == "interrupted"
-    assert steps["intelligence"].status == "interrupted"
-    assert steps["overview"].status == "skipped"
+    assert steps["stress"].status == "running"
+    assert steps["overview"].status == "pending"
 
 
 @pytest.mark.asyncio

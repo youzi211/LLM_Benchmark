@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from app.intelligence.schemas import IntelligenceTask
-from app.storage.file_utils import read_json_file, write_json_file_atomic
+from app.storage.file_utils import read_json_file, write_json_file_atomic, save_record
 
 
 class IntelligenceTaskStore:
@@ -17,8 +17,7 @@ class IntelligenceTaskStore:
         return self.directory / f"{task_id}.json"
 
     def save(self, task: IntelligenceTask) -> IntelligenceTask:
-        write_json_file_atomic(self._path(task.task_id), task.model_dump(mode="json"))
-        return task
+        return save_record(self._path(task.task_id), task)
 
     def get(self, task_id: str) -> IntelligenceTask | None:
         path = self._path(task_id)

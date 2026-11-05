@@ -255,7 +255,7 @@ async function cancelTask(suiteId: string) {
   try {
     await ElMessageBox.confirm("确定取消该评测任务？", "取消确认", { type: "warning" });
     await cancelSuite(suiteId);
-    ElMessage.success("已取消");
+    ElMessage.success("已提交取消请求");
     await reload();
   } catch (err) {
     if (err !== "cancel") ElMessage.error(err instanceof Error ? err.message : String(err));
@@ -446,7 +446,7 @@ onUnmounted(() => {
         <el-table-column prop="suite_id" label="Suite" min-width="210" show-overflow-tooltip />
         <el-table-column prop="model_id" label="模型" width="130" show-overflow-tooltip />
         <el-table-column label="状态" width="100">
-          <template #default="{ row }"><StatusTag :status="row.status" /></template>
+          <template #default="{ row }"><StatusTag :cancelling="Boolean(row.cancel_requested_at)" :status="row.status" /></template>
         </el-table-column>
         <el-table-column label="更新" width="170"><template #default="{ row }">{{ formatDate(row.updated_at) }}</template></el-table-column>
       </el-table>
@@ -464,7 +464,7 @@ onUnmounted(() => {
           <el-descriptions-item label="Suite ID">{{ selected.suite_id }}</el-descriptions-item>
           <el-descriptions-item label="模型">{{ selected.model_id }}</el-descriptions-item>
           <el-descriptions-item label="状态">
-            <StatusTag :status="selected.status" />
+            <StatusTag :cancelling="Boolean(selected.cancel_requested_at)" :status="selected.status" />
           </el-descriptions-item>
           <el-descriptions-item label="当前步骤">{{ selected.current_step || '-' }}</el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ formatDate(selected.created_at) }}</el-descriptions-item>
