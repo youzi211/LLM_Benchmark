@@ -178,8 +178,20 @@ class IntelligenceRunner:
         eval_batch_size: int | None = None,
         generation_config: dict[str, Any] | None = None,
         dataset_args: dict[str, dict[str, Any]] | None = None,
+        agent: dict[str, Any] | None = None,
     ) -> IntelligenceTask:
+        if agent:
+            from app.intelligence.schemas import ExternalAgentRequest
+
+            agent = ExternalAgentRequest.model_validate(agent).model_dump()
+            from app.evalscope_defaults import AGENT_DATASETS
+
+            unsupported = set(datasets) - AGENT_DATASETS.keys()
+            if unsupported:
+                raise ValueError(f"agent_dataset_not_supported:{', '.join(sorted(unsupported))}")
         model = self._model(model_id)
+        if agent and model.protocol != "chat_completions":
+            raise ValueError("agent_requires_chat_completions: External Agent Bridge requires a Chat Completions model endpoint")
         required_judge_datasets = datasets_requiring_judge(datasets)
         judge_model, judge_source, judge_missing_reason = self._resolve_judge_model()
         if required_judge_datasets and judge_model is None:
@@ -194,11 +206,17 @@ class IntelligenceRunner:
             }
         metadata = self._local_dataset_metadata()
         effective_args = {d: {**DEFAULT_INTELLIGENCE_DATASET_ARGS.get(d, {}), **self.config.dataset_args.get(d, {}), **(dataset_args or {}).get(d, {})} for d in datasets}
+        if "swe_bench_pro" in datasets and effective_args["swe_bench_pro"].get("subset_list") != ["v1"]:
+            raise ValueError("swe_pro_version_mismatch: swe_bench_pro only supports v1; select swe_bench_pro_v2 for default/hard V2")
+        if not agent and set(datasets) & {"terminal_bench_v4", "swe_bench_pro_v2"}:
+            raise ValueError("agent_required: select OpenCode or DeepSeek Harness")
         for dataset, args in effective_args.items():
             if not args.get("local_path") and metadata.get(dataset, {}).get("local_path"):
                 args["local_path"] = metadata[dataset]["local_path"]
         snapshot = execution_snapshot(model, "intelligence", {
             "datasets": list(datasets), "limit": limit, "dataset_args": effective_args,
+            "agent": agent,
+            "agent_runtime": self._agent_runtime_snapshot(agent, datasets, metadata),
             "generation_config": generation_config or DEFAULT_GENERATION_CONFIG,
             "eval_batch_size": {d: eval_batch_size or (self.config.judge_worker_num if d in required_judge_datasets else DEFAULT_EVAL_BATCH_SIZE) for d in datasets},
             "benchmark_versions": {d: metadata.get(d, {}).get("evaluation_version") for d in datasets},
@@ -206,7 +224,8 @@ class IntelligenceRunner:
             "judge_model": judge_model.model if judge_model else None,
             "judge_generation_config": self.config.judge_generation_config,
             "sandbox": {"enabled": self.config.sandbox_enabled, "engine": self.config.sandbox_type,
-                        "pool_size": self.config.sandbox_pool_size, "manager_config": self.config.sandbox_manager_config}})
+                        "pool_size": self.config.sandbox_pool_size, "manager_config": self.config.sandbox_manager_config,
+                        "default_config": self.config.sandbox_default_config.model_dump(exclude_none=True)}})
         task_id = new_intelligence_task_id()
         task = IntelligenceTask(
             task_id=task_id,
@@ -255,8 +274,28 @@ class IntelligenceRunner:
             generation_config=generation_config,
             judge_model_args=judge_model_args,
             dataset_args=dataset_args,
+            **({"agent": agent} if agent else {}),
         )
         return self.task_store.get(task.task_id) or task
+
+    def _agent_runtime_snapshot(self, agent, datasets, metadata):
+        if not agent:
+            return None
+        from importlib.metadata import PackageNotFoundError, version
+        from app.intelligence.agent_runtime import runtime_bundle, runtime_root
+
+        versions = {}
+        for package in ("evalscope", "harbor", "swebench"):
+            try:
+                versions[package] = version(package)
+            except PackageNotFoundError:
+                versions[package] = None
+        try:
+            versions["cli"] = runtime_bundle(runtime_root(self.config), agent["framework"])
+        except ValueError:
+            versions["cli"] = None
+        versions["benchmarks"] = {d: metadata.get(d, {}).get("agent_evaluation") for d in datasets}
+        return versions
 
     def _start(self, task_id: str, **kwargs: Any) -> None:
         if self.run_in_background:
@@ -286,6 +325,7 @@ class IntelligenceRunner:
         generation_config: dict[str, Any] | None,
         judge_model_args: dict[str, Any] | None,
         dataset_args: dict[str, dict[str, Any]] | None,
+        agent: dict[str, Any] | None = None,
     ) -> None:
         task = self.task_store.get(task_id)
         if task is None:
@@ -318,6 +358,7 @@ class IntelligenceRunner:
                 generation_config=generation_config,
                 judge_model_args=judge_model_args,
                 dataset_args=dataset_args,
+                **({"agent": agent} if agent else {}),
                 progress_callback=lambda progress: self._apply_progress(task_id, progress),
             )
             latest = self.task_store.get(task_id)
@@ -435,6 +476,11 @@ class IntelligenceRunner:
                                if job.target_id == task_id and job.status in {"queued", "running"}), None)
         task.cancel_requested_at = utc_now()
         self.task_store.save(task)
+        from app.intelligence.agent_runtime import cancel_marker
+
+        marker = cancel_marker(self.config, task_id)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch()
         if active_job is not None:
             active_job = await job_executor.cancel(active_job.job_id)
             if active_job is not None and active_job.status == "running":

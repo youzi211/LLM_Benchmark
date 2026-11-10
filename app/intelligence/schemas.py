@@ -10,6 +10,15 @@ from app.core.models import utc_now
 IntelligenceTaskStatus = Literal["pending", "running", "completed", "failed", "interrupted"]
 
 
+class SandboxDefaultConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    memory_limit: str | None = None
+    cpu_limit: float | None = Field(default=None, gt=0)
+    platform: str | None = None
+    network_enabled: bool | None = None
+
+
 class EvalScopeConfig(BaseModel):
     """Optional local overrides for in-process EvalScope execution.
 
@@ -22,6 +31,8 @@ class EvalScopeConfig(BaseModel):
 
     datasets_dir: str | None = None
     outputs_dir: str | None = None
+    agent_runtime_dir: str | None = None
+    agent_bridge_host: str | None = None
     # Optional override. When omitted, the runner uses the built-in default Judge
     # selector: the report analysis model configured in data/models.json.
     judge_model_config_id: str | None = None
@@ -38,6 +49,7 @@ class EvalScopeConfig(BaseModel):
     sandbox_type: str = "docker"
     sandbox_pool_size: int | None = None
     sandbox_manager_config: dict[str, Any] = Field(default_factory=dict)
+    sandbox_default_config: SandboxDefaultConfig = Field(default_factory=SandboxDefaultConfig)
 
     @field_validator("datasets_dir", "outputs_dir", "judge_model_config_id", "sandbox_type")
     @classmethod
@@ -54,6 +66,13 @@ class IntelligenceDefaultRunRequest(BaseModel):
     model_id: str
 
 
+class ExternalAgentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    framework: Literal["opencode", "deepseek-harness"]
+    timeout: float = Field(default=1800, gt=0, le=86400)
+
+
 class IntelligenceRunRequest(BaseModel):
     model_id: str
     datasets: list[str] = Field(min_length=1)
@@ -61,6 +80,7 @@ class IntelligenceRunRequest(BaseModel):
     eval_batch_size: int | None = Field(default=None, ge=1)
     generation_config: dict[str, Any] | None = None
     dataset_args: dict[str, dict[str, Any]] | None = None
+    agent: ExternalAgentRequest | None = None
 
 
 class IntelligenceDatasetResult(BaseModel):

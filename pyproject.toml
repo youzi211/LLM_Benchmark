@@ -3,7 +3,7 @@ name = "llm-benchmark"
 version = "0.1.0"
 description = "Internal LLM API gateway baseline benchmark service"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
@@ -14,7 +14,11 @@ dependencies = [
 
 [dependency-groups]
 dev = ["pytest>=8.2.0", "pytest-asyncio>=0.23.0"]
-evalscope = ["evalscope[perf,sandbox]==1.14.1"]
+evalscope = [
+    "evalscope[perf,sandbox,terminal_bench]==1.14.1",
+    "harbor==0.25.0",
+    "swebench==4.1.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

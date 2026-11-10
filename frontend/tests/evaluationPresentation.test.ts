@@ -47,11 +47,11 @@ test("metric counts describe execution statuses rather than launch eligibility",
 
 test("default dataset previews follow the local/default intersection used by custom requests", () => {
   assert.deepEqual(effectiveDatasetNames(["gsm8k", "bbh"], ["gsm8k", "mbpp"], false, []), ["gsm8k"]);
-  assert.deepEqual(effectiveDatasetNames(["bbh"], ["gsm8k"], false, []), ["bbh"]);
+  assert.deepEqual(effectiveDatasetNames(["bbh"], ["gsm8k"], false, []), []);
 });
 
-test("custom dataset choices are local and keep the existing empty-selection fallback", () => {
+test("custom dataset choices are local and require an explicit selection", () => {
   assert.deepEqual(effectiveDatasetNames(["gsm8k", "bbh"], [], true, ["bbh", "bbh", "unavailable"]), ["bbh"]);
-  assert.deepEqual(effectiveDatasetNames(["gsm8k", "bbh"], [], true, []), ["gsm8k", "bbh"]);
+  assert.deepEqual(effectiveDatasetNames(["gsm8k", "bbh"], [], true, []), []);
   assert.deepEqual(effectiveDatasetNames([], [], true, []), []);
 });

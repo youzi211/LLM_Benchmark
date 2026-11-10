@@ -634,7 +634,7 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 
 #### GET `/api/intelligence/evalscope/config`
 
-读取当前 EvalScope 本地配置。响应包含 `datasets_dir`、`outputs_dir`、`judge_model_config_id`、`judge_generation_config`、`judge_worker_num`、`dataset_args`、`sandbox_enabled`、`sandbox_type` 和 `sandbox_manager_config`。`sandbox_manager_config` 中的 `api_key`、`token`、`password` 等敏感字段会被脱敏，不返回明文。
+读取当前 EvalScope 本地配置。响应包含 `datasets_dir`、`outputs_dir`、`agent_runtime_dir`、`agent_bridge_host`、`judge_model_config_id`、`judge_generation_config`、`judge_worker_num`、`dataset_args`、`sandbox_enabled`、`sandbox_type` 和 `sandbox_manager_config`。`sandbox_manager_config` 中的 `api_key`、`token`、`password` 等敏感字段会被脱敏，不返回明文。
 
 #### PUT `/api/intelligence/evalscope/config`
 
@@ -645,9 +645,12 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 | `judge_model_config_id` | string/null | LLM-as-Judge 使用的已保存模型配置 ID；为空时回退到 `data/models.json` 顶层 `analysis_model_id`。 |
 | `judge_generation_config` | object | Judge 生成参数，例如 `temperature`、`max_tokens`。 |
 | `judge_worker_num` | integer | Judge 数据集的兼容并发设置，范围 1-128；映射到原生 eval_batch_size，同时影响推理与 Judge，任务显式值优先。 |
+| `agent_runtime_dir` | string/null | OpenCode 与 DeepSeek Harness 的便携运行时目录；默认 `data/agent_runtime`，也可用环境变量 `LLM_BENCHMARK_AGENT_RUNTIME_DIR` 设置。 |
+| `agent_bridge_host` | string/null | Agent 容器访问主机模型代理的地址；默认自动读取 Docker `bridge` 网关，也可用环境变量 `LLM_BENCHMARK_AGENT_BRIDGE_HOST` 设置。 |
 | `sandbox_enabled` | boolean | 是否启用 EvalScope 代码执行 sandbox。 |
 | `sandbox_type` | string | sandbox engine，默认 `docker`。 |
 | `sandbox_manager_config` | object | 透传给 EvalScope sandbox manager 的配置，例如 `{ "base_url": "http://10.182.17.2:1234" }`。 |
+| `sandbox_default_config` | object | 容器资源配置，可设置 `memory_limit`、`cpu_limit`、`platform`、`network_enabled`，传给 EvalScope 的 `sandbox.default_config`。 |
 
 #### GET `/api/intelligence/evalscope/sandbox-health`
 
@@ -750,6 +753,25 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 ```
 
 成功响应：`200 OK`，返回 `IntelligenceTask`。若 `datasets` 包含 `simple_qa`、`alpaca_eval`、`arena_hard` 等需要 LLM Judge 的数据集，服务会先解析默认 Judge；没有可用 Judge 时返回 `400 judge_required`，不会启动 EvalScope。
+
+Agent 评测通过可选 `agent` 字段人工触发，例如 `{"framework": "opencode", "timeout": 1800}`；`framework` 也可为 `deepseek-harness`。Agent 数据集 ID 为 `swe_bench_verified_mini_agentic`、`swe_bench_pro`（EvalScope V1）、`swe_bench_pro_v2` 和 `terminal_bench_v4`。后两者使用 Harbor 任务容器和本地任务目录；Pro V2 会把 Agent 生成的补丁应用到全新官方任务镜像后再运行 verifier。运行前需准备 EvalScope、Harbor、Docker、对应任务镜像以及 `agent_runtime_dir` 下的便携 Node/OpenCode/DeepSeek Harness 运行时。该入口不会自动安装运行时或镜像；任务容器需要能访问主机模型代理。Terminal-Bench 与 Pro V2 可通过 `dataset_args.<数据集 ID>.extra_params.task_names` 限定任务；网络受限环境可用 `dataset_args.<数据集 ID>.extra_params.docker_registry_mirror` 指定镜像仓库前缀，原任务中的镜像标签与 digest 会在运行时保留。SWE-bench Pro V2 的 `subset_list` 支持 `default`（642 项）和 `hard`（51 项）。
+
+Agent 请求示例：
+
+```json
+{
+  "model_id": "demo-chat",
+  "datasets": ["terminal_bench_v4"],
+  "limit": 1,
+  "eval_batch_size": 1,
+  "agent": {
+    "framework": "opencode",
+    "timeout": 1800
+  }
+}
+```
+
+该入口不会改变默认或定时评测的数据集组合。若 Agent 运行时或对应数据集未就绪，任务会失败并在错误信息中记录缺失项。
 
 ### 10.7 查询本地智力评测任务
 

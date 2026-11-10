@@ -9,6 +9,7 @@ interface Props {
   modelValue?: string[];
   subsetModelValue?: Record<string, string[]>;
   subsetOverride?: Record<string, boolean>;
+  taskNamesModelValue?: Record<string, string[]>;
   disabled?: boolean;
   loading?: boolean;
 }
@@ -18,6 +19,7 @@ const props = withDefaults(defineProps<Props>(), {
   modelValue: () => [],
   subsetModelValue: () => ({}),
   subsetOverride: () => ({}),
+  taskNamesModelValue: () => ({}),
   disabled: false,
   loading: false,
 });
@@ -26,15 +28,18 @@ const emit = defineEmits<{
   "update:modelValue": [string[]];
   "update:subsetModelValue": [Record<string, string[]>];
   "update:subsetOverride": [Record<string, boolean>];
+  "update:taskNamesModelValue": [Record<string, string[]>];
 }>();
 
-type FilterMode = "default" | "all" | "judge" | "sandbox";
+type FilterMode = "default" | "all" | "model" | "judge" | "sandbox" | "agent";
 const filterMode = ref<FilterMode>(props.defaultDatasets.length ? "default" : "all");
 const expanded = ref<Set<string>>(new Set());
 const pickerId = useId();
 const filters: Array<{ value: FilterMode; label: string }> = [
   { value: "default", label: "默认推荐" }, { value: "all", label: "全部数据集" },
+  { value: "model", label: "模型能力" },
   { value: "judge", label: "需 Judge" }, { value: "sandbox", label: "需 Sandbox" },
+  { value: "agent", label: "Agent 评测" },
 ];
 
 const datasetEntries = computed(() => {
@@ -53,12 +58,16 @@ const visibleEntries = computed(() => {
   switch (filterMode.value) {
     case "all":
       return entries;
+    case "model":
+      return entries.filter(([, m]) => !m.agent_evaluation);
     case "default":
       return entries.filter(([n]) => props.defaultDatasets.includes(n));
     case "judge":
       return entries.filter(([, m]) => Boolean(m.needs_judge));
     case "sandbox":
-      return entries.filter(([, m]) => Array.isArray(m.categories) && m.categories.includes("Coding"));
+      return entries.filter(([, m]) => !m.agent_evaluation && m.categories?.includes("Coding"));
+    case "agent":
+      return entries.filter(([, m]) => Boolean(m.agent_evaluation));
   }
   return entries;
 });
@@ -167,12 +176,25 @@ function effectiveSubsetsList(name: string): string[] {
           <el-tag v-if="defaultDatasets.includes(name)" size="small" type="success" effect="plain">推荐</el-tag>
           <el-tag v-if="meta.available_local" size="small" type="info" effect="plain">本地</el-tag>
           <el-tag v-if="meta.needs_judge" size="small" type="warning" effect="plain">需 Judge</el-tag>
-          <el-tag v-if="meta.categories?.includes('Coding')" size="small" type="warning" effect="plain">需 Sandbox</el-tag>
+          <el-tag v-if="!meta.agent_evaluation && meta.categories?.includes('Coding')" size="small" type="warning" effect="plain">需 Sandbox</el-tag>
+          <el-tag v-if="meta.agent_evaluation" size="small" type="info" effect="plain">Agent · {{ meta.agent_evaluation.ability }}</el-tag>
+          <el-tag v-if="meta.agent_evaluation?.sample_count" size="small" type="success" effect="plain">{{ meta.agent_evaluation.sample_count }} 题已准备</el-tag>
+          <el-tag v-if="meta.agent_evaluation" size="small" type="warning" effect="plain">{{ meta.agent_evaluation.runtime_ready === true ? '运行环境已验证' : '运行环境待验证' }}</el-tag>
           <el-tag v-for="c in meta.categories || []" :key="c" size="small" effect="plain">{{ c }}</el-tag>
         </div>
 
         <p class="row-desc">{{ meta.description || '暂无描述' }}</p>
+        <p v-if="meta.agent_evaluation?.requirements" class="row-desc">{{ meta.agent_evaluation.requirements }}</p>
+        <small v-if="meta.agent_evaluation?.cli" class="muted">CLI：{{ Object.entries(meta.agent_evaluation.cli).map(([name, cli]) => `${name} ${cli.ready ? cli.version : '未准备'}`).join('；') }}</small>
         <small v-if="meta.local_path" class="row-path" :title="meta.local_path">{{ meta.local_path }}</small>
+        <label v-if="meta.agent_evaluation?.task_names?.length && isChecked(name)" class="row-desc">
+          指定任务（留空运行所选子集，样本上限继续生效）
+          <el-select :model-value="taskNamesModelValue[name] || []" multiple filterable clearable collapse-tags :disabled="disabled"
+            :aria-label="`${meta.pretty_name || name} 指定任务`" style="width: 100%"
+            @update:model-value="(value: string[]) => emit('update:taskNamesModelValue', { ...taskNamesModelValue, [name]: value })">
+            <el-option v-for="task in meta.agent_evaluation.task_names" :key="task" :value="task" :label="task" />
+          </el-select>
+        </label>
 
         <div v-if="hasSubsets(meta)" v-show="isExpanded(name)" :id="`${pickerId}-${name}`" class="row-subsets">
           <div class="subset-head">

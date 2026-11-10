@@ -45,6 +45,9 @@ def _load_evalscope_benchmarks() -> dict[str, dict[str, Any]]:
 
     from evalscope.api.registry import BENCHMARK_REGISTRY  # type: ignore
     from evalscope.constants import Tags  # type: ignore
+    from app.intelligence.harbor_agent import register_harbor_benchmarks
+
+    register_harbor_benchmarks()
 
     def _tag_str(t: Any) -> str:
         return t.value if hasattr(t, 'value') else str(t)
@@ -98,7 +101,6 @@ def _dataset_needs_code_exec(name: str) -> bool:
 
 
 class EvalScopeDirectError(RuntimeError):
-    pass
     pass
 
 
@@ -269,16 +271,59 @@ def _remote_sandbox_execution_smoke(
 
 
 def dataset_metadata(config: EvalScopeConfig) -> dict[str, Any]:
+    from app.evalscope_defaults import AGENT_DATASETS
+
     datasets = {name: dict(meta) for name, meta in _load_evalscope_benchmarks().items()}
     local = local_dataset_metadata(config).get("datasets", {})
     for name, meta in local.items():
         row = datasets.setdefault(name, {})
         row.update(meta)
     for name, row in datasets.items():
+        if name in AGENT_DATASETS:
+            row.setdefault("agent_evaluation", _agent_metadata(config, name, None))
+        row["evaluation_lane"] = "agent" if name in AGENT_DATASETS else "model"
         configured_subsets = _configured_subset_list(config, name)
         if configured_subsets:
             row["configured_subset_list"] = configured_subsets
     return {"total": len(datasets), "default_datasets": list(DEFAULT_DATASETS), "datasets": datasets}
+
+
+def _agent_metadata(config: EvalScopeConfig, name: str, path: Path | None) -> dict[str, Any]:
+    from app.evalscope_defaults import AGENT_DATASETS
+    from app.intelligence.agent_runtime import runtime_bundle, runtime_root
+
+    cli = {}
+    for framework in ("opencode", "deepseek-harness"):
+        try:
+            manifest = runtime_bundle(runtime_root(config), framework)
+            cli[framework] = {"ready": True, "version": manifest.get("opencode_version" if framework == "opencode" else "deepseek_harness_version")}
+        except ValueError:
+            cli[framework] = {"ready": False}
+    count = 0
+    task_names = []
+    if path and path.is_dir():
+        if name in {"terminal_bench_v4", "swe_bench_pro_v2"}:
+            from app.intelligence.harbor_agent import local_tasks
+            try:
+                task_names = sorted(p.name for p in local_tasks(path).iterdir()
+                                    if (p / "task.toml").is_file() and (p / "instruction.md").is_file() and (p / "tests/test.sh").is_file())
+                count = len(task_names)
+            except ValueError:
+                pass
+        else:
+            subset = "v1" if name == "swe_bench_pro" else "default"
+            import pyarrow.parquet as pq
+            for file in (path / subset).glob("*.parquet"):
+                try:
+                    count += pq.read_metadata(file).num_rows
+                except Exception:
+                    pass
+    return {**AGENT_DATASETS[name], "data_status": "ready" if count else "missing_or_invalid",
+            "sample_count": count, "cli": cli, "runtime_ready": None,
+            "task_names": task_names,
+            "requirements": ("Docker/Compose；全量含 H100、多容器、独立 verifier；完整 66 题" if name == "terminal_bench_v4"
+                             else "Docker/Compose；V2 镜像；离线 Agent；全新环境补丁重放" if name == "swe_bench_pro_v2"
+                             else "EvalScope sandbox；实例镜像；官方评分资源")}
 
 
 def _configured_subset_list(config: EvalScopeConfig, dataset: str) -> list[str]:
@@ -305,6 +350,8 @@ def _local_subset_names(dataset_dir: Path) -> list[str]:
 
 
 def local_dataset_metadata(config: EvalScopeConfig) -> dict[str, Any]:
+    from app.evalscope_defaults import AGENT_DATASETS
+
     root = datasets_root(config)
     datasets: dict[str, dict[str, Any]] = {}
     if root.exists():
@@ -324,6 +371,21 @@ def local_dataset_metadata(config: EvalScopeConfig) -> dict[str, Any]:
                     "has_subsets": bool(subsets),
                 }
             )
+            if child.name in AGENT_DATASETS:
+                info = _agent_metadata(config, child.name, child)
+                base["agent_evaluation"] = info
+                base["available_local"] = info["sample_count"] > 0
+                base["evaluation_lane"] = "agent"
+                if child.name == "swe_bench_pro":
+                    base["pretty_name"] = "SWE-bench Pro V1"
+                    base["subsets"] = ["v1"] if (child / "v1").is_dir() else []
+                elif child.name == "swe_bench_pro_v2":
+                    base["subsets"] = ["default", "hard"]
+                elif child.name == "terminal_bench_v4":
+                    base["subsets"] = ["default"]
+                if child.name in {"swe_bench_pro", "swe_bench_pro_v2", "terminal_bench_v4"}:
+                    base["subset_count"] = len(base["subsets"])
+                    base["has_subsets"] = bool(base["subsets"])
             if configured_subsets:
                 base["configured_subset_list"] = configured_subsets
             datasets[child.name] = base
@@ -534,6 +596,7 @@ class EvalScopeIntelligenceExecutor:
         judge_model_args: dict[str, Any] | None = None,
         dataset_args: dict[str, dict[str, Any]] | None = None,
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        agent: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         try:
             from evalscope import TaskConfig, run_task  # type: ignore
@@ -567,6 +630,25 @@ class EvalScopeIntelligenceExecutor:
                 judge_model_args=judge_model_args,
                 user_dataset_args=dataset_args,
             )
+            if agent:
+                from evalscope.agent.external import ExternalAgentConfig
+                from app.intelligence.agent_runtime import bridge_host, cancel_marker, register_project_runners, runtime_bundle, runtime_root
+
+                register_project_runners()
+                runtime_bundle(runtime_root(self.config), agent["framework"])
+                options = {"runtime_dir": str(runtime_root(self.config)),
+                           "cancel_file": str(cancel_marker(self.config, task_id)),
+                           "bridge_host": bridge_host(self.config), "model_name": model}
+                cfg_data["agent_config"] = ExternalAgentConfig(
+                    framework=f"benchmark-{agent['framework']}", timeout=agent["timeout"],
+                    bridge={"proxy_host": "0.0.0.0"}, kwargs=options,
+                )
+                cfg_data["ignore_errors"] = False
+                cfg_data["eval_batch_size"] = eval_batch_size or 1
+                if dataset in {"terminal_bench_v4", "swe_bench_pro_v2"}:
+                    extra = cfg_data["dataset_args"][dataset].setdefault("extra_params", {})
+                    extra["project_agent"] = {k: v for k, v in options.items() if k != "model_name"}
+                    extra["project_agent"].update(agent)
 
             def emit(progress: dict[str, Any]) -> None:
                 if progress_callback is None:
@@ -624,7 +706,9 @@ class EvalScopeIntelligenceExecutor:
                 stop_monitor.set()
                 monitor.join(timeout=1.0)
 
-        status = "failed" if errors and not results else "completed"
+        from app.intelligence.agent_runtime import cancel_marker
+
+        status = "interrupted" if cancel_marker(self.config, task_id).exists() else ("failed" if errors else "completed")
         report_table = self._report_table(report_map)
         completed = datetime.now(timezone.utc).isoformat()
         return {
@@ -674,7 +758,7 @@ class EvalScopeIntelligenceExecutor:
         }
         if self.config.datasets_dir:
             data["dataset_dir"] = str(datasets_root(self.config))
-        if _dataset_needs_code_exec(dataset):
+        if _dataset_needs_code_exec(dataset) and dataset not in {"terminal_bench_v4", "swe_bench_pro_v2"}:
             if not self.config.sandbox_enabled:
                 raise EvalScopeDirectError(
                     f"sandbox_required:{dataset}; "
@@ -687,6 +771,9 @@ class EvalScopeIntelligenceExecutor:
                 "pool_size": self.config.sandbox_pool_size,
                 "manager_config": dict(self.config.sandbox_manager_config or {}),
             }
+            default_config = self.config.sandbox_default_config.model_dump(exclude_none=True)
+            if default_config:
+                data["sandbox"]["default_config"] = default_config
         if _dataset_needs_judge(dataset) and judge_model_args:
             data["judge"] = {"strategy": "llm", "models": [judge_model_args]}
             data["eval_batch_size"] = eval_batch_size or self.config.judge_worker_num

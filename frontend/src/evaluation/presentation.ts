@@ -49,7 +49,7 @@ export function effectiveDatasetNames(
   const local = new Set(localNames);
   const selected = custom ? chosenNames.filter((name) => local.has(name))
     : localNames.filter((name) => defaultNames.includes(name));
-  return [...new Set(selected.length ? selected : localNames)];
+  return [...new Set(selected)];
 }
 
 export function modelDisplayName(id: string | undefined, models: ReadonlyArray<{ id: string; name?: string }>): string {

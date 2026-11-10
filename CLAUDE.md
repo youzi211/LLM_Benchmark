@@ -69,7 +69,7 @@ uv run pytest -q
 
 ## Coding Style & Naming Conventions
 
-Use Python 3.11+, 4-space indentation, type hints, and Pydantic models for request/response structures. Keep metric IDs stable and English-like, for example `context_length`; user-facing names and explanations should be Chinese-friendly. Prefer small functions with clear return models such as `MetricResult`, `AdapterResponse`, and `ReportAnalysis`.
+Use Python 3.12+, 4-space indentation, type hints, and Pydantic models for request/response structures. Keep metric IDs stable and English-like, for example `context_length`; user-facing names and explanations should be Chinese-friendly. Prefer small functions with clear return models such as `MetricResult`, `AdapterResponse`, and `ReportAnalysis`.
 
 When changing EvalScope integration, keep the main service in-process and direct. Validate EvalScope API changes against the installed package or official docs before changing runner code.
 

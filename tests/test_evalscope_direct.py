@@ -122,6 +122,50 @@ def test_intelligence_executor_enables_remote_sandbox_for_mbpp(tmp_path):
     assert "sandbox_manager_config" not in data
 
 
+def test_intelligence_executor_passes_sandbox_resource_defaults(tmp_path):
+    executor = EvalScopeIntelligenceExecutor(EvalScopeConfig(
+        sandbox_enabled=True,
+        sandbox_default_config={"memory_limit": "16g", "cpu_limit": 8, "network_enabled": False},
+    ))
+    data = executor._task_config_data(
+        model="demo", api_url="http://model/v1", api_key="dummy", dataset="mbpp",
+        local_paths={}, limit=1, eval_batch_size=1, generation_config=None,
+        work_dir=str(tmp_path), judge_model_args=None,
+    )
+    assert data["sandbox"]["default_config"] == {
+        "memory_limit": "16g", "cpu_limit": 8, "network_enabled": False,
+    }
+
+
+def test_agent_dataset_metadata_does_not_claim_runtime_is_ready(tmp_path):
+    from app.intelligence.evalscope_direct import local_dataset_metadata
+
+    (tmp_path / "swe_bench_pro").mkdir()
+    metadata = local_dataset_metadata(EvalScopeConfig(datasets_dir=str(tmp_path)))
+    agent = metadata["datasets"]["swe_bench_pro"]["agent_evaluation"]
+    assert agent["runtime_ready"] is None
+    assert agent["data_status"] == "missing_or_invalid"
+    assert agent["sample_count"] == 0
+    assert metadata["datasets"]["swe_bench_pro"]["available_local"] is False
+
+
+def test_terminal_harbor_tasks_are_not_reported_as_subsets(tmp_path):
+    from app.intelligence.evalscope_direct import local_dataset_metadata
+
+    dataset = tmp_path / "terminal_bench_v4"
+    for name in ("cpu-task", "shell-task"):
+        task = dataset / name
+        (task / "tests").mkdir(parents=True)
+        (task / "task.toml").write_text("schema_version = '1.4'")
+        (task / "instruction.md").write_text("Do work")
+        (task / "tests" / "test.sh").write_text("exit 0")
+
+    row = local_dataset_metadata(EvalScopeConfig(datasets_dir=str(tmp_path)))["datasets"]["terminal_bench_v4"]
+
+    assert row["subsets"] == ["default"]
+    assert row["agent_evaluation"]["task_names"] == ["cpu-task", "shell-task"]
+
+
 def test_intelligence_executor_defaults_live_code_bench_to_single_subset(tmp_path):
     executor = EvalScopeIntelligenceExecutor(
         EvalScopeConfig(

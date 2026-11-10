@@ -39,6 +39,8 @@ __pycache__/
 
 # Local deployment smoke-test logs and temp files
 /.tmp/
+*-startup.err.log
+*-startup.out.log
 
 
 /data/suite_runs/
@@ -47,6 +49,9 @@ __pycache__/
 
 
 /data/evalscope_datasets/
+/data/agent_runtime/
+/data/evalscope_resources/
+/data/evalscope_dataset_manifests/
 /data/stress_datasets/
 
 /outputs/

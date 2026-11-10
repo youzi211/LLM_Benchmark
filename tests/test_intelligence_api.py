@@ -119,6 +119,29 @@ def test_intelligence_custom_route_passes_dataset_args(monkeypatch):
     assert captured["dataset_args"] == {"bbh": {"subset_list": ["boolean_expressions"]}}
 
 
+def test_intelligence_route_passes_agent_and_rejects_unknown_framework(monkeypatch):
+    from app.api import routes_intelligence
+
+    captured = {}
+
+    class CapturingRunner(FakeRunner):
+        async def submit_custom(self, **kwargs):
+            captured.update(kwargs)
+            return await super().submit_custom(**kwargs)
+
+    monkeypatch.setattr(routes_intelligence, "_runner", lambda: CapturingRunner())
+    monkeypatch.setattr(routes_intelligence, "local_dataset_metadata", lambda config: {
+        "total": 1, "datasets": {"swe_bench_pro": {"pretty_name": "SWE-bench Pro"}}
+    })
+    client = TestClient(app)
+    payload = {"model_id": "m1", "datasets": ["swe_bench_pro"],
+               "agent": {"framework": "opencode", "timeout": 90}}
+    assert client.post("/api/intelligence/tasks", json=payload).status_code == 200
+    assert captured["agent"] == {"framework": "opencode", "timeout": 90}
+    payload["agent"]["framework"] = "arbitrary-command"
+    assert client.post("/api/intelligence/tasks", json=payload).status_code == 422
+
+
 def test_intelligence_custom_route_rejects_non_local_dataset(monkeypatch, temp_data_dirs):
     from app.api import routes_intelligence
 

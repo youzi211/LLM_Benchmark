@@ -17,6 +17,14 @@ export interface TaskLike {
 }
 
 export interface DatasetMeta {
+  evaluation_lane?: "model" | "agent";
+  agent_evaluation?: {
+    ability: string; execution: string; runtime_ready: boolean | null;
+    data_status?: string; sample_count?: number; requirements?: string;
+    revision?: string; scorer?: string;
+    task_names?: string[];
+    cli?: Record<string, { ready: boolean; version?: string }>;
+  };
   name?: string;
   pretty_name?: string;
   description?: string;

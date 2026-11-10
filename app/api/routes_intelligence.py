@@ -154,6 +154,7 @@ async def submit_custom_task(request: IntelligenceRunRequest):
             eval_batch_size=request.eval_batch_size,
             generation_config=request.generation_config,
             dataset_args=request.dataset_args,
+            **({"agent": request.agent.model_dump()} if request.agent else {}),
         )
     except ValueError as exc:
         text = str(exc)

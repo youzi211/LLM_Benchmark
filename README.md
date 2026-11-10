@@ -732,6 +732,6 @@ reports/
 
 默认首页是模型工作台，模型 ID 为唯一身份；各链路分别保留最近完整成功结果及最新执行状态。详情支持历史追溯、性能/能力图表，模型对比支持 2–4 个模型及指定历史任务。Judge LLM、沙箱配置位于评测环境。
 
-安装固定引擎：`uv sync --group evalscope --python 3.11`（EvalScope 1.14.1，perf 与 sandbox）。本项目使用官方 PyPI 锁文件；Windows 推荐 Python 3.11，避免部分原生扩展在更新 Python 上缺少预编译 wheel。
+安装固定引擎：`uv sync --group evalscope --python 3.12`（EvalScope 1.14.1、Harbor 0.25.0、swebench 4.1.0，含 perf、sandbox 和 Terminal-Bench 支持）。本项目最低要求 Python 3.12；`uv.lock` 固定依赖版本。
 
 部署使用单个 Uvicorn worker。升级前停止提交新任务，等待活动评测退出并备份 data、reports、outputs（包含本地密钥，只存本地，不提交）；再同步依赖并重启。启动会中断遗留任务且不自动重跑，过期定时执行不补发。回滚时成套恢复代码与锁文件；新增字段为可选，旧历史不覆盖、不自动重评。

@@ -49,12 +49,15 @@ let selectionVersion = 0;
 const datasets = ref<Record<string, DatasetMeta>>({});
 const defaultDatasets = ref<string[]>([]);
 const custom = ref(false);
+const agent = ref("");
+const agentTimeout = ref(1800);
 const chosenDatasets = ref<string[]>([]);
 const limit = ref("");
 const batchSize = ref("");
 // Per-dataset selected subsets: { datasetName: string[] }
 // Empty/null means use configured defaults.
 const chosenSubsets = ref<Record<string, string[]>>({});
+const chosenAgentTasks = ref<Record<string, string[]>>({});
 // Per-dataset subset override switch
 const subsetOverride = ref<Record<string, boolean>>({});
 
@@ -98,7 +101,6 @@ async function loadDatasetMeta() {
     datasetError.value = "";
     defaultDatasets.value = data.default_datasets;
     chosenDatasets.value = localDatasetEntries.value.filter(([name]) => defaultDatasets.value.includes(name)).map(([name]) => name);
-    if (!chosenDatasets.value.length) chosenDatasets.value = localDatasetEntries.value.map(([name]) => name);
   } catch (err) {
     datasetError.value = err instanceof Error ? err.message : String(err);
   } finally {
@@ -144,12 +146,19 @@ function buildPayload() {
   if (!store.currentId) throw new Error("请先选择当前模型");
   const limitValue = toNumber(limit.value);
   const batchValue = toNumber(batchSize.value);
-  if (!custom.value && limitValue === undefined && batchValue === undefined) {
+  if (!agent.value && !custom.value && limitValue === undefined && batchValue === undefined) {
     return { endpoint: "default" as const, payload: { model_id: store.currentId } };
   }
   const finalDatasets = effectiveDatasets.value;
   if (!finalDatasets.length) throw new Error("未发现本地可用数据集，请先由管理员提供数据集目录。");
+  if (agent.value && finalDatasets.some((name) => !datasets.value[name]?.agent_evaluation)) {
+    throw new Error("Agent 模式请选择 Agent 评测分类中的数据集");
+  }
+  if (!agent.value && finalDatasets.some((name) => ["terminal_bench_v4", "swe_bench_pro_v2"].includes(name))) {
+    throw new Error("请为该数据集选择 OpenCode 或 DeepSeek Harness");
+  }
   const payload: Record<string, unknown> = { model_id: store.currentId, datasets: finalDatasets };
+  if (agent.value) payload.agent = { framework: agent.value, timeout: agentTimeout.value };
   if (limitValue !== undefined) payload.limit = limitValue;
   if (batchValue !== undefined) payload.eval_batch_size = batchValue;
 
@@ -158,6 +167,9 @@ function buildPayload() {
   for (const name of finalDatasets) {
     if (subsetOverride.value[name] && chosenSubsets.value[name]?.length) {
       datasetArgs[name] = { subset_list: chosenSubsets.value[name] };
+    }
+    if (chosenAgentTasks.value[name]?.length) {
+      datasetArgs[name] = { ...datasetArgs[name], extra_params: { task_names: chosenAgentTasks.value[name] } };
     }
   }
   if (Object.keys(datasetArgs).length) payload.dataset_args = datasetArgs;
@@ -244,8 +256,15 @@ async function bulkRerun() {
   try {
     for (const row of rows as any[]) {
       try {
-        // 列表只存 datasets；limit 等参数不保留，重跑走后端默认。
-        await runIntelligence({ model_id: row.model_id, datasets: row.datasets || [] });
+        const conditions = row.execution_snapshot?.conditions;
+        if (!conditions) throw new Error("历史任务缺少运行条件，无法安全重跑，请新建任务。");
+        const sizes = [...new Set(Object.values(conditions.eval_batch_size || {}))];
+        if (sizes.length > 1) throw new Error("原任务各数据集批大小不同，无法自动恢复，请新建任务。");
+        await runIntelligence({
+          model_id: row.model_id, datasets: conditions.datasets, limit: conditions.limit,
+          eval_batch_size: sizes[0], generation_config: conditions.generation_config,
+          dataset_args: conditions.dataset_args, agent: conditions.agent,
+        });
         ok += 1;
       } catch (err) {
         failed += 1;
@@ -338,6 +357,15 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
   >
     <template #configuration>
       <el-form label-position="top" class="lb-eval-form">
+        <el-form-item label="执行方式">
+          <el-select v-model="agent" @change="() => { if (agent) { custom = true; chosenDatasets = []; } }">
+            <el-option label="标准评测" value="" />
+            <el-option label="OpenCode（SWE-bench）" value="opencode" />
+            <el-option label="DeepSeek Harness（SWE-bench）" value="deepseek-harness" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="agent" label="Agent 单样本时限（秒）"><el-input-number v-model="agentTimeout" :min="1" :max="86400" /></el-form-item>
+        <el-alert v-if="agent" type="info" :closable="false" title="支持 SWE-bench Mini、Pro V1 / V2、Terminal-Bench 4.0。请在 Agent 分类选择数据集；小样本结果不代表完整榜单成绩。" />
         <el-row :gutter="16">
           <el-col :xs="24" :sm="12"><el-form-item label="每子集样本上限 · limit"><el-input v-model="limit" aria-label="样本上限 limit" placeholder="留空使用服务端默认" /></el-form-item></el-col>
           <el-col :xs="24" :sm="12"><el-form-item label="评测批大小 · eval_batch_size"><el-input v-model="batchSize" aria-label="评测批大小" placeholder="留空使用服务端默认" /></el-form-item></el-col>
@@ -353,11 +381,12 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
           <DatasetPicker
             :model-value="custom ? chosenDatasets : effectiveDatasets" :datasets="datasets" :default-datasets="defaultDatasets"
             :subset-model-value="chosenSubsets" :subset-override="subsetOverride" :disabled="!custom"
+            v-model:task-names-model-value="chosenAgentTasks"
             @update:model-value="(value) => chosenDatasets = value"
             @update:subset-model-value="(value) => chosenSubsets = value"
             @update:subset-override="(value) => subsetOverride = value"
           />
-          <p v-if="custom" class="lb-eval-form__help">将评测 {{ effectiveDatasets.length }} 个本地数据集。{{ !chosenDatasets.length ? '未勾选时沿用原有规则，使用全部本地可用数据集。' : '子集未覆盖时保留后端默认配置。' }}</p>
+          <p v-if="custom" class="lb-eval-form__help">将评测 {{ effectiveDatasets.length }} 个本地数据集。请明确选择数据集；子集未覆盖时保留后端默认配置。</p>
         </template>
         <EmptyState v-else title="暂无本地可用数据集" description="请先由管理员在 data/evalscope_datasets 提供数据集，再重新检测。" action-label="重新检测" @action="loadDatasetMeta" />
       </el-form>

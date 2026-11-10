@@ -21,7 +21,8 @@ def test_root_pyproject_has_evalscope_dependency_group() -> None:
     groups = pyproject.get("dependency-groups", {})
     assert "evalscope" in groups
     deps = "\n".join(groups["evalscope"]).lower()
-    assert "evalscope[perf,sandbox]" in deps
+    assert "evalscope[perf,sandbox,terminal_bench]==1.14.1" in deps
+    assert "harbor==0.25.0" in deps
     assert "sse-starlette" not in deps
 
 
