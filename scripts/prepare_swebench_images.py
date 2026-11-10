@@ -96,7 +96,7 @@ def _write_manifest(dataset: str, images: dict[str, str], cache_dir: Path) -> Pa
 def main() -> None:
     parser = argparse.ArgumentParser(description="Pre-pull SWE-bench images and cache task metadata for offline evaluation.")
     parser.add_argument("--dataset", default="swe_bench_verified_mini_agentic")
-    parser.add_argument("--limit", type=int)
+    parser.add_argument("--limit", type=int, default=1, help="Number of instance images to prepare; use 50 for a complete Mini offline run.")
     parser.add_argument("--offline-check", action="store_true")
     args = parser.parse_args()
 
