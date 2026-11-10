@@ -36,6 +36,16 @@ RUN conda config --append channels conda-forge"""
     assert "conda-forge: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud" in mirrored
 
 
+def test_swebench_agent_defaults_to_dockerhub_mirror(tmp_path):
+    executor = EvalScopeIntelligenceExecutor(EvalScopeConfig(outputs_dir=str(tmp_path)))
+
+    args = executor._dataset_args(
+        dataset="swe_bench_verified_mini_agentic", local_paths={}
+    )
+
+    assert args["swe_bench_verified_mini_agentic"]["extra_params"]["dockerhub_username"] == "docker.1ms.run/swebench"
+
+
 def test_judge_config_status_does_not_expose_api_key():
     status = judge_config_status(
         EvalScopeConfig(judge_model_config_id="judge-model"),

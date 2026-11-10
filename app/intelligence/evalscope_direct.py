@@ -828,6 +828,10 @@ class EvalScopeIntelligenceExecutor:
         args.update(copy.deepcopy(self.config.dataset_args.get(dataset, {})))
         if user_dataset_args and dataset in user_dataset_args:
             args.update(copy.deepcopy(user_dataset_args[dataset]))
+        if dataset.startswith("swe_bench") and dataset != "swe_bench_pro_v2":
+            extra_params = args.setdefault("extra_params", {})
+            dockerhub_mirror = (os.getenv("LLM_BENCHMARK_SWEBENCH_DOCKERHUB_MIRROR") or "docker.1ms.run").rstrip("/")
+            extra_params.setdefault("dockerhub_username", f"{dockerhub_mirror}/swebench")
         if dataset in local_paths and not args.get("local_path"):
             args["local_path"] = local_paths[dataset]
         return {dataset: args} if args else {}
