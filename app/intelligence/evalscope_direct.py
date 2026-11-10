@@ -100,6 +100,48 @@ def _dataset_needs_code_exec(name: str) -> bool:
     return bool(meta and meta.get('needs_code_exec'))
 
 
+def _mirror_swebench_python_base(
+    dockerfile: str,
+    *,
+    miniconda_mirror: str | None = None,
+    conda_mirror: str | None = None,
+) -> str:
+    miniconda_mirror = (
+        miniconda_mirror
+        or os.getenv("LLM_BENCHMARK_SWEBENCH_MINICONDA_MIRROR")
+        or "https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda"
+    ).rstrip("/")
+    conda_mirror = (
+        conda_mirror
+        or os.getenv("LLM_BENCHMARK_SWEBENCH_CONDA_MIRROR")
+        or "https://mirrors.tuna.tsinghua.edu.cn/anaconda"
+    ).rstrip("/")
+    dockerfile = dockerfile.replace(
+        "https://repo.anaconda.com/miniconda/", f"{miniconda_mirror}/"
+    )
+    old = "RUN conda init --all\nRUN conda config --append channels conda-forge"
+    mirrored = f"""RUN conda init --all
+RUN printf 'channels:\\n  - defaults\\nshow_channel_urls: true\\ndefault_channels:\\n  - {conda_mirror}/pkgs/main\\n  - {conda_mirror}/pkgs/r\\ncustom_channels:\\n  conda-forge: {conda_mirror}/cloud\\n' > /root/.condarc
+RUN conda clean -i
+RUN conda config --append channels conda-forge"""
+    return dockerfile.replace(old, mirrored)
+
+
+def configure_swebench_docker_mirrors() -> None:
+    """Keep SWE-bench image builds working on hosts that cannot reach Anaconda."""
+    try:
+        import swebench.harness.dockerfiles as dockerfiles  # type: ignore
+        from swebench.harness.dockerfiles import python as python_dockerfiles  # type: ignore
+    except ImportError:
+        return
+    if getattr(python_dockerfiles, "_llm_benchmark_mirrors_applied", False):
+        return
+    mirrored = _mirror_swebench_python_base(dockerfiles._DOCKERFILE_BASE["py"])
+    dockerfiles._DOCKERFILE_BASE["py"] = mirrored
+    python_dockerfiles._DOCKERFILE_BASE_PY = mirrored
+    python_dockerfiles._llm_benchmark_mirrors_applied = True
+
+
 class EvalScopeDirectError(RuntimeError):
     pass
 
@@ -616,6 +658,8 @@ class EvalScopeIntelligenceExecutor:
             current = IntelligenceTaskStore().get(task_id)
             if current is not None and current.cancel_requested_at:
                 break
+            if agent and dataset.startswith("swe_bench"):
+                configure_swebench_docker_mirrors()
             dataset_work_dir = output_base / dataset
             cfg_data = self._task_config_data(
                 model=model,

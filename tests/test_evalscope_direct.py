@@ -5,6 +5,7 @@ import types
 from app.intelligence.evalscope_direct import (
     EvalScopeDirectError,
     EvalScopeIntelligenceExecutor,
+    _mirror_swebench_python_base,
     dataset_metadata,
     judge_config_status,
     summarize_evalscope_task_progress,
@@ -20,6 +21,19 @@ def test_evalscope_config_is_in_process_and_ignores_legacy_base_url():
     assert not hasattr(config, "base_url")
     assert config.outputs_dir == "outputs/evalscope"
     assert dataset_metadata(config)["default_datasets"]
+
+
+def test_swebench_python_base_uses_domestic_mirrors():
+    dockerfile = """RUN wget 'https://repo.anaconda.com/miniconda/Miniconda3-py311_23.11.0-2-Linux-x86_64.sh' -O miniconda.sh
+RUN conda init --all
+RUN conda config --append channels conda-forge"""
+
+    mirrored = _mirror_swebench_python_base(dockerfile)
+
+    assert "repo.anaconda.com" not in mirrored
+    assert "mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/Miniconda3" in mirrored
+    assert "default_channels:" in mirrored
+    assert "conda-forge: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud" in mirrored
 
 
 def test_judge_config_status_does_not_expose_api_key():
