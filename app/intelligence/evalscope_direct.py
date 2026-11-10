@@ -127,8 +127,8 @@ RUN conda config --append channels conda-forge"""
     return dockerfile.replace(old, mirrored)
 
 
-def configure_swebench_docker_mirrors() -> None:
-    """Keep SWE-bench image builds working on hosts that cannot reach Anaconda."""
+def configure_swebench_mirrors() -> None:
+    """Keep SWE-bench setup and image builds working through public mirrors."""
     try:
         import swebench.harness.dockerfiles as dockerfiles  # type: ignore
         from swebench.harness.dockerfiles import python as python_dockerfiles  # type: ignore
@@ -140,6 +140,15 @@ def configure_swebench_docker_mirrors() -> None:
     dockerfiles._DOCKERFILE_BASE["py"] = mirrored
     python_dockerfiles._DOCKERFILE_BASE_PY = mirrored
     python_dockerfiles._llm_benchmark_mirrors_applied = True
+    from swebench.harness import constants  # type: ignore
+    from swebench.harness.test_spec import python as python_spec  # type: ignore
+
+    raw_mirror = (
+        os.getenv("LLM_BENCHMARK_SWEBENCH_RAW_MIRROR")
+        or "https://ghfast.top/https://raw.githubusercontent.com"
+    ).rstrip("/") + "/"
+    constants.SWE_BENCH_URL_RAW = raw_mirror
+    python_spec.SWE_BENCH_URL_RAW = raw_mirror
 
 
 class EvalScopeDirectError(RuntimeError):
@@ -659,7 +668,7 @@ class EvalScopeIntelligenceExecutor:
             if current is not None and current.cancel_requested_at:
                 break
             if agent and dataset.startswith("swe_bench"):
-                configure_swebench_docker_mirrors()
+                configure_swebench_mirrors()
             dataset_work_dir = output_base / dataset
             cfg_data = self._task_config_data(
                 model=model,
