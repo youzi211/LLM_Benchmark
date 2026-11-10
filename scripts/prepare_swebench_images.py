@@ -40,8 +40,8 @@ def _load_samples(dataset: str, limit: int | None, work_dir: Path) -> list[Any]:
         work_dir=str(work_dir),
     )
     adapter = get_benchmark(dataset, task_config)
-    adapter.load()
-    return list(adapter.test_dataset[adapter.default_subset])
+    test_data, _ = adapter.load()
+    return list(next(iter(test_data.values())))
 
 
 def _inspect_image(image: str) -> dict[str, Any] | None:
