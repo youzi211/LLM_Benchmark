@@ -48,6 +48,7 @@ EvalScope 本地加载器会删除过时的 `dataset_infos.json`。该文件另�
 - SWE-bench 自动构建 Python 基础镜像时默认使用清华 Anaconda 镜像；内网有其他镜像源时可用 `LLM_BENCHMARK_SWEBENCH_MINICONDA_MIRROR` 和 `LLM_BENCHMARK_SWEBENCH_CONDA_MIRROR` 覆盖。
 - SWE-bench Agent 实例镜像默认从 `docker.1ms.run/swebench` 拉取；可通过 `LLM_BENCHMARK_SWEBENCH_DOCKERHUB_MIRROR` 指定其他 Docker Hub 镜像站。
 - SWE-bench 任务规格中的 GitHub raw 文件默认通过 `ghfast.top` 代理获取；可通过 `LLM_BENCHMARK_SWEBENCH_RAW_MIRROR` 指定同路径规则的其他代理。
+- 正式离线评测前先运行 `uv run python scripts/prepare_swebench_images.py --dataset swe_bench_verified_mini_agentic`，下载全部实例镜像并缓存任务规格文件；完成后可用 `--offline-check` 验证缓存和镜像完整性。
 - 正式服务已切换到 Python 3.12.14，并安装 EvalScope 1.14.1、Harbor 0.25.0 与 swebench 4.1.0；原有 Python 3.11 环境与配置已保留为回滚备份。
 - OpenCode 与 DeepSeek Harness 均已完成真实模型工程 smoke；官方 Terminal-Bench `photonic-waveguide-routing` 单样本已完成 verifier（有效 0%），尚未执行完整任务集或提交榜单结果。Terminal-Bench 任务中的安装脚本、solution 和 verifier 会在 Harbor 容器中执行。
 

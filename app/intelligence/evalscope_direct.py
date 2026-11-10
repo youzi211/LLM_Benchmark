@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import re
@@ -127,6 +128,42 @@ RUN conda config --append channels conda-forge"""
     return dockerfile.replace(old, mirrored)
 
 
+def swebench_cache_root() -> Path:
+    configured = os.getenv("LLM_BENCHMARK_SWEBENCH_CACHE_DIR") or "data/evalscope_agent_cache/swe_bench"
+    return Path(configured).resolve()
+
+
+def _install_swebench_http_cache(python_spec: Any) -> None:
+    if getattr(python_spec, "_llm_benchmark_http_cache_applied", False):
+        return
+    real_requests = python_spec.requests
+    real_get = real_requests.get
+    cache_dir = swebench_cache_root() / "http"
+
+    def cached_get(url: str, *args: Any, **kwargs: Any):
+        cache_path = cache_dir / f"{hashlib.sha256(url.encode()).hexdigest()}.json"
+        if cache_path.is_file():
+            payload = json.loads(cache_path.read_text(encoding="utf-8"))
+            response = type("CachedResponse", (), {})()
+            response.status_code = payload["status_code"]
+            response.text = payload["text"]
+            return response
+        if os.getenv("LLM_BENCHMARK_SWEBENCH_OFFLINE", "").lower() in {"1", "true", "yes"}:
+            raise RuntimeError(f"swebench_cache_miss:{url}; run scripts/prepare_swebench_images.py first")
+        response = real_get(url, *args, **kwargs)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        temp_path = cache_path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
+        temp_path.write_text(
+            json.dumps({"status_code": response.status_code, "text": response.text}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        os.replace(temp_path, cache_path)
+        return response
+
+    python_spec.requests = type("SwebenchRequests", (), {"get": staticmethod(cached_get)})()
+    python_spec._llm_benchmark_http_cache_applied = True
+
+
 def configure_swebench_mirrors() -> None:
     """Keep SWE-bench setup and image builds working through public mirrors."""
     try:
@@ -149,6 +186,7 @@ def configure_swebench_mirrors() -> None:
     ).rstrip("/") + "/"
     constants.SWE_BENCH_URL_RAW = raw_mirror
     python_spec.SWE_BENCH_URL_RAW = raw_mirror
+    _install_swebench_http_cache(python_spec)
 
 
 class EvalScopeDirectError(RuntimeError):

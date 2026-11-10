@@ -5,6 +5,7 @@ import types
 from app.intelligence.evalscope_direct import (
     EvalScopeDirectError,
     EvalScopeIntelligenceExecutor,
+    _install_swebench_http_cache,
     _mirror_swebench_python_base,
     dataset_metadata,
     judge_config_status,
@@ -44,6 +45,28 @@ def test_swebench_agent_defaults_to_dockerhub_mirror(tmp_path):
     )
 
     assert args["swe_bench_verified_mini_agentic"]["extra_params"]["dockerhub_username"] == "docker.1ms.run/swebench"
+
+
+def test_swebench_http_cache_can_run_without_network(tmp_path, monkeypatch):
+    class Requests:
+        @staticmethod
+        def get(url, **_kwargs):
+            return types.SimpleNamespace(status_code=200, text="cached")
+
+    module = types.SimpleNamespace(requests=Requests)
+    monkeypatch.setenv("LLM_BENCHMARK_SWEBENCH_CACHE_DIR", str(tmp_path))
+    monkeypatch.delenv("LLM_BENCHMARK_SWEBENCH_OFFLINE", raising=False)
+
+    _install_swebench_http_cache(module)
+    assert module.requests.get("https://example.test/file").text == "cached"
+
+    monkeypatch.setenv("LLM_BENCHMARK_SWEBENCH_OFFLINE", "1")
+    try:
+        module.requests.get("https://example.test/missing")
+    except RuntimeError as exc:
+        assert "swebench_cache_miss" in str(exc)
+    else:
+        raise AssertionError("expected an offline cache miss")
 
 
 def test_judge_config_status_does_not_expose_api_key():
