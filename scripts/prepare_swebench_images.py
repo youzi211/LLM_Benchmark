@@ -22,6 +22,7 @@ from app.intelligence.evalscope_direct import (
 def _load_samples(dataset: str, limit: int | None, work_dir: Path) -> list[Any]:
     from evalscope import TaskConfig
     from evalscope.api.registry import get_benchmark
+    from evalscope.benchmarks.swe_bench.build_images import build_images
 
     config = EvalScopeConfigStore().load()
     executor = EvalScopeIntelligenceExecutor(config)
@@ -41,7 +42,19 @@ def _load_samples(dataset: str, limit: int | None, work_dir: Path) -> list[Any]:
     )
     adapter = get_benchmark(dataset, task_config)
     test_data, _ = adapter.load()
-    return list(next(iter(test_data.values())))
+    samples = list(next(iter(test_data.values())))
+    extra_params = adapter.extra_params
+    images = build_images(
+        samples=samples,
+        max_workers=4,
+        force_rebuild=False,
+        use_remote_images=extra_params.get("pull_remote_images_if_available", True),
+        force_arch=extra_params.get("force_arch", ""),
+        dockerhub_username=extra_params.get("dockerhub_username") or "swebench",
+    )
+    for sample in samples:
+        sample.metadata["docker_image"] = images[sample.metadata["instance_id"]]
+    return samples
 
 
 def _inspect_image(image: str) -> dict[str, Any] | None:
