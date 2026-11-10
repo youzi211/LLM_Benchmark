@@ -8,7 +8,7 @@
 - 评测依赖锁定为 Python 3.12、EvalScope 1.14.1、Harbor 0.25.0、swebench 4.1.0；服务器已有 Node 24.11.0、OpenCode 1.19.5、DeepSeek Harness 0.1.5-rc.3。
 - 原默认评测与定时组合未调整。Agent 评测由用户人工提交，任务信息与前端数据集分类已接通。
 - 验证：服务器 Python 3.12 隔离环境后端 235 项、前端 39 项通过，前端生产构建成功；OpenCode 与 DeepSeek Harness 均已调用真实模型完成工程 smoke 并获得 reward 1.0。官方 Terminal-Bench `photonic-waveguide-routing` 单样本已通过 Harbor、模型 Bridge 和 verifier 的完整执行链路，有效分数为 0%，证明基础设施与评分流程可用。
-- 服务器当前正式服务尚未被本轮改动覆盖或重启；隔离验收通过后再同步正式目录。
+- 正式服务已切换到 `0106464`，运行 Python 3.12.14、EvalScope 1.14.1、Harbor 0.25.0 与 swebench 4.1.0；健康检查、19 个本地数据集和 Agent 分类接口均正常。旧 Python 3.11 环境、配置和前端产物保留了回滚备份。
 
 ## 1. 目标与结论
 
