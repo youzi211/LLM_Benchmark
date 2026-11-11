@@ -25,6 +25,6 @@ Pro V2 的 hard 51 是 642 题的子集，不另加镜像。Terminal-Bench 包�
 
 本次修复了 GHCR 镜像被错误加上 Docker Hub 代理前缀，以及 Terminal-Bench Compose 辅助镜像未改写的问题。Pro V1 已从项目数据集目录和任务入口退役，旧文件在项目内归档，可避免被自动识别后重新加入。
 
-Mini 下载仍遭遇公共源限制：毫秒镜像返回 429，DaoCloud 对该实例镜像拒绝白名单，服务器直连 Docker Hub 超时/拒绝连接。路径修复不消除上游访问限制；保留已校验的 OCI blobs 和失败状态，恢复下载时复用缓存。
+Mini 于 2026-11-11 13:08 完成 50/50 个 OCI 镜像缓存及 blob 校验，去重后的缓存目录实际占用约 9.1GiB。以上 52.55GiB 是逐镜像相加的统计，不是去重后的目录实占。评测只允许从本地 OCI 导入镜像，不再联网补拉；Pro V2 和 Terminal-Bench 的 OCI 缓存仍未备齐。完整运行规则见 [Agent 数据集准备记录](agent-dataset-preparation.md)。
 
 依据：[EvalScope SWE-bench Pro](https://evalscope.readthedocs.io/zh-cn/latest/third_party/swe_bench_pro.html)、[EvalScope Terminal-Bench](https://evalscope.readthedocs.io/en/latest/third_party/terminal_bench.html)、[毫秒镜像源站域名映射](https://1ms.run/guide)。

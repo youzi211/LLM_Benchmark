@@ -48,8 +48,10 @@ def _load_evalscope_benchmarks() -> dict[str, dict[str, Any]]:
     from evalscope.api.registry import BENCHMARK_REGISTRY  # type: ignore
     from evalscope.constants import Tags  # type: ignore
     from app.intelligence.harbor_agent import register_harbor_benchmarks
+    from app.intelligence.agent_images import register_offline_mini
 
     register_harbor_benchmarks()
+    register_offline_mini()
 
     def _tag_str(t: Any) -> str:
         return t.value if hasattr(t, 'value') else str(t)
@@ -740,6 +742,7 @@ class EvalScopeIntelligenceExecutor:
                     extra = cfg_data["dataset_args"][dataset].setdefault("extra_params", {})
                     extra["project_agent"] = {k: v for k, v in options.items() if k != "model_name"}
                     extra["project_agent"].update(agent)
+                    extra["project_agent"]["image_cache_root"] = str(datasets_root(self.config).resolve().parent / "agent_image_cache")
 
             def emit(progress: dict[str, Any]) -> None:
                 if progress_callback is None:
@@ -879,6 +882,10 @@ class EvalScopeIntelligenceExecutor:
             extra_params = args.setdefault("extra_params", {})
             dockerhub_mirror = (os.getenv("LLM_BENCHMARK_SWEBENCH_DOCKERHUB_MIRROR") or "docker.1ms.run").rstrip("/")
             extra_params.setdefault("dockerhub_username", f"{dockerhub_mirror}/swebench")
+        if dataset == "swe_bench_verified_mini_agentic":
+            extra_params = args.setdefault("extra_params", {})
+            extra_params.update(build_docker_images=False, pull_remote_images_if_available=False,
+                                project_image_cache=str(datasets_root(self.config).resolve().parent / "agent_image_cache"))
         if dataset in local_paths and not args.get("local_path"):
             args["local_path"] = local_paths[dataset]
         return {dataset: args} if args else {}

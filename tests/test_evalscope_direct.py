@@ -45,6 +45,10 @@ def test_swebench_agent_defaults_to_dockerhub_mirror(tmp_path):
     )
 
     assert args["swe_bench_verified_mini_agentic"]["extra_params"]["dockerhub_username"] == "docker.1ms.run/swebench"
+    extra = args["swe_bench_verified_mini_agentic"]["extra_params"]
+    assert extra["build_docker_images"] is False
+    assert extra["pull_remote_images_if_available"] is False
+    assert extra["project_image_cache"].endswith("agent_image_cache")
 
 
 def test_retired_pro_v1_is_hidden_even_with_local_files(tmp_path):

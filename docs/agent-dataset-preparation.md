@@ -41,6 +41,16 @@ EvalScope 本地加载器会删除过时的 `dataset_infos.json`。该文件另�
 
 ## 集成与运行状态
 
+### 离线镜像运行规则（2026-11-11）
+
+- Agent 题目镜像只从当前数据目录旁的 `agent_image_cache/<dataset>/` OCI 缓存导入，不联网拉取，也不回退构建。Mini 的缓存位于本项目 `/data1/yzc/LLM_test/LLM_Benchmark/data/agent_image_cache/swe_bench_verified_mini_agentic/`，50 个镜像已缓存并完成校验。
+- 缓存索引为 `preparation.json` 的 `tasks` 映射，每项包含 `image`、`image_cached: true` 和 `oci_reference`。OCI 引用必须留在对应数据集缓存目录内；镜像的 manifest、config 和待导入层会校验哈希。
+- Mini 在 EvalScope 筛选样本后，先检查本次所需缓存，再顺序导入缺失镜像；`limit=1` 只准备一个样本所需镜像，不导入整套 50 个。Harbor 按 trial 准备环境及 Compose 服务的镜像，独立 verifier 走同一离线环境。
+- 导入后的镜像保留供后续复用；容器由 EvalScope/Harbor 清理。不自动执行 image prune、不删除其他项目镜像。镜像缓存和 Docker 已导入镜像是两份存储：Docker 数据根目录仍决定解压层和容器写入层落在哪个磁盘。
+- 导入前按待导入共享层去重后的解压大小加压缩传输临时空间检查实际 Docker 存储盘，并至少保留 10GiB；缺缓存、校验失败或空间不足立即失败。容器运行时仍可能产生额外写入，预检不保证长时间运行或其他项目同时写盘时永远不会耗尽空间。
+- 导入工具必须已在 Docker 本地存在；Skopeo 使用固定 digest、`--pull never`、`--network none`，从 OCI 复制至 Docker daemon。Harbor 的 Compose 使用 `--pull never --no-build`；仅有 Dockerfile 的环境须先准备预构建镜像，网络控制 sidecar 也须缓存，不能临时构建。
+- Pro V2 和 Terminal-Bench 当前缺少对应 OCI 缓存，严格离线模式下将明确报错，不能因为题目文件齐全就视为运行环境齐全。模型 API 调用不属于镜像下载，仍需访问配置的模型服务。
+
 - `POST /api/intelligence/tasks` 已接入 `opencode` 与 `deepseek-harness`，可人工触发 Mini、SWE-bench Pro V2 和 Terminal-Bench 4.0；原默认与定时数据集组合不变。
 - Terminal-Bench 4.0 与 SWE-bench Pro V2 通过项目内 Harbor adapter 读取已下载任务。Pro V2 的评分会在新的官方任务环境重放 Agent 补丁并执行 verifier。
 - OpenCode、DeepSeek Harness、Node 与任务镜像需要提前准备；EvalScope Agent Runtime 目录通过 `agent_runtime_dir` 或环境变量 `LLM_BENCHMARK_AGENT_RUNTIME_DIR` 配置。容器连接模型代理时可配置 `agent_bridge_host` 或 `LLM_BENCHMARK_AGENT_BRIDGE_HOST`。`scripts/prepare_agent_runtime.py` 会把 npm 生成的符号链接改写为启动脚本，因为 EvalScope 打包运行目录时会跳过符号链接，导致容器内 `tools/bin` 为空；Node 入口（`dsh`、`npm`）必须经脚本转成绝对路径，否则相对导入失败。

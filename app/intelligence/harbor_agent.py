@@ -275,14 +275,17 @@ def register_harbor_benchmarks() -> None:
 
             options = self.extra_params["project_agent"]
             is_pro = self.name == "swe_bench_pro_v2"
-            kwargs = {k: v for k, v in options.items() if k not in {"timeout", "docker_registry_mirror", "model_name"}}
+            kwargs = {k: v for k, v in options.items() if k not in {"timeout", "docker_registry_mirror", "model_name", "image_cache_root"}}
             config = TrialConfig(
                 task=TaskConfig.model_validate(sample.metadata), trials_dir=Path(self.output_dir) / "trials",
                 agent=AgentConfig(import_path="app.intelligence.harbor_agent:BridgeAgent", model_name=model.name,
                     override_timeout_sec=options["timeout"] + (135 if is_pro else 15), extra_allowed_hosts=[options["bridge_host"]],
                     kwargs={**kwargs, "timeout": options["timeout"], "capture_patch": is_pro}),
                 verifier=VerifierConfig(override_timeout_sec=self.verifier_timeout_sec),
-                environment=EnvironmentConfig(type=self.environment_type, **{**self.environment_kwargs, "delete": True}),
+                environment=EnvironmentConfig(import_path="app.intelligence.harbor_offline:OfflineDockerEnvironment",
+                    **{**self.environment_kwargs, "delete": True,
+                       "kwargs": {**self.environment_kwargs.get("kwargs", {}),
+                                  "image_cache_root": options["image_cache_root"], "dataset": self.name}}),
                 timeout_multiplier=self.timeout_multiplier, agent_timeout_multiplier=self.agent_timeout_multiplier,
                 verifier_timeout_multiplier=self.verifier_timeout_multiplier,
             )

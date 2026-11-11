@@ -373,6 +373,8 @@ class IntelligenceRunner:
             metadata = self._local_dataset_metadata()
             task.normalized_result = self._normalize(task, raw_result, metadata)
             task.status = _coerce_status(raw_result.get("status"), "completed")
+            if task.status == "failed" and task.normalized_result.error:
+                task.error = {"type": "EvalScopeError", "message": task.normalized_result.error}
             if raw_result.get("datasets") and isinstance(raw_result["datasets"], list):
                 task.datasets = [str(item) for item in raw_result["datasets"]]
             task.completed_at = _parse_dt(raw_result.get("completed_at")) or utc_now()

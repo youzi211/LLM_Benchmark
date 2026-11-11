@@ -97,7 +97,8 @@ async def test_finished_task_preserves_last_reported_dataset_counts(tmp_path, st
                 "processed_count": 1, "total_count": 2,
                 "datasets": [{"dataset": "gsm8k", "processed_count": 1, "total_count": 2}],
             })
-            return {**super().run(**kwargs), "status": status}
+            return {**super().run(**kwargs), "status": status,
+                    "errors": [{"message": "agent_image_cache_missing:mini; registry pulls disabled"}] if status == "failed" else []}
 
     runner = IntelligenceRunner(
         model_store=_model_store(tmp_path / "models.json"),
@@ -111,6 +112,8 @@ async def test_finished_task_preserves_last_reported_dataset_counts(tmp_path, st
     assert task.progress_detail.processed_count == 1
     assert task.progress_detail.total_count == 2
     assert task.progress_detail.datasets[0].processed_count == 1
+    if status == "failed":
+        assert "agent_image_cache_missing" in task.error["message"]
 
 
 @pytest.mark.asyncio
