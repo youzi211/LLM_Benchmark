@@ -167,6 +167,12 @@ export LLM_BENCHMARK_EVALSCOPE_JOB_MAX_CONCURRENCY=1
 
 `api_key` 只允许作为运行时配置存在，不能写入文档、报告或 Git 提交。API 响应、任务 JSON 和报告中的错误信息都应保持脱敏。
 
-## 7. 后续扩展
+## 7. PyArrow 线程崩溃排查
+
+2026-11-11 正式后端曾直接退出，前端代理因此返回 HTTP 500。内核记录 `libarrow.so.2500` 段错误，崩溃地址解析为 `mi_thread_init`，与 PyArrow 25.0.0 的 [GH-50471](https://github.com/apache/arrow/issues/50471) 缺陷吻合。项目将 EvalScope 依赖中的 PyArrow 固定为 25.0.1；[官方发布说明](https://arrow.apache.org/blog/2026/08/10/25.0.1-release/)列出了对应 mimalloc 修复。更新依赖后需要重启后端，才能卸载旧的原生库。
+
+服务器项目服务位于 `benchmark` screen 会话：`sandbox`（1234）、`frontend`（5174）、`backend-api`（8020）、`fake-upstream`（仅本机 9011，测试用途）。用 `screen -r benchmark` 查看，按 `Ctrl+A` 再按 `D` 脱离会话。screen 不负责程序崩溃自动重启。后端通过 `PYTHONFAULTHANDLER=1` 保留诊断堆栈，当前日志为 `.tmp/logs/backend-fault.log`。
+
+## 8. 后续扩展
 
 如果未来确实要把 EvalScope 执行拆到独立机器，建议重新设计为一个明确的远程执行器插件或队列 worker，而不是恢复临时 HTTP 包装服务；届时需要同步更新 API 语义、超时、鉴权、任务状态同步和安全边界。

@@ -16,6 +16,8 @@ dependencies = [
 dev = ["pytest>=8.2.0", "pytest-asyncio>=0.23.0"]
 evalscope = [
     "evalscope[perf,sandbox,terminal_bench]==1.14.1",
+    # Arrow 25.0.0 的 mimalloc 在线程退出后可能使 API 进程崩溃（GH-50471）。
+    "pyarrow==25.0.1",
     "harbor==0.25.0",
     "swebench==4.1.0",
 ]
