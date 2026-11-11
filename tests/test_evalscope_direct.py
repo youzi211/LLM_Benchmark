@@ -47,6 +47,15 @@ def test_swebench_agent_defaults_to_dockerhub_mirror(tmp_path):
     assert args["swe_bench_verified_mini_agentic"]["extra_params"]["dockerhub_username"] == "docker.1ms.run/swebench"
 
 
+def test_retired_pro_v1_is_hidden_even_with_local_files(tmp_path):
+    from app.intelligence.evalscope_direct import local_dataset_metadata, dataset_metadata
+
+    (tmp_path / "swe_bench_pro").mkdir()
+    config = EvalScopeConfig(datasets_dir=str(tmp_path))
+    assert "swe_bench_pro" not in local_dataset_metadata(config)["datasets"]
+    assert "swe_bench_pro" not in dataset_metadata(config)["datasets"]
+
+
 def test_swebench_http_cache_can_run_without_network(tmp_path, monkeypatch):
     class Requests:
         @staticmethod
@@ -187,13 +196,13 @@ def test_intelligence_executor_passes_sandbox_resource_defaults(tmp_path):
 def test_agent_dataset_metadata_does_not_claim_runtime_is_ready(tmp_path):
     from app.intelligence.evalscope_direct import local_dataset_metadata
 
-    (tmp_path / "swe_bench_pro").mkdir()
+    (tmp_path / "swe_bench_verified_mini_agentic").mkdir()
     metadata = local_dataset_metadata(EvalScopeConfig(datasets_dir=str(tmp_path)))
-    agent = metadata["datasets"]["swe_bench_pro"]["agent_evaluation"]
+    agent = metadata["datasets"]["swe_bench_verified_mini_agentic"]["agent_evaluation"]
     assert agent["runtime_ready"] is None
     assert agent["data_status"] == "missing_or_invalid"
     assert agent["sample_count"] == 0
-    assert metadata["datasets"]["swe_bench_pro"]["available_local"] is False
+    assert metadata["datasets"]["swe_bench_verified_mini_agentic"]["available_local"] is False
 
 
 def test_terminal_harbor_tasks_are_not_reported_as_subsets(tmp_path):

@@ -131,10 +131,10 @@ def test_intelligence_route_passes_agent_and_rejects_unknown_framework(monkeypat
 
     monkeypatch.setattr(routes_intelligence, "_runner", lambda: CapturingRunner())
     monkeypatch.setattr(routes_intelligence, "local_dataset_metadata", lambda config: {
-        "total": 1, "datasets": {"swe_bench_pro": {"pretty_name": "SWE-bench Pro"}}
+        "total": 1, "datasets": {"swe_bench_pro_v2": {"pretty_name": "SWE-bench Pro"}}
     })
     client = TestClient(app)
-    payload = {"model_id": "m1", "datasets": ["swe_bench_pro"],
+    payload = {"model_id": "m1", "datasets": ["swe_bench_pro_v2"],
                "agent": {"framework": "opencode", "timeout": 90}}
     assert client.post("/api/intelligence/tasks", json=payload).status_code == 200
     assert captured["agent"] == {"framework": "opencode", "timeout": 90}

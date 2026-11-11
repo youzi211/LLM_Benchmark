@@ -53,6 +53,8 @@ __pycache__/
 /data/evalscope_resources/
 /data/evalscope_dataset_manifests/
 /data/evalscope_agent_cache/
+/data/agent_image_cache/
+/data/evalscope_datasets_retired/
 /data/stress_datasets/
 
 /outputs/

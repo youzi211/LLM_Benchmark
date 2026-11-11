@@ -754,7 +754,7 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 
 成功响应：`200 OK`，返回 `IntelligenceTask`。若 `datasets` 包含 `simple_qa`、`alpaca_eval`、`arena_hard` 等需要 LLM Judge 的数据集，服务会先解析默认 Judge；没有可用 Judge 时返回 `400 judge_required`，不会启动 EvalScope。
 
-Agent 评测通过可选 `agent` 字段人工触发，例如 `{"framework": "opencode", "timeout": 1800}`；`framework` 也可为 `deepseek-harness`。Agent 数据集 ID 为 `swe_bench_verified_mini_agentic`、`swe_bench_pro`（EvalScope V1）、`swe_bench_pro_v2` 和 `terminal_bench_v4`。后两者使用 Harbor 任务容器和本地任务目录；Pro V2 会把 Agent 生成的补丁应用到全新官方任务镜像后再运行 verifier。运行前需准备 EvalScope、Harbor、Docker、对应任务镜像以及 `agent_runtime_dir` 下的便携 Node/OpenCode/DeepSeek Harness 运行时。该入口不会自动安装运行时或镜像；任务容器需要能访问主机模型代理。Terminal-Bench 与 Pro V2 可通过 `dataset_args.<数据集 ID>.extra_params.task_names` 限定任务；网络受限环境可用 `dataset_args.<数据集 ID>.extra_params.docker_registry_mirror` 指定镜像仓库前缀，原任务中的镜像标签与 digest 会在运行时保留。SWE-bench Pro V2 的 `subset_list` 支持 `default`（642 项）和 `hard`（51 项）。
+Agent 评测通过可选 `agent` 字段人工触发，例如 `{"framework": "opencode", "timeout": 1800}`；`framework` 也可为 `deepseek-harness`。Agent 数据集 ID 为 `swe_bench_verified_mini_agentic`、`swe_bench_pro_v2` 和 `terminal_bench_v4`。后两者使用 Harbor 任务容器和本地任务目录；Pro V2 会把 Agent 生成的补丁应用到全新官方任务镜像后再运行 verifier。运行前需准备 EvalScope、Harbor、Docker、对应任务镜像以及 `agent_runtime_dir` 下的便携 Node/OpenCode/DeepSeek Harness 运行时。该入口不会自动安装运行时或镜像；任务容器需要能访问主机模型代理。Terminal-Bench 与 Pro V2 可通过 `dataset_args.<数据集 ID>.extra_params.task_names` 限定任务；网络受限环境可用 `dataset_args.<数据集 ID>.extra_params.docker_registry_mirror` 指定镜像仓库前缀，原任务中的镜像标签与 digest 会在运行时保留。SWE-bench Pro V2 的 `subset_list` 支持 `default`（642 项）和 `hard`（51 项）。
 
 Agent 请求示例：
 

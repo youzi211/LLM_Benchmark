@@ -18,6 +18,7 @@ from app.evalscope_defaults import (
     DEFAULT_GENERATION_CONFIG,
     DEFAULT_INTELLIGENCE_DATASET_ARGS,
     DEFAULT_INTELLIGENCE_DATASETS,
+    RETIRED_INTELLIGENCE_DATASETS,
 )
 from app.intelligence.schemas import EvalScopeConfig
 from app.reports.markdown import redact_text
@@ -55,6 +56,8 @@ def _load_evalscope_benchmarks() -> dict[str, dict[str, Any]]:
 
     result: dict[str, dict[str, Any]] = {}
     for name, meta in BENCHMARK_REGISTRY.items():
+        if name in RETIRED_INTELLIGENCE_DATASETS:
+            continue
         tags = [_tag_str(t) for t in (meta.tags or [])]
         needs_judge = (
             getattr(getattr(meta.data_adapter, 'scoring_policy', None), 'judge_by_default', False) or getattr(meta.data_adapter, 'llm_judge_default', False)
@@ -400,7 +403,7 @@ def _agent_metadata(config: EvalScopeConfig, name: str, path: Path | None) -> di
             except ValueError:
                 pass
         else:
-            subset = "v1" if name == "swe_bench_pro" else "default"
+            subset = "default"
             import pyarrow.parquet as pq
             for file in (path / subset).glob("*.parquet"):
                 try:
@@ -465,14 +468,11 @@ def local_dataset_metadata(config: EvalScopeConfig) -> dict[str, Any]:
                 base["agent_evaluation"] = info
                 base["available_local"] = info["sample_count"] > 0
                 base["evaluation_lane"] = "agent"
-                if child.name == "swe_bench_pro":
-                    base["pretty_name"] = "SWE-bench Pro V1"
-                    base["subsets"] = ["v1"] if (child / "v1").is_dir() else []
-                elif child.name == "swe_bench_pro_v2":
+                if child.name == "swe_bench_pro_v2":
                     base["subsets"] = ["default", "hard"]
                 elif child.name == "terminal_bench_v4":
                     base["subsets"] = ["default"]
-                if child.name in {"swe_bench_pro", "swe_bench_pro_v2", "terminal_bench_v4"}:
+                if child.name in {"swe_bench_pro_v2", "terminal_bench_v4"}:
                     base["subset_count"] = len(base["subsets"])
                     base["has_subsets"] = bool(base["subsets"])
             if configured_subsets:

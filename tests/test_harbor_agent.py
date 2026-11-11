@@ -144,3 +144,23 @@ def test_docker_registry_rewrite_is_runtime_only():
     assert task.config.environment.docker_image == expected
     assert task.config.verifier.environment.docker_image == "docker.1ms.run/official/verifier:tag@sha256:def"
     assert compose.prebuilt_image_name == expected
+
+
+def test_registry_mirror_preserves_external_hosts_and_pinned_digest(tmp_path):
+    from app.intelligence.harbor_agent import _mirrored_image, _rewrite_docker_registry
+    import json
+
+    assert _mirrored_image("ghcr.io/scaleapi/task:tag@sha256:abc", "docker.1ms.run") == "ghcr.1ms.run/scaleapi/task:tag@sha256:abc"
+    assert _mirrored_image("ghcr.io/scaleapi/task:tag", "internal.registry") == "ghcr.io/scaleapi/task:tag"
+    assert _mirrored_image("docker.io/org/task:tag", "docker.1ms.run") == "docker.1ms.run/org/task:tag"
+    compose = tmp_path / "docker-compose.yaml"
+    compose.write_text('services:\n  api:\n    image: harborframework/terminal-bench:sidecar@sha256:abc\n')
+    env = SimpleNamespace(task_env_config=SimpleNamespace(docker_image=None),
+                          _environment_docker_compose_path=compose, extra_docker_compose_paths=[])
+    trial = SimpleNamespace(agent_environment=env, agent=SimpleNamespace(logs_dir=tmp_path / "agent"))
+    task = SimpleNamespace(config=SimpleNamespace(environment=env.task_env_config,
+                            verifier=SimpleNamespace(environment=SimpleNamespace(docker_image=None)), steps=[]))
+    _rewrite_docker_registry(task, "docker.1ms.run", trial)
+    overlay = json.loads(env.extra_docker_compose_paths[0].read_text())
+    assert overlay["services"]["api"]["image"] == "docker.1ms.run/harborframework/terminal-bench:sidecar@sha256:abc"
+    assert "docker.1ms.run" not in compose.read_text()

@@ -20,6 +20,10 @@ from app.intelligence.evalscope_direct import (
 
 
 def _load_samples(dataset: str, limit: int | None, work_dir: Path) -> list[Any]:
+    from app.evalscope_defaults import RETIRED_INTELLIGENCE_DATASETS
+
+    if dataset in RETIRED_INTELLIGENCE_DATASETS:
+        raise SystemExit("dataset_retired:swe_bench_pro; select swe_bench_pro_v2")
     from evalscope import TaskConfig
     from evalscope.api.registry import get_benchmark
     from evalscope.benchmarks.swe_bench.build_images import build_images

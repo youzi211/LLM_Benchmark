@@ -12,10 +12,10 @@ DEFAULT_SCHEDULED_INTELLIGENCE_LIMIT = 200
 # 数据就绪与执行环境就绪分开记录；未知不代表不可用。
 AGENT_DATASETS = {
     "swe_bench_verified_mini_agentic": {"ability": "代码修复", "execution": "external_agent"},
-    "swe_bench_pro": {"ability": "代码修复", "execution": "external_agent"},
     "swe_bench_pro_v2": {"ability": "代码修复", "execution": "harbor", "revision": "66f92766bba642462d4bbe5479e83f91f9211862", "scorer": "fresh-sandbox-patch-replay"},
     "terminal_bench_v4": {"ability": "终端任务", "execution": "harbor"},
 }
+RETIRED_INTELLIGENCE_DATASETS = frozenset({"swe_bench_pro"})
 
 DEFAULT_INTELLIGENCE_DATASETS: tuple[str, ...] = (
     "humaneval",
@@ -48,7 +48,6 @@ FULL_OFFLINE_INTELLIGENCE_EVAL_BATCH_SIZE = 5
 LIVE_CODE_BENCH_DEFAULT_SUBSETS: tuple[str, ...] = ("release_latest",)
 DEFAULT_INTELLIGENCE_DATASET_ARGS: dict[str, dict[str, Any]] = {
     "live_code_bench": {"subset_list": list(LIVE_CODE_BENCH_DEFAULT_SUBSETS)},
-    "swe_bench_pro": {"subset_list": ["v1"]},
 }
 
 DEFAULT_EVAL_BATCH_SIZE = 10

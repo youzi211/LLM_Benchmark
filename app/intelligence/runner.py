@@ -180,6 +180,10 @@ class IntelligenceRunner:
         dataset_args: dict[str, dict[str, Any]] | None = None,
         agent: dict[str, Any] | None = None,
     ) -> IntelligenceTask:
+        from app.evalscope_defaults import RETIRED_INTELLIGENCE_DATASETS
+
+        if set(datasets) & RETIRED_INTELLIGENCE_DATASETS:
+            raise ValueError("dataset_retired:swe_bench_pro; select swe_bench_pro_v2")
         if agent:
             from app.intelligence.schemas import ExternalAgentRequest
 
@@ -206,8 +210,6 @@ class IntelligenceRunner:
             }
         metadata = self._local_dataset_metadata()
         effective_args = {d: {**DEFAULT_INTELLIGENCE_DATASET_ARGS.get(d, {}), **self.config.dataset_args.get(d, {}), **(dataset_args or {}).get(d, {})} for d in datasets}
-        if "swe_bench_pro" in datasets and effective_args["swe_bench_pro"].get("subset_list") != ["v1"]:
-            raise ValueError("swe_pro_version_mismatch: swe_bench_pro only supports v1; select swe_bench_pro_v2 for default/hard V2")
         if not agent and set(datasets) & {"terminal_bench_v4", "swe_bench_pro_v2"}:
             raise ValueError("agent_required: select OpenCode or DeepSeek Harness")
         for dataset, args in effective_args.items():

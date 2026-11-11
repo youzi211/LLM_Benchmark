@@ -152,6 +152,21 @@ class PatchReplayAgent(BaseAgent):
             raise RuntimeError("agent_patch_apply_failed")
 
 
+def _mirrored_image(image: str, mirror: str) -> str:
+    if "/" not in image:
+        return f"{mirror}/library/{image}"
+    if image.startswith(f"{mirror}/"):
+        return image
+    host, _, path = image.partition("/")
+    if host == "docker.io":
+        return f"{mirror}/{path}"
+    if "." in host or ":" in host or host == "localhost":
+        if mirror == "docker.1ms.run" and host == "ghcr.io":
+            return f"ghcr.1ms.run/{path}"
+        return image
+    return f"{mirror}/{image}"
+
+
 def _rewrite_docker_registry(task, registry: str | None, trial=None) -> None:
     if not registry:
         return
@@ -164,11 +179,25 @@ def _rewrite_docker_registry(task, registry: str | None, trial=None) -> None:
     if agent_environment is not None:
         environments.append(agent_environment.task_env_config)
     for environment in environments:
-        if environment.docker_image and not environment.docker_image.startswith(f"{mirror}/"):
-            environment.docker_image = f"{mirror}/{environment.docker_image}"
+        if environment.docker_image:
+            environment.docker_image = _mirrored_image(environment.docker_image, mirror)
     compose = getattr(agent_environment, "_env_vars", None) if agent_environment is not None else None
-    if compose and compose.prebuilt_image_name and not compose.prebuilt_image_name.startswith(f"{mirror}/"):
-        compose.prebuilt_image_name = f"{mirror}/{compose.prebuilt_image_name}"
+    if compose and compose.prebuilt_image_name:
+        compose.prebuilt_image_name = _mirrored_image(compose.prebuilt_image_name, mirror)
+    compose_path = getattr(agent_environment, "_environment_docker_compose_path", None)
+    if compose_path and compose_path.is_file():
+        import yaml
+
+        services = yaml.safe_load(compose_path.read_text()).get("services", {})
+        overrides = {name: {"image": _mirrored_image(service["image"], mirror)}
+                     for name, service in services.items()
+                     if service.get("image") and "$" not in service["image"]}
+        if overrides:
+            # Harbor appends this overlay after task compose; official task files stay pinned.
+            overlay = trial.agent.logs_dir.parent / "registry-mirror-compose.json"
+            overlay.parent.mkdir(parents=True, exist_ok=True)
+            overlay.write_text(json.dumps({"services": overrides}), encoding="utf-8")
+            agent_environment.extra_docker_compose_paths.append(overlay)
 
 
 async def run_trials(config, model, marker: Path, *, regrade: bool, docker_registry_mirror: str | None = None):
