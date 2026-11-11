@@ -5,6 +5,7 @@ import { Close, Edit, Menu, Moon, Plus, Refresh, Setting, Sunny } from "@element
 import { useTheme } from "@/composables/useTheme";
 import { useModelsStore } from "@/stores/models";
 import { useHealthStore } from "@/stores/health";
+import { schedulerHealth } from "@/utils/serviceHealth";
 import ConnectionBanner from "@/components/common/ConnectionBanner.vue";
 import ShortcutHelp from "@/components/layouts/ShortcutHelp.vue";
 import MobileTabs from "@/components/layouts/MobileTabs.vue";
@@ -40,7 +41,7 @@ const connServices = computed(() => {
   return [
     { key: "models", name: "模型", state: (store.error || !h.models.ok) ? ("fail" as const) : ("ok" as const), detail: store.error ?? `已配置 ${h.models.count} 个` },
     { key: "evalscope", name: "EvalScope", state: h.evalscope.ok ? ("ok" as const) : ("warn" as const), detail: h.evalscope.state === "ready" ? "数据集目录就绪" : (h.evalscope.state || "未就绪") },
-    { key: "scheduler", name: "调度", state: h.scheduler.ok ? ("ok" as const) : ("warn" as const), detail: h.scheduler.state === "running" ? "单机定时调度器" : "已禁用" },
+    { key: "scheduler", name: "调度", ...schedulerHealth(h) },
   ];
 });
 const themeIcon = computed(() => (themeResolved.value === "dark" ? "moon" : "sunny"));
@@ -76,7 +77,7 @@ function retryConn(key: string) {
     store.load(true).catch((err) => toast.error("重试失败: " + String(err?.message ?? err)));
     return;
   }
-  toast.info(`已请求重试: ${key}`);
+  healthStore.refresh();
 }
 
 function dismissConn() {

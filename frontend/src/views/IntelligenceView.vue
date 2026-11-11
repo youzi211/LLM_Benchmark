@@ -360,12 +360,12 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
         <el-form-item label="执行方式">
           <el-select v-model="agent" @change="() => { if (agent) { custom = true; chosenDatasets = []; } }">
             <el-option label="标准评测" value="" />
-            <el-option label="OpenCode（SWE-bench）" value="opencode" />
-            <el-option label="DeepSeek Harness（SWE-bench）" value="deepseek-harness" />
+            <el-option label="OpenCode" value="opencode" />
+            <el-option label="DeepSeek Harness" value="deepseek-harness" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="agent" label="Agent 单样本时限（秒）"><el-input-number v-model="agentTimeout" :min="1" :max="86400" /></el-form-item>
-        <el-alert v-if="agent" type="info" :closable="false" title="支持 SWE-bench Mini、Pro V1 / V2、Terminal-Bench 4.0。请在 Agent 分类选择数据集；小样本结果不代表完整榜单成绩。" />
+        <el-alert v-if="agent" type="info" :closable="false" title="请在 Agent 分类中选择本地可用的数据集，评测所选模型在 Agent 框架下完成任务的表现；小样本结果不代表完整榜单成绩。" />
         <el-row :gutter="16">
           <el-col :xs="24" :sm="12"><el-form-item label="每子集样本上限 · limit"><el-input v-model="limit" aria-label="样本上限 limit" placeholder="留空使用服务端默认" /></el-form-item></el-col>
           <el-col :xs="24" :sm="12"><el-form-item label="评测批大小 · eval_batch_size"><el-input v-model="batchSize" aria-label="评测批大小" placeholder="留空使用服务端默认" /></el-form-item></el-col>

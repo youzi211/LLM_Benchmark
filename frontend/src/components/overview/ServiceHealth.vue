@@ -22,7 +22,7 @@ const props = withDefaults(defineProps<{
 });
 
 const okCount = computed(() => props.services.filter(s => s.state === "ok").length);
-const total = computed(() => props.services.length);
+const total = computed(() => props.services.filter(s => s.state !== "off").length);
 const emit = defineEmits<{
   retry: [key: string];
   configure: [key: string];
@@ -55,7 +55,7 @@ const stateLabels = { ok: "正常", warn: "需关注", fail: "异常", pending: 
         </div>
         <span class="lb-sh__state" :class="`lb-sh__state--${svc.state}`">{{ stateLabels[svc.state] }}</span>
         <div class="lb-sh__actions">
-          <el-button v-if="svc.state === 'fail' || svc.state === 'off' || svc.state === 'warn'" text circle size="small" :icon="Refresh" :aria-label="`重试${svc.name}`" :title="`重试${svc.name}`" @click="emit('retry', svc.key)" />
+          <el-button v-if="svc.state === 'fail' || svc.state === 'warn'" text circle size="small" :icon="Refresh" :aria-label="`重试${svc.name}`" :title="`重试${svc.name}`" @click="emit('retry', svc.key)" />
           <el-button text circle size="small" :icon="Setting" :aria-label="`配置${svc.name}`" :title="`配置${svc.name}`" @click="emit('configure', svc.key)" />
         </div>
       </li>

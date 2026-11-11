@@ -18,12 +18,12 @@ const emit = defineEmits<{
   (e: "dismiss"): void;
 }>();
 
-const hasIssue = computed(() => props.services.some(s => s.state === "fail" || s.state === "off"));
+const hasIssue = computed(() => props.services.some(s => s.state === "fail"));
 const hasWarn = computed(() => props.services.some(s => s.state === "warn" || s.state === "pending"));
 
 const visible = computed(() => hasIssue.value || hasWarn.value);
 const summary = computed(() => {
-  const failed = props.services.filter(s => s.state === "fail" || s.state === "off");
+  const failed = props.services.filter(s => s.state === "fail");
   if (failed.length) return `服务异常: ${failed.map(s => s.name).join("、")}`;
   return "部分服务状态待定";
 });

@@ -6,6 +6,7 @@ import { computed, defineAsyncComponent, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useModelsStore } from "@/stores/models";
 import { useHealthStore } from "@/stores/health";
+import { schedulerHealth } from "@/utils/serviceHealth";
 import { useToast } from "@/composables/useToast";
 import PageHero from "@/components/layouts/PageHero.vue";
 import KpiCard from "@/components/overview/KpiCard.vue";
@@ -135,15 +136,15 @@ const healthServices = computed(() => {
     return [
       { key: "api",       name: "FastAPI 网关", state: "fail" as const, detail: "健康端点不可达" },
       { key: "models",    name: "模型 API",     state: "fail" as const, detail: "健康端点不可达" },
-      { key: "evalscope", name: "EvalScope",    state: "off" as const, detail: "健康端点不可达" },
-      { key: "scheduler", name: "调度服务",     state: "off" as const, detail: "健康端点不可达" },
+      { key: "evalscope", name: "EvalScope",    state: "fail" as const, detail: "健康端点不可达" },
+      { key: "scheduler", name: "调度服务",     state: "fail" as const, detail: "健康端点不可达" },
     ];
   }
   return [
     { key: "api",       name: "FastAPI 网关",  state: "ok" as const, detail: `运行 ${Math.round(h.uptime_s / 60)} 分钟` },
     { key: "models",    name: "模型 API",      state: h.models.ok ? ("ok" as const) : ("fail" as const), detail: `已配置 ${h.models.count} 个` },
     { key: "evalscope", name: "EvalScope",     state: h.evalscope.ok ? ("ok" as const) : ("warn" as const), detail: h.evalscope.state === "ready" ? "数据集目录就绪" : h.evalscope.state },
-    { key: "scheduler", name: "调度服务",      state: h.scheduler.ok ? ("ok" as const) : ("warn" as const), detail: h.scheduler.state === "running" ? "单机定时调度器" : "已禁用" },
+    { key: "scheduler", name: "调度服务",      ...schedulerHealth(h) },
   ];
 });
 
