@@ -11,7 +11,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useToast } from "@/composables/useToast";
 import { Document, Plus, Refresh, Search, VideoPlay } from "@element-plus/icons-vue";
 import type { TableInstance } from "element-plus";
-import { effectiveDatasetNames, modelDisplayName, progressPercentOf, scorePercent } from "@/evaluation/presentation";
+import { effectiveDatasetNames, modelDisplayName, progressPercentOf, progressSampleCounts, scorePercent } from "@/evaluation/presentation";
 import DatasetPicker from "@/components/common/DatasetPicker.vue";
 import { shouldShowTaskListEmpty, taskById } from "@/utils/taskListState";
 import { taskErrorSummary } from "@/utils/taskError";
@@ -79,6 +79,7 @@ const datasetResults = computed<any[]>(() => Array.isArray(normalizedResult.valu
 const categorySummaries = computed<any[]>(() => Array.isArray(normalizedResult.value?.category_summaries) ? normalizedResult.value.category_summaries : []);
 const scoredCount = computed(() => datasetResults.value.filter((row) => scorePercent(row.score) !== null).length);
 const selectedProgress = computed(() => progressPercentOf(selected.value?.progress_detail));
+const sampleCounts = computed(() => progressSampleCounts(selected.value?.progress_detail));
 function modelName(id?: string) { return modelDisplayName(id, store.models); }
 
 const scoreOption = computed(() => {
@@ -440,7 +441,7 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
         <div v-if="!finalStatus(selected.status) || selected.progress_detail" class="lb-eval-progress" aria-live="polite">
           <div class="lb-eval-progress__head"><strong>{{ selected.progress || '等待进度信息' }}</strong><span>{{ selectedProgress === undefined ? '等待进度' : selectedProgress.toFixed(1) + '%' }}</span></div>
           <el-progress v-if="selectedProgress !== undefined" :percentage="selectedProgress" :stroke-width="5" :show-text="false" /><div v-else class="lb-eval-progress__waiting"></div>
-          <div v-if="selected.progress_detail" class="lb-eval-progress__stats"><span>已处理 {{ (selected.progress_detail as any).processed_count ?? '—' }} / {{ (selected.progress_detail as any).total_count ?? '—' }} 样本</span><span>数据集 {{ (selected.progress_detail as any).dataset_index ?? '—' }} / {{ (selected.progress_detail as any).dataset_total ?? '—' }}</span></div>
+          <div v-if="selected.progress_detail" class="lb-eval-progress__stats"><span>已处理 {{ sampleCounts.processed ?? '—' }} / {{ sampleCounts.total ?? '—' }} 样本</span><span>数据集 {{ (selected.progress_detail as any).dataset_index ?? '—' }} / {{ (selected.progress_detail as any).dataset_total ?? '—' }}</span></div>
         </div>
         <el-alert v-if="selected.error" class="lb-eval-alert" type="error" :closable="false" title="能力评测执行异常"><pre class="lb-eval-error">{{ JSON.stringify(selected.error, null, 2) }}</pre></el-alert>
         <el-tabs v-model="resultTab" class="lb-eval-tabs">
@@ -455,11 +456,11 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
             <EmptyState v-else :title="finalStatus(selected.status) ? '暂无数据集得分' : '等待评测结果'" description="结果生成后会逐项展示；未返回的分数不会被当作零分。" />
           </el-tab-pane>
           <el-tab-pane label="能力维度" name="categories">
+            <p class="lb-eval-note">按类别统计已评分的数据集数量，不计算跨数据集平均分；各数据集得分见“数据集得分”。</p>
             <el-table v-if="categorySummaries.length" :data="categorySummaries">
               <el-table-column prop="category" label="类别" min-width="120" />
               <el-table-column prop="dataset_count" label="数据集数" min-width="100" />
               <el-table-column prop="scored_dataset_count" label="已评分数" min-width="100" />
-              <el-table-column label="平均分（%）" min-width="120"><template #default="{ row }">{{ normalizeScore(row.average_score) === null ? '未取得分数' : normalizeScore(row.average_score) + '%' }}</template></el-table-column>
             </el-table>
             <EmptyState v-else title="暂无能力维度汇总" description="分类汇总以评测任务返回的数据为准。" />
           </el-tab-pane>

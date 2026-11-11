@@ -23,6 +23,20 @@ export function progressPercentOf(detail: unknown): number | undefined {
   return value === undefined ? undefined : Math.min(value, 100);
 }
 
+export function progressSampleCounts(detail: unknown): { processed: number | undefined; total: number | undefined } {
+  const record = detail && typeof detail === "object" ? detail as Record<string, unknown> : {};
+  const current = typeof record.current_dataset === "string" && Array.isArray(record.datasets)
+    ? record.datasets.find((row) => row?.dataset === record.current_dataset) : undefined;
+  const count = (value: unknown) => {
+    const number = nonNegativeNumber(value);
+    return number !== undefined && Number.isInteger(number) ? number : undefined;
+  };
+  return {
+    processed: count(record.processed_count) ?? count(current?.processed_count),
+    total: count(record.total_count) ?? count(current?.total_count),
+  };
+}
+
 /** 沿用原页面的 0–1 / 百分制兼容规则，但不把 null、空串转换为零分。 */
 export function scorePercent(value: unknown): number | null {
   const number = nonNegativeNumber(value);

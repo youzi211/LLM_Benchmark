@@ -99,13 +99,15 @@ def write_intelligence_report(task: IntelligenceTask, reports_dir: Path | None =
 
     lines.append("## 4. 能力维度汇总")
     lines.append("")
-    lines.append("| 能力维度 | 数据集数 | 有分数数据集数 | 平均 Score |")
-    lines.append("|---|---:|---:|---:|")
+    lines.append("按类别统计已评分的数据集数量，不计算跨数据集平均分；各数据集得分见上表。")
+    lines.append("")
+    lines.append("| 能力维度 | 数据集数 | 有分数数据集数 |")
+    lines.append("|---|---:|---:|")
     if result and result.category_summaries:
         for item in result.category_summaries:
-            lines.append(f"| {_cell(item.category)} | {item.dataset_count} | {item.scored_dataset_count} | {_score(item.average_score)} |")
+            lines.append(f"| {_cell(item.category)} | {item.dataset_count} | {item.scored_dataset_count} |")
     else:
-        lines.append("| - | 0 | 0 | - |")
+        lines.append("| - | 0 | 0 |")
     lines.append("")
 
     lines.append("## 5. 原始结果定位")

@@ -87,6 +87,33 @@ async def test_intelligence_runner_runs_evalscope_in_process_and_generates_repor
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["completed", "failed"])
+async def test_finished_task_preserves_last_reported_dataset_counts(tmp_path, status):
+    class ProgressExecutor(FakeIntelligenceExecutor):
+        def run(self, **kwargs):
+            kwargs["progress_callback"]({
+                "status": "running", "current_dataset": "gsm8k",
+                "dataset_index": 1, "dataset_total": 2,
+                "processed_count": 1, "total_count": 2,
+                "datasets": [{"dataset": "gsm8k", "processed_count": 1, "total_count": 2}],
+            })
+            return {**super().run(**kwargs), "status": status}
+
+    runner = IntelligenceRunner(
+        model_store=_model_store(tmp_path / "models.json"),
+        task_store=IntelligenceTaskStore(tmp_path / "tasks"),
+        executor=ProgressExecutor(), reports_dir=tmp_path / "reports", run_in_background=False,
+    )
+    task = await runner.submit_custom(model_id="m1", datasets=["gsm8k", "bbh"])
+    assert task.status == status
+    assert task.progress_detail.current_dataset == "gsm8k"
+    assert task.progress_detail.dataset_index == 1
+    assert task.progress_detail.processed_count == 1
+    assert task.progress_detail.total_count == 2
+    assert task.progress_detail.datasets[0].processed_count == 1
+
+
+@pytest.mark.asyncio
 async def test_intelligence_runner_maps_responses_endpoint(tmp_path):
     executor = FakeIntelligenceExecutor()
     runner = IntelligenceRunner(

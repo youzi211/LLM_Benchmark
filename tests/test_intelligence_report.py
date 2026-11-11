@@ -45,3 +45,5 @@ def test_write_intelligence_report_contains_sections_and_redacts(tmp_path):
     assert "完整 JSON" not in text
     assert "GSM8K" in text
     assert "sk" + "-example-token" not in text
+    assert "平均 Score" not in text
+    assert "不计算跨数据集平均分" in text

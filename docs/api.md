@@ -701,9 +701,9 @@ EvalScope 未安装或导入失败时返回 `502 evalscope_error`。
 | `datasets` | string[] | 本次评测数据集。 |
 | `status` | string | `pending`、`running`、`completed`、`failed`、`interrupted`。 |
 | `progress` | string/null | 本地进度文本，例如当前数据集、样本完成数和整体百分比。 |
-| `progress_detail` | object/null | EvalScope `progress.json` 汇总后的结构化进度，包含 `current_dataset`、`dataset_index`、`dataset_total`、`processed_count`、`total_count`、`percent`、`overall_percent` 和各已启动数据集进度。 |
+| `progress_detail` | object/null | EvalScope `progress.json` 汇总后的结构化进度，包含 `current_dataset`、`dataset_index`、`dataset_total`、`processed_count`、`total_count`、`percent`、`overall_percent` 和各已启动数据集进度。样本计数对应当前数据集，任务结束时保留最后上报值；历史任务顶层计数缺失时，页面使用匹配 `current_dataset` 的数据集进度，不按样本限制推算。 |
 | `report_path` | string/null | 本地 Markdown 报告路径。 |
-| `normalized_result` | object/null | 精简标准化结果，只包含数据集分数、能力维度汇总、状态和错误摘要；不嵌入完整 `report_table`、metrics 或原始报告。 |
+| `normalized_result` | object/null | 精简标准化结果，只包含数据集分数、能力维度汇总、状态和错误摘要；不嵌入完整 `report_table`、metrics 或原始报告。能力维度只展示数据集数和已评分数，不计算跨数据集平均分；保留兼容字段 `average_score: null` 不代表数据集没有分数。 |
 | `raw_result` | object/null | 任务级完整 EvalScope 业务结果归档；大字段只保留这一份，详情通过结果 API 获取。 |
 | `raw_output_dir` | string/null | EvalScope 原始输出目录定位；用于排查和获取原始产物。 |
 | `error` | object/null | 脱敏后的任务错误。 |

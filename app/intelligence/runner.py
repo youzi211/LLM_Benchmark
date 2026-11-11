@@ -378,19 +378,13 @@ class IntelligenceRunner:
             task.completed_at = _parse_dt(raw_result.get("completed_at")) or utc_now()
             task.evalscope_task_id = raw_result.get("task_id") or task.evalscope_task_id or task.task_id
             task.progress = "能力评测完成" if task.status == "completed" else "能力评测失败"
-            task.progress_detail = IntelligenceProgress(
-                status=task.status,
-                current_dataset=task.datasets[-1] if task.datasets else None,
-                dataset_index=len(task.datasets) or None,
-                dataset_total=len(task.datasets) or None,
-                processed_count=None,
-                total_count=None,
-                percent=100.0 if task.status == "completed" else None,
-                overall_percent=100.0 if task.status == "completed" else None,
-                message=task.progress,
-                updated_at=task.completed_at,
-                datasets=task.progress_detail.datasets if task.progress_detail else [],
-            )
+            task.progress_detail = (task.progress_detail or IntelligenceProgress()).model_copy(update={
+                "status": task.status,
+                "percent": 100.0 if task.status == "completed" else None,
+                "overall_percent": 100.0 if task.status == "completed" else None,
+                "message": task.progress,
+                "updated_at": task.completed_at,
+            })
             report_path = write_intelligence_report(task, self.reports_dir, judge_status=self._judge_status(task.datasets))
             task.report_path = str(report_path)
         except Exception as exc:

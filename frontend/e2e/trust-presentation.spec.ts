@@ -1,5 +1,24 @@
 import { test, expect } from "./fixtures";
 
+test("legacy Mini results retain score and sample counts without a misleading category average", async ({ page }, testInfo) => {
+  const task = {
+    task_id: "mini-completed", model_id: "ui-model", status: "completed", datasets: ["mini"],
+    progress_detail: { current_dataset: "mini", processed_count: null, total_count: null, overall_percent: 100,
+      dataset_index: 1, dataset_total: 1, datasets: [{ dataset: "mini", processed_count: 1, total_count: 1 }] },
+    normalized_result: { dataset_results: [{ dataset: "mini", pretty_name: "Mini", categories: ["Coding"], score: 1 }],
+      category_summaries: [{ category: "Coding", dataset_count: 1, scored_dataset_count: 1, average_score: null }] },
+  };
+  await page.route("**/api/intelligence/tasks/mini-completed*", route => route.fulfill({ json: task }));
+  await page.goto("/#/intelligence?task_id=mini-completed");
+  await expect(page.getByText("已处理 1 / 1 样本", { exact: true })).toBeVisible();
+  await expect(page.locator(".lb-intel-score")).toHaveText("100%");
+  await page.getByRole("tab", { name: "能力维度", exact: true }).click();
+  await expect(page.getByRole("tabpanel", { name: "能力维度", exact: true }).getByText("Coding", { exact: true })).toBeVisible();
+  await expect(page.getByText("未取得分数", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/不计算跨数据集平均分/)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("mini-category-results.png"), animations: "disabled" });
+});
+
 for (const [lane, reason, timeLabel] of [
   ["basic", "测试接口连接失败", "开始时间"],
   ["intelligence", "数据集执行失败", "创建时间"],

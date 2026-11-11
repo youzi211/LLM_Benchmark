@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { effectiveDatasetNames, formatEvaluationDuration, metricResultCounts, progressPercentOf, scorePercent } from "../src/evaluation/presentation.ts";
+import { effectiveDatasetNames, formatEvaluationDuration, metricResultCounts, progressPercentOf, progressSampleCounts, scorePercent } from "../src/evaluation/presentation.ts";
 
 test("duration formatting preserves a real zero and keeps missing values unavailable", () => {
   assert.equal(formatEvaluationDuration(0), "0 毫秒");
@@ -22,6 +22,19 @@ test("progress prefers overall percent, including an explicit zero", () => {
 test("unknown and invalid progress is not displayed as zero percent", () => {
   for (const value of [null, undefined, {}, { percent: null }, { percent: "" }, { percent: -1 }, { percent: false }]) {
     assert.equal(progressPercentOf(value), undefined);
+  }
+});
+
+test("sample counts use current dataset progress for legacy completed tasks", () => {
+  const detail = { current_dataset: "mini", processed_count: null, total_count: null, datasets: [
+    { dataset: "other", processed_count: 50, total_count: 100 },
+    { dataset: "mini", processed_count: 1, total_count: 1 },
+  ] };
+  assert.deepEqual(progressSampleCounts(detail), { processed: 1, total: 1 });
+  assert.deepEqual(progressSampleCounts({ ...detail, processed_count: 0, total_count: 2 }), { processed: 0, total: 2 });
+  assert.deepEqual(progressSampleCounts({ ...detail, current_dataset: "unknown" }), { processed: undefined, total: undefined });
+  for (const value of [null, undefined, {}, { processed_count: -1, total_count: 1.5 }, { processed_count: false, total_count: "" }]) {
+    assert.deepEqual(progressSampleCounts(value), { processed: undefined, total: undefined });
   }
 });
 
