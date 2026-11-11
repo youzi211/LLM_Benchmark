@@ -17,6 +17,20 @@ OPENCODE = "1.19.5"
 DSH = "0.1.5-rc.3"
 
 
+def flatten_symlinks(root: Path) -> None:
+    """Replace symlinks with shims; ms_enclave's tar_directory skips them.
+
+    A hardlink would not do: Node resolves relative imports from the entry
+    script's argv path, so ``dsh`` linked into ``tools/bin`` breaks. The shim
+    hands Node an absolute path.
+    """
+    for link in [path for path in root.rglob("*") if path.is_symlink()]:
+        target = os.path.relpath(link.resolve(), link.parent)
+        link.unlink()
+        link.write_text(f'#!/bin/sh\nexec "$(cd "$(dirname "$0")" && pwd)/{target}" "$@"\n')
+        link.chmod(0o755)
+
+
 def prepare(target: Path, registry: str) -> None:
     if platform.system() != "Linux" or platform.machine() != "x86_64":
         raise SystemExit("This bundle targets Linux x86_64 benchmark containers")
@@ -38,6 +52,7 @@ def prepare(target: Path, registry: str) -> None:
             "--registry", registry, "--no-audit", "--no-fund",
             f"opencode-ai@{OPENCODE}", f"@deepseek-ai/dsh@{DSH}",
         ], env=env, check=True)
+        flatten_symlinks(staging)
         env["PATH"] = f"{staging / 'tools/bin'}:{env['PATH']}"
         for command in (["node", "--version"], ["opencode", "--version"], ["dsh", "--help"]):
             subprocess.run(command, env=env, check=True, stdout=subprocess.DEVNULL)

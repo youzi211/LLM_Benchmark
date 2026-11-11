@@ -60,3 +60,15 @@ async def test_cancellable_preserves_upstream_error(tmp_path):
 
     with pytest.raises(ValueError, match="infrastructure failed"):
         await cancellable(operation(), tmp_path / "cancel-requested")
+
+
+def test_runtime_bundle_has_no_symlinks_since_sandbox_copy_skips_them(tmp_path):
+    from scripts.prepare_agent_runtime import flatten_symlinks
+
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "tool").write_text("#!/bin/sh\n")
+    (tmp_path / "bin" / "alias").symlink_to("tool")
+    flatten_symlinks(tmp_path)
+    assert not any(path.is_symlink() for path in tmp_path.rglob("*"))
+    shim = tmp_path / "bin" / "alias"
+    assert 'exec "$(cd "$(dirname "$0")" && pwd)/tool" "$@"' in shim.read_text()

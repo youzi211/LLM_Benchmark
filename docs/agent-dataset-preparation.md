@@ -43,7 +43,7 @@ EvalScope 本地加载器会删除过时的 `dataset_infos.json`。该文件另�
 
 - `POST /api/intelligence/tasks` 已接入 `opencode` 与 `deepseek-harness`，可人工触发 Mini、SWE-bench Pro V2 和 Terminal-Bench 4.0；原默认与定时数据集组合不变。
 - Terminal-Bench 4.0 与 SWE-bench Pro V2 通过项目内 Harbor adapter 读取已下载任务。Pro V2 的评分会在新的官方任务环境重放 Agent 补丁并执行 verifier。
-- OpenCode、DeepSeek Harness、Node 与任务镜像需要提前准备；EvalScope Agent Runtime 目录通过 `agent_runtime_dir` 或环境变量 `LLM_BENCHMARK_AGENT_RUNTIME_DIR` 配置。容器连接模型代理时可配置 `agent_bridge_host` 或 `LLM_BENCHMARK_AGENT_BRIDGE_HOST`。
+- OpenCode、DeepSeek Harness、Node 与任务镜像需要提前准备；EvalScope Agent Runtime 目录通过 `agent_runtime_dir` 或环境变量 `LLM_BENCHMARK_AGENT_RUNTIME_DIR` 配置。容器连接模型代理时可配置 `agent_bridge_host` 或 `LLM_BENCHMARK_AGENT_BRIDGE_HOST`。`scripts/prepare_agent_runtime.py` 会把 npm 生成的符号链接改写为启动脚本，因为 EvalScope 打包运行目录时会跳过符号链接，导致容器内 `tools/bin` 为空；Node 入口（`dsh`、`npm`）必须经脚本转成绝对路径，否则相对导入失败。
 - SWE-bench 自动构建 Python 基础镜像时默认使用清华 Anaconda 镜像；内网有其他镜像源时可用 `LLM_BENCHMARK_SWEBENCH_MINICONDA_MIRROR` 和 `LLM_BENCHMARK_SWEBENCH_CONDA_MIRROR` 覆盖。
 - SWE-bench Mini 实例镜像默认从 `docker.1ms.run/swebench` 拉取；可通过 `LLM_BENCHMARK_SWEBENCH_DOCKERHUB_MIRROR` 指定其他 Docker Hub 镜像站。显式设置的 `dockerhub_username` 优先。
 - Harbor 镜像代理按源站处理：`docker.io` 使用 `docker.1ms.run`，`ghcr.io` 使用 `ghcr.1ms.run`。Terminal-Bench 的 Compose 辅助服务通过任务输出目录中的临时 overlay 改写，不修改官方任务文件或内容哈希。
