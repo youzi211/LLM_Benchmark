@@ -1,4 +1,6 @@
 import { http } from "./http";
+import { timestamp } from "../utils/time";
+export { formatDate } from "../utils/time";
 
 export type Status = "pending" | "running" | "completed" | "failed" | "interrupted" | "partial" | "error" | string;
 
@@ -235,18 +237,11 @@ export function finalStatus(status?: string) {
   return ["completed", "partial", "failed", "interrupted", "error"].includes(String(status || ""));
 }
 
-export function formatDate(value?: unknown) {
-  if (!value) return "-";
-  const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString("zh-CN", { hour12: false });
-}
-
 /** 相对时间, 如 "3 分钟后" / "2 小时前". 用于定时任务下次运行提示. */
 export function relativeFromNow(value?: unknown): string {
   if (!value) return "";
-  const ts = new Date(String(value)).getTime();
-  if (Number.isNaN(ts)) return "";
+  const ts = timestamp(value);
+  if (ts === undefined) return "";
   const diffSec = Math.round((ts - Date.now()) / 1000);
   const abs = Math.abs(diffSec);
   const future = diffSec >= 0;

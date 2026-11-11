@@ -191,7 +191,7 @@ export function buildStressGroups(tasks: TaskLike[]): TaskLike[] {
       runs,
       errors: bucket.flatMap((task) => {
         const taskErrors = (task.normalized_result as Record<string, unknown> | undefined)?.errors;
-        return Array.isArray(taskErrors) ? taskErrors : [];
+        return Array.isArray(taskErrors) && taskErrors.length ? taskErrors : task.error ? [task.error] : [];
       }),
     };
 

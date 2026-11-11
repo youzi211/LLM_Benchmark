@@ -22,6 +22,7 @@ import {
   stressStatusLabel,
 } from "@/stress/stressView";
 import { shouldShowTaskListEmpty, taskById } from "@/utils/taskListState";
+import { taskErrorSummary } from "@/utils/taskError";
 import { taskIdFromQuery } from "@/utils/taskCenter";
 import {
   cancelStressTask,
@@ -115,6 +116,10 @@ function formatMetric(value: unknown) {
 }
 
 function modelName(id?: string) { return modelDisplayName(id, store.models); }
+// 分组失败可能来自成员任务，读取归组时保留的错误。
+function rowErrorSummary(row: any) {
+  return taskErrorSummary({ status: row.status, error: row.error, errors: row.normalized_result?.errors });
+}
 
 const requestThroughputOption = computed(() => makeLineOption("请求吞吐", "req/s", runsOf(selected.value), [
   ["request_throughput", "请求吞吐"],
@@ -510,12 +515,12 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
 
 <template>
   <PageHero
-    eyebrow="STRESS TEST"
+    eyebrow="吞吐与延迟压测"
     title="压测评测"
     description="观察不同负载下的吞吐、响应延迟与稳定性，保留每个档位的测试证据。"
   >
     <template #actions>
-      <el-button :icon="Refresh" :loading="refreshing" @click="reload()">刷新数据</el-button>
+      <el-button :icon="Refresh" :loading="refreshing" @click="reload()">刷新任务</el-button>
       <el-button type="primary" :icon="Plus" @click="configurationVisible = true">新建压测评测</el-button>
     </template>
   </PageHero>
@@ -608,7 +613,7 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
         <el-input v-model="queryText" :placeholder="groupByConfig ? '搜索方案 / 模型' : '搜索任务 ID / 模型'" aria-label="搜索压测任务" clearable>
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <el-button text circle :icon="Refresh" :loading="refreshing" aria-label="刷新压测任务" @click="reload()" />
+        <el-button text circle :icon="Refresh" :loading="refreshing" aria-label="刷新任务" @click="reload()" />
       </div>
       <el-alert v-if="listError" class="lb-eval-alert" type="error" :closable="false" show-icon :title="`任务列表加载失败：${listError}`" />
       <div class="lb-eval-filters">
@@ -627,11 +632,11 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
         <el-table-column v-if="!groupByConfig" type="selection" width="36" :reserve-selection="true" />
         <el-table-column prop="task_id" label="任务 / 方案" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">
-            <button type="button" class="lb-eval-task-link" :aria-label="row.grouped ? `查看方案 ${row.group_label}` : `查看任务 ${row.task_id}`" @click.stop="row.grouped ? selectGroup(row as TaskLike) : selectTaskAndSync(row.task_id)"><strong>{{ row.grouped ? row.group_label : modelName(row.model_id) }}</strong><small>{{ row.grouped ? `${modelName(row.model_id)} · ${row.group_count} 条记录 · ${runsOf(row as any).length} 个档位` : row.task_id }}</small></button>
+            <button type="button" class="lb-eval-task-link" :aria-label="row.grouped ? `查看方案 ${row.group_label}` : `查看任务 ${row.task_id}`" @click.stop="row.grouped ? selectGroup(row as TaskLike) : selectTaskAndSync(row.task_id)"><strong>{{ row.grouped ? row.group_label : modelName(row.model_id) }}</strong><small>{{ row.grouped ? `${modelName(row.model_id)} · ${row.group_count} 条记录 · ${runsOf(row as any).length} 个档位` : row.task_id }}</small></button><time class="lb-task-time">创建时间：{{ formatDate(row.created_at) }}</time>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="84">
-          <template #default="{ row }"><StatusTag :cancelling="Boolean(row.cancel_requested_at)" :status="row.status" :label="stressStatusLabel(row.status, row.grouped)" compact /></template>
+        <el-table-column label="状态" width="120">
+          <template #default="{ row }"><StatusTag :cancelling="Boolean(row.cancel_requested_at)" :status="row.status" :label="stressStatusLabel(row.status, row.grouped)" compact /><span v-if="rowErrorSummary(row)" class="lb-stress-error-line" :title="rowErrorSummary(row)">{{ rowErrorSummary(row) }}</span></template>
         </el-table-column>
         <el-table-column label="耗时" width="76">
           <template #default="{ row }"><span class="lb-eval-numeric" :title="row.duration_ms != null ? `${row.duration_ms} ms` : undefined">{{ formatEvaluationDuration(row.duration_ms) }}</span></template>
@@ -654,6 +659,8 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
         title="尚未选择任务"
         description="从左侧任务列表选择一个压测任务查看吞吐、延迟与档位对比。"
         variant="list"
+        action-label="新建压测评测"
+        @action="configurationVisible = true"
       />
       <template v-else>
         <div class="lb-eval-task-title"><div><strong>{{ (selected as any).grouped ? (selected as any).group_label : modelName(selected.model_id) }}</strong><code>{{ (selected as any).grouped ? (selected as any).group_config : selected.task_id }}</code></div><el-button v-if="(selected as any).grouped" size="small" @click="resultTab = 'artifacts'">查看组内任务</el-button></div>
@@ -764,7 +771,9 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
 </template>
 
 <style scoped>
+.lb-task-time { display: block; margin-top: 4px; color: var(--lb-muted); font-size: 10px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; }
 .field-help { margin: 6px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
+.lb-stress-error-line { display: block; margin-top: 4px; overflow: hidden; color: var(--lb-danger); font-size: 10px; line-height: 1.4; white-space: nowrap; text-overflow: ellipsis; }
 .section-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 24px 0 14px; font-size: 13px; font-weight: 600; }
 .lb-stress-option-id { float: right; margin-left: 12px; color: var(--lb-muted); font: 10px var(--font-mono); }
 .advanced-toggle:focus-visible, .artifact-row:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }

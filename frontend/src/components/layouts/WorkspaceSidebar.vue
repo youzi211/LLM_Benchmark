@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { useRoute } from "vue-router";
-import { Brush, Calendar, Connection, Cpu, DataAnalysis, DataLine, Grid, Setting, Operation, Switch, Tickets } from "@element-plus/icons-vue";
+import { Calendar, Connection, Cpu, DataAnalysis, DataLine, Grid, Setting, Operation, Switch, Tickets } from "@element-plus/icons-vue";
 
 const route = useRoute();
 const emit = defineEmits<{ navigate: [] }>();
-const development = import.meta.env.DEV;
 const groups = [
   {
     label: "工作空间",
@@ -64,11 +63,8 @@ const groups = [
     </nav>
 
     <div class="lb-workspace-sidebar__foot">
-      <router-link v-if="development" to="/style-guide" class="lb-workspace-nav__link" @click="emit('navigate')">
-        <el-icon aria-hidden="true"><Brush /></el-icon><span>设计系统</span>
-      </router-link>
       <div class="lb-workspace-sidebar__note">
-        <span>INTERNAL WORKSPACE</span>
+        <span>内部工作台</span>
         <p>评测事实 · 结果归档</p>
       </div>
     </div>

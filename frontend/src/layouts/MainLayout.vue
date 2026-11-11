@@ -49,6 +49,12 @@ const themeLabel = computed(() => {
   if (themeMode.value === "auto") return "跟随系统";
   return themeResolved.value === "dark" ? "暗色" : "亮色";
 });
+// 主题按钮说明的是“点下去会变成什么”，不是当前状态。
+const nextThemeLabel = computed(() => {
+  if (themeMode.value === "light") return "切换到暗色主题";
+  if (themeMode.value === "dark") return "切换到跟随系统主题";
+  return "切换到亮色主题";
+});
 
 function onSelectModel(id: string) {
   store.select(id);
@@ -121,18 +127,20 @@ onUnmounted(() => {
         </div>
         <div class="lb-workspace-toolbar">
           <div class="lb-model-picker">
-            <span class="lb-model-picker__label">当前模型</span>
+            <el-tooltip content="仅用于新建任务时的默认模型；历史任务始终显示各自实际使用的模型。" placement="bottom">
+              <span class="lb-model-picker__label">新建任务模型</span>
+            </el-tooltip>
             <el-select
               :model-value="store.currentId ?? ''"
-              placeholder="选择当前模型"
+              placeholder="选择新建任务模型"
               :loading="store.loading"
-              aria-label="当前模型"
+              aria-label="新建任务模型"
               @change="onSelectModel"
             >
-              <el-option v-for="m in store.models" :key="m.id" :label="`${m.id} · ${m.name || m.model}`" :value="m.id" />
+              <el-option v-for="m in store.models" :key="m.id" :label="m.name && m.name !== m.id ? `${m.name} · ${m.id}` : m.id" :value="m.id" />
             </el-select>
-            <el-tooltip content="刷新模型" placement="bottom">
-              <el-button text circle :icon="Refresh" :loading="store.loading" aria-label="刷新模型" @click="store.load(true)" />
+            <el-tooltip content="刷新模型配置" placement="bottom">
+              <el-button text circle :icon="Refresh" :loading="store.loading" aria-label="刷新模型配置" @click="store.load(true)" />
             </el-tooltip>
             <el-tooltip content="编辑模型" placement="bottom">
               <el-button text circle :icon="Edit" :disabled="!store.currentId" aria-label="编辑模型" @click="modelEditVisible = true" />
@@ -143,8 +151,8 @@ onUnmounted(() => {
           <el-button class="lb-env-button" :icon="Setting" aria-label="评测环境" @click="evalscopeDrawerVisible = true"><span class="lb-toolbar-label">评测环境</span></el-button>
           <div class="lb-toolbar-utilities">
             <ShortcutHelp />
-            <el-tooltip :content="`当前主题: ${themeLabel} (点击切换)`" placement="bottom">
-              <el-button text circle :icon="themeIcon === 'moon' ? Moon : Sunny" @click="toggleTheme" :aria-label="`切换主题: ${themeLabel}`" />
+            <el-tooltip :content="`${nextThemeLabel}（当前: ${themeLabel}）`" placement="bottom">
+              <el-button text circle :icon="themeIcon === 'moon' ? Moon : Sunny" @click="toggleTheme" :aria-label="nextThemeLabel" />
             </el-tooltip>
           </div>
         </div>

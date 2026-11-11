@@ -51,8 +51,8 @@ function initialTasks(): Record<Lane, Array<Record<string, any>>> {
       { ...common, task_id: "stress_ui_running", status: "running", request_config: { ...stressConfig, dataset: "random" }, normalized_result: null, progress: "正在执行并发 5 档位", progress_detail: null, duration_ms: null },
     ],
     intelligence: [
-      { ...common, task_id: "intel_ui_completed", status: "completed", datasets: ["gsm8k", "bbh"], report_path: "reports/ui/intelligence.md", raw_output_dir: "outputs/ui/intelligence", progress: "评测完成", progress_detail: { overall_percent: 100, processed_count: 100, total_count: 100, dataset_index: 2, dataset_total: 2 }, normalized_result: { dataset_results: [{ dataset: "gsm8k", pretty_name: "GSM8K", categories: ["Math"], score: .825 }, { dataset: "bbh", pretty_name: "BBH", categories: ["Reasoning"], score: null }], category_summaries: [{ category: "Math", dataset_count: 1, scored_dataset_count: 1, average_score: .825 }, { category: "Reasoning", dataset_count: 1, scored_dataset_count: 0, average_score: null }] } },
-      { ...common, task_id: "intel_ui_failed", status: "failed", datasets: ["gsm8k"], normalized_result: null, error: { code: "fixture_error", message: "数据集执行失败" } },
+      { ...common, task_id: "intel_ui_completed", status: "completed", datasets: ["gsm8k", "bbh"], execution_snapshot: { conditions: { datasets: ["gsm8k", "bbh"], eval_batch_size: { gsm8k: 1, bbh: 1 } } }, report_path: "reports/ui/intelligence.md", raw_output_dir: "outputs/ui/intelligence", progress: "评测完成", progress_detail: { overall_percent: 100, processed_count: 100, total_count: 100, dataset_index: 2, dataset_total: 2 }, normalized_result: { dataset_results: [{ dataset: "gsm8k", pretty_name: "GSM8K", categories: ["Math"], score: .825 }, { dataset: "bbh", pretty_name: "BBH", categories: ["Reasoning"], score: null }], category_summaries: [{ category: "Math", dataset_count: 1, scored_dataset_count: 1, average_score: .825 }, { category: "Reasoning", dataset_count: 1, scored_dataset_count: 0, average_score: null }] } },
+      { ...common, task_id: "intel_ui_failed", status: "failed", datasets: ["gsm8k"], execution_snapshot: { conditions: { datasets: ["gsm8k"], eval_batch_size: { gsm8k: 1 } } }, normalized_result: null, error: { code: "fixture_error", message: "数据集执行失败" } },
       { ...common, task_id: "intel_ui_running", status: "running", datasets: ["gsm8k"], progress: "正在准备数据集", progress_detail: null, normalized_result: null },
     ],
   };
@@ -76,7 +76,7 @@ async function installApi(page: Page): Promise<UiApi> {
     const pathname = url.pathname;
     const method = request.method();
     const workspaceModel = (id: string) => ({
-      model_id: id, name: "同名测试模型", upstream_model: "fixture", protocol: "chat_completions", archived: false, historical_only: false, enabled: true, coverage: 3,
+      model_id: id, name: "同名测试模型", upstream_model: "fixture", protocol: "chat_completions", archived: false, historical_only: false, enabled: true, coverage: 3, last_execution_at: "2026-10-30T08:00:00Z",
       lanes: Object.fromEntries(lanes.map(({ lane }) => {
         const task = records[lane][0];
         const metrics = lane === "stress" ? runs : lane === "basic" ? [{ metric_id: "connectivity", status: "error", summary: "不支持，保留证据" }] : [{ dataset: "gsm8k", metric_id: "accuracy", unit: "%", direction: "higher_is_better", score: .8, display_multiplier: 100, sample_count: 20 }];

@@ -78,6 +78,14 @@ test("historical runs without mode fall back to a valid positive load value", ()
   });
 });
 
+test("grouped stress tasks preserve task-level errors when the latest task succeeded", () => {
+  const groups = buildStressGroups([
+    { task_id: "ok", model_id: "a", status: "completed", created_at: "2026-11-11T12:00:00Z" },
+    { task_id: "bad", model_id: "a", status: "failed", created_at: "2026-11-10T12:00:00Z", error: { message: "连接失败" } },
+  ]);
+  assert.deepEqual((groups[0].normalized_result as any).errors, [{ message: "连接失败" }]);
+});
+
 test("grouped stress tasks retain failed records and expose partial success", () => {
   const groups = buildStressGroups([
     {

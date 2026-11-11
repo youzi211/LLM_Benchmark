@@ -1419,8 +1419,8 @@ Invoke-WebRequest -Uri "http://127.0.0.1:8020/api/overview/reports/$($overview.o
 
 ## 模型工作台 API
 
-- GET `/api/model-evaluations`：search、include_archived（默认 false）、page（默认 1）、page_size（默认 25，最大 100）；返回 total、items。
-- GET `/api/model-evaluations/{model_id}`：按 basic、intelligence、stress 返回 latest_success、latest_attempt、partial_result、task_count；coverage 为完整成功链路数。
+- GET `/api/model-evaluations`：search、include_archived（默认 false）、page（默认 1）、page_size（默认 25，最大 100）、sort_by（model_id / coverage / last_execution，默认 model_id）、order（asc / desc，默认 asc）；先对全部匹配记录排序，再分页，返回 total、items。同排序值按模型 ID 升序稳定排列。last_execution 仅使用有时区的任务创建/开始时间，无有效时间的模型始终排在最后，非法排序参数返回 422。
+- GET `/api/model-evaluations/{model_id}`：按 basic、intelligence、stress 返回 latest_success、latest_attempt、partial_result、task_count；coverage 为完整成功链路数；last_execution_at 为最近一次有明确时区的任务创建/开始时间（UTC ISO 8601），没有已知时间时为 null。该字段按读取时计算，不回写归档。
 - GET `/api/model-evaluations/{model_id}/history`：支持 lane、page、page_size；结果带 task_url、report_url、脱敏执行快照与小型指标表。
 - POST `/api/model-comparisons`：传入 2–4 个唯一 model_ids，及可选 task_overrides（模型 ID → 链路 → 任务 ID）；只能选择属于该模型和链路的终态任务。返回 models、逐链路 comparability（equal / different / unknown）及原因。
 - POST `/api/models/{model_id}/archive`：归档模型，保留密钥配置及历史，禁止新建评测。默认分析模型、显式 Judge 或启用的定时任务仍引用该模型时返回 409 model_in_use 及 references。

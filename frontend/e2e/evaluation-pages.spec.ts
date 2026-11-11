@@ -6,7 +6,7 @@ for (const definition of lanes) {
   test(`${title}：默认提交与配置抽屉`, async ({ page, api }) => {
     api.seedActive = false;
     await page.goto(`/#/${lane}`);
-    await page.getByRole("button", { name: `新建${title}`, exact: true }).click();
+    await page.locator(".lb-page-hero").getByRole("button", { name: `新建${title}`, exact: true }).click();
     const drawer = page.getByRole("dialog", { name: `新建${title}`, exact: true });
     await expect(drawer.getByText("Qwen · 接入验证模型", { exact: true })).toBeVisible();
     await drawer.getByRole("button", { name: `开始${title}`, exact: true }).click();
@@ -70,7 +70,7 @@ for (const definition of lanes) {
       await page.setViewportSize({ width, height: 1000 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await page.screenshot({ path: testInfo.outputPath(`${lane}-${width}.png`), fullPage: width !== 375, animations: "disabled" });
-      await page.getByRole("button", { name: `新建${title}`, exact: true }).click();
+      await page.locator(".lb-page-hero").getByRole("button", { name: `新建${title}`, exact: true }).click();
       const drawer = page.getByRole("dialog", { name: `新建${title}`, exact: true });
       await expect(drawer).toBeVisible();
       expect(await drawer.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
@@ -79,7 +79,7 @@ for (const definition of lanes) {
       await expect(drawer).toBeHidden();
     }
     await page.setViewportSize({ width: 1440, height: 1000 });
-    await page.getByRole("button", { name: /^切换主题/ }).click();
+    await page.getByRole("button", { name: /^切换到/ }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     await page.screenshot({ path: testInfo.outputPath(`${lane}-dark.png`), fullPage: true, animations: "disabled" });
   });
@@ -116,13 +116,13 @@ for (const definition of lanes) {
 test("基础评测：指定指标保持合法 ID", async ({ page, api }) => {
   api.seedActive = false;
   await page.goto("/#/basic");
-  await page.getByRole("button", { name: "新建基础评测", exact: true }).click();
+  await page.locator(".lb-page-hero").getByRole("button", { name: "新建基础评测", exact: true }).click();
   const drawer = page.getByRole("dialog", { name: "新建基础评测" });
   await drawer.getByRole("combobox", { name: "指定指标" }).press("Enter");
   await page.getByRole("option", { name: "流式规范性 (stream_spec)", exact: true }).click();
   await drawer.getByRole("heading", { name: "新建基础评测" }).click();
   await drawer.getByRole("button", { name: "返回工作台", exact: true }).click();
-  await page.getByRole("button", { name: "新建基础评测", exact: true }).click();
+  await page.locator(".lb-page-hero").getByRole("button", { name: "新建基础评测", exact: true }).click();
   await expect(drawer.locator(".el-tag").filter({ hasText: "stream_spec" })).toBeVisible();
   await drawer.getByRole("button", { name: "开始基础评测", exact: true }).click();
   await expect.poll(() => api.submissions.length).toBe(1);
@@ -131,7 +131,7 @@ test("基础评测：指定指标保持合法 ID", async ({ page, api }) => {
 
 test("压测评测：开环参数与高级生成字段可提交", async ({ page, api }) => {
   await page.goto("/#/stress");
-  await page.getByRole("button", { name: "新建压测评测", exact: true }).click();
+  await page.locator(".lb-page-hero").getByRole("button", { name: "新建压测评测", exact: true }).click();
   const drawer = page.getByRole("dialog", { name: "新建压测评测" });
   await drawer.getByRole("switch", { name: "自定义压测参数" }).press("Space");
   await drawer.getByText("开环速率", { exact: true }).click();
@@ -160,7 +160,7 @@ test("压测评测：归组保留失败成员、明细与产物入口", async ({
 
 test("能力评测：样本参数、仅本地选择与子集覆盖", async ({ page, api }) => {
   await page.goto("/#/intelligence");
-  await page.getByRole("button", { name: "新建能力评测", exact: true }).click();
+  await page.locator(".lb-page-hero").getByRole("button", { name: "新建能力评测", exact: true }).click();
   const drawer = page.getByRole("dialog", { name: "新建能力评测" });
   await drawer.getByRole("switch", { name: "自定义数据集" }).press("Space");
   await drawer.getByRole("textbox", { name: "样本上限 limit" }).fill("5");
@@ -177,7 +177,7 @@ test("能力评测：样本参数、仅本地选择与子集覆盖", async ({ pa
 
 test("压测评测：闭环档位校验与参数保持一致", async ({ page, api }) => {
   await page.goto("/#/stress");
-  await page.getByRole("button", { name: "新建压测评测", exact: true }).click();
+  await page.locator(".lb-page-hero").getByRole("button", { name: "新建压测评测", exact: true }).click();
   const drawer = page.getByRole("dialog", { name: "新建压测评测" });
   await drawer.getByRole("switch", { name: "自定义压测参数" }).press("Space");
   await drawer.getByRole("textbox", { name: "并发档位 parallel", exact: true }).fill("1,2");

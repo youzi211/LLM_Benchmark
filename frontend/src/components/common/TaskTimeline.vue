@@ -5,6 +5,7 @@
  * 状态语义驱动, 不依赖后端实时数据.
  */
 import { computed } from "vue";
+import { formatDate } from "@/utils/time";
 import { Check, Loading, CircleClose, Clock, VideoPlay } from "@element-plus/icons-vue";
 
 const props = defineProps<{
@@ -36,15 +37,6 @@ const steps = computed<Step[]>(() => {
   ];
 });
 
-function tsLabel(s?: string) {
-  if (!s) return "—";
-  try {
-    const d = new Date(s);
-    return d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  } catch {
-    return "—";
-  }
-}
 </script>
 
 <template>
@@ -58,8 +50,8 @@ function tsLabel(s?: string) {
         <div v-if="i < steps.length - 1" class="lb-tl__line"></div>
         <div class="lb-tl__body">
           <div class="lb-tl__label">{{ s.label }}</div>
-          <div v-if="s.key === 'run' && started_at" class="lb-tl__ts">开始 {{ tsLabel(started_at) }}</div>
-          <div v-if="s.key === 'finish' && finished_at" class="lb-tl__ts">完成 {{ tsLabel(finished_at) }}</div>
+          <div v-if="s.key === 'run' && started_at" class="lb-tl__ts">开始 {{ formatDate(started_at) }}</div>
+          <div v-if="s.key === 'finish' && finished_at" class="lb-tl__ts">完成 {{ formatDate(finished_at) }}</div>
         </div>
       </li>
     </ol>

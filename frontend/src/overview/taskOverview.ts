@@ -1,4 +1,5 @@
 import type { TaskLike } from "@/api/evaluations";
+import { timestamp } from "../utils/time.ts";
 
 export const OVERVIEW_LANES = ["basic", "stress", "intelligence"] as const;
 
@@ -29,18 +30,13 @@ export interface OverviewTaskSummary {
 const RUNNING_STATUSES = new Set(["running", "pending", "queued"]);
 const FINAL_STATUSES = new Set(["completed", "partial", "failed", "interrupted", "error"]);
 
-function timestamp(value: unknown): number | undefined {
-  if (!value) return undefined;
-  const valueMs = new Date(String(value)).getTime();
-  return Number.isFinite(valueMs) ? valueMs : undefined;
-}
-
 function startedAt(task: TaskLike): number | undefined {
   return timestamp(task.started_at) ?? timestamp(task.created_at);
 }
 
 function recentAt(task: TaskLike): number {
   return timestamp(task.finished_at)
+    ?? timestamp(task.completed_at)
     ?? timestamp(task.updated_at)
     ?? timestamp(task.started_at)
     ?? timestamp(task.created_at)

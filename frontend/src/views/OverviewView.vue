@@ -28,6 +28,7 @@ import {
   type OverviewTaskSources,
 } from "@/overview/taskOverview";
 import { taskDetailLocation } from "@/utils/taskCenter";
+import { taskErrorSummary } from "@/utils/taskError";
 import { formatDurationMetric } from "@/overview/presentation";
 
 const router = useRouter();
@@ -148,6 +149,10 @@ const healthServices = computed(() => {
   ];
 });
 
+const runningItems = computed(() => taskSummary.value.runningTasks.map(task => ({
+  ...task, model: store.models.find(model => model.id === task.model)?.name || task.model,
+})));
+
 const recentItems = computed(() =>
   taskSummary.value.recentTasks.map(({ task, lane }) => ({
     task,
@@ -190,12 +195,12 @@ function onConfigureService(key: string) {
   <div class="lb-overview">
     <PageHero
       class="lb-overview__hero"
-      eyebrow="WORKSPACE"
+      eyebrow="评测运行概览"
       title="评测概览"
       description="汇总全部模型的评测进展、运行状态与最近结果。"
     >
       <template #actions>
-        <el-button :icon="Refresh" @click="reload" :loading="refreshing">刷新数据</el-button>
+        <el-button :icon="Refresh" @click="reload" :loading="refreshing">刷新任务</el-button>
         <el-button type="primary" :icon="Plus" @click="goNew">新建评测</el-button>
       </template>
     </PageHero>
@@ -234,7 +239,7 @@ function onConfigureService(key: string) {
         unit="次"
         variant="primary"
         :loading="summaryLoading"
-        :caption="statsUnavailable ? '统计接口不可用' : '全部模型 · 今日任务'"
+        :caption="statsUnavailable ? '统计接口不可用' : '全部模型 · 今日任务（北京时间）'"
       />
       <KpiCard
         label="执行完成率"
@@ -242,16 +247,15 @@ function onConfigureService(key: string) {
         :unit="stats?.completion_rate == null ? '' : '%'"
         variant="success"
         :loading="summaryLoading"
-        :caption="statsUnavailable ? '统计接口不可用' : '已完成 / 已结束 · 全部任务'"
+        :caption="statsUnavailable ? '统计接口不可用' : '全部历史已结束任务（已完成 / 已结束）'"
       />
       <KpiCard
         label="平均任务耗时"
         :value="averageDuration.value"
         :unit="averageDuration.unit"
-        :title="stats?.avg_duration_ms != null ? `原始平均耗时：${stats.avg_duration_ms} ms` : undefined"
         variant="warning"
         :loading="summaryLoading"
-        :caption="statsUnavailable ? '统计接口不可用' : '仅统计有耗时记录的任务'"
+        :caption="statsUnavailable ? '统计接口不可用' : '全部历史有耗时记录的任务'"
       />
       <KpiCard
         label="已配置模型"
@@ -266,7 +270,7 @@ function onConfigureService(key: string) {
     <section class="lb-overview__content" aria-label="任务与服务概览">
       <div class="lb-overview__column">
         <RunningTasks
-          :tasks="taskSummary.runningTasks"
+          :tasks="runningItems"
           :loading="tasksLoading"
           :error="runningError"
           :partial-error="runningPartialError"
@@ -290,6 +294,7 @@ function onConfigureService(key: string) {
                     <span class="lb-overview__recent-lane">{{ item.lane.label }}</span>
                   </div>
                   <code class="lb-overview__recent-id" :title="item.task.task_id">{{ item.task.task_id }}</code>
+                  <span v-if="taskErrorSummary(item.task)" class="lb-overview__recent-error" :title="taskErrorSummary(item.task)">{{ taskErrorSummary(item.task) }}</span>
                 </div>
                 <div class="lb-overview__recent-result">
                   <StatusTag :status="String(item.task.status)" compact />
@@ -348,6 +353,7 @@ function onConfigureService(key: string) {
 .lb-overview__recent-name > span:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .lb-overview__recent-lane { flex-shrink: 0; padding: 2px 5px; border-radius: 4px; background: var(--lb-surface-alt); color: var(--lb-muted); font-size: 10px; font-weight: 400; }
 .lb-overview__recent-id { display: block; margin-top: 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--lb-muted); font-family: var(--font-mono); font-size: 10px; }
+.lb-overview__recent-error { display: block; margin-top: 4px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--lb-danger); font-size: 10px; }
 .lb-overview__recent-result { display: flex; flex-shrink: 0; flex-direction: column; align-items: flex-end; gap: 7px; }
 .lb-overview__recent-time { color: var(--lb-muted); font-size: 10px; }
 .lb-overview__recent-arrow { flex-shrink: 0; color: var(--lb-muted); font-size: 12px; }

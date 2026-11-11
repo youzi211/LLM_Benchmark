@@ -5,6 +5,13 @@ import { buildOverviewTaskSummary } from "../src/overview/taskOverview.ts";
 
 const now = new Date(2026, 9, 29, 12, 0, 0);
 
+test("unknown legacy timezone does not produce a fabricated elapsed time", () => {
+  const summary = buildOverviewTaskSummary({ basic: [], stress: [], intelligence: [
+    { task_id: "legacy", status: "running", created_at: "2026-08-24T17:39:02" },
+  ] });
+  assert.equal(summary.runningTasks[0].startedAt, undefined);
+});
+
 test("empty successful sources produce empty real-data states", () => {
   const summary = buildOverviewTaskSummary({
     basic: [],

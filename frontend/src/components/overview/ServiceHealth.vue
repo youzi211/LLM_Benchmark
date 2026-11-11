@@ -22,6 +22,7 @@ const props = withDefaults(defineProps<{
 });
 
 const okCount = computed(() => props.services.filter(s => s.state === "ok").length);
+const offCount = computed(() => props.services.filter(s => s.state === "off").length);
 const total = computed(() => props.services.filter(s => s.state !== "off").length);
 const emit = defineEmits<{
   retry: [key: string];
@@ -35,7 +36,7 @@ const stateLabels = { ok: "正常", warn: "需关注", fail: "异常", pending: 
     <div class="lb-sh__head">
       <h3>服务健康</h3>
       <span class="lb-sh__summary" :class="{ 'lb-sh__summary--full': total > 0 && okCount === total }">
-        {{ okCount }} / {{ total }} 正常
+        已启用服务 {{ okCount }}/{{ total }} 正常<span v-if="offCount">，另有 {{ offCount }} 项未启用</span>
       </span>
     </div>
 

@@ -16,6 +16,7 @@ import { cancelBasicTask, fetchMetrics, formatDate, getBasicTask, listBasicTasks
 import { taskIdFromQuery } from "@/utils/taskCenter";
 import { shouldShowTaskListEmpty, taskById } from "@/utils/taskListState";
 import { formatEvaluationDuration, metricResultCounts, modelDisplayName } from "@/evaluation/presentation";
+import { taskErrorSummary } from "@/utils/taskError";
 
 const route = useRoute();
 const router = useRouter();
@@ -319,12 +320,12 @@ onBeforeUnmount(stopPolling);
 
 <template>
   <PageHero
-    eyebrow="BASIC SMOKE"
+    eyebrow="网关冒烟检查"
     title="基础评测"
     description="检查网关连通、协议兼容与工程指标，快速确认模型接入链路。"
   >
     <template #actions>
-      <el-button :icon="Refresh" :loading="refreshing" @click="reload()">刷新数据</el-button>
+      <el-button :icon="Refresh" :loading="refreshing" @click="reload()">刷新任务</el-button>
       <el-button type="primary" :icon="Plus" @click="configurationVisible = true">新建基础评测</el-button>
     </template>
   </PageHero>
@@ -367,7 +368,7 @@ onBeforeUnmount(stopPolling);
         >
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <el-button text circle :icon="Refresh" :loading="refreshing" aria-label="刷新基础任务" @click="reload()" />
+        <el-button text circle :icon="Refresh" :loading="refreshing" aria-label="刷新任务" @click="reload()" />
       </div>
       <el-alert v-if="listError" class="lb-eval-alert" type="error" :closable="false" show-icon :title="`任务列表加载失败：${listError}`" />
       <div class="lb-eval-filters">
@@ -394,11 +395,14 @@ onBeforeUnmount(stopPolling);
         <el-table-column type="selection" width="36" :reserve-selection="true" />
         <el-table-column prop="task_id" label="任务 / 模型" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">
-            <button type="button" class="lb-eval-task-link" :aria-label="`查看任务 ${row.task_id}`" @click.stop="selectTaskAndSync(row as TaskLike)"><strong>{{ modelName(row.model_id) }}</strong><small>{{ row.task_id }}</small></button>
+            <button type="button" class="lb-eval-task-link" :aria-label="`查看任务 ${row.task_id}`" @click.stop="selectTaskAndSync(row as TaskLike)"><strong>{{ modelName(row.model_id) }}</strong><small>{{ row.task_id }}</small></button><time class="lb-task-time">开始时间：{{ formatDate(row.started_at) }}</time>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="84">
-          <template #default="{ row }"><StatusTag :cancelling="Boolean(row.cancel_requested_at)" :status="row.status" compact /></template>
+        <el-table-column label="状态" width="120">
+          <template #default="{ row }">
+            <StatusTag :cancelling="Boolean(row.cancel_requested_at)" :status="row.status" compact />
+            <span v-if="taskErrorSummary(row)" class="lb-eval-error-line" :title="taskErrorSummary(row)">{{ taskErrorSummary(row) }}</span>
+          </template>
         </el-table-column>
         <el-table-column label="耗时" width="76">
           <template #default="{ row }">
@@ -421,6 +425,8 @@ onBeforeUnmount(stopPolling);
         title="尚未选择任务"
         description="选择一条任务，查看指标摘要、执行信息和评测报告。"
         variant="list"
+        action-label="新建基础评测"
+        @action="configurationVisible = true"
       />
       <template v-else>
         <div class="lb-eval-task-title">
@@ -472,6 +478,7 @@ onBeforeUnmount(stopPolling);
 </template>
 
 <style scoped>
+.lb-task-time { display: block; margin-top: 4px; color: var(--lb-muted); font-size: 10px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; }
 .lb-basic-metrics { display: grid; gap: 12px; }
 .lb-basic-metric { padding: 16px; border: 1px solid var(--lb-border); border-radius: 10px; }
 .lb-basic-metric__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -480,4 +487,5 @@ onBeforeUnmount(stopPolling);
 .lb-basic-metric__head code { display: block; margin-top: 5px; color: var(--lb-muted); font: 10px var(--font-mono); overflow-wrap: anywhere; }
 .lb-basic-metric p { margin: 12px 0 0; color: var(--lb-fg-soft); font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
 .lb-eval-stat .lb-basic-duration { font-size: 16px; line-height: 1.65; }
+.lb-eval-error-line { display: block; margin-top: 4px; overflow: hidden; color: var(--lb-danger); font-size: 10px; line-height: 1.4; white-space: nowrap; text-overflow: ellipsis; }
 </style>

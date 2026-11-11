@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 import { useModelsStore } from "@/stores/models";
@@ -9,6 +9,8 @@ import Stepper from "@/components/layouts/Stepper.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import StatusTag from "@/components/common/StatusTag.vue";
 import { taskDetailLocation, type TaskCenterLane } from "@/utils/taskCenter";
+import { taskErrorSummary } from "@/utils/taskError";
+import { modelDisplayName } from "@/evaluation/presentation";
 import {
   cancelSuite,
   fetchDatasets,
@@ -47,8 +49,16 @@ const defaultStressDataset = ref("");
 const selectedStressDataset = ref("");
 
 const currentStep = ref(0);
+const wizardAnchor = ref<HTMLElement | null>(null);
 let refreshTimer: number | undefined;
 let activeReload: Promise<void> | null = null;
+
+async function focusWizardStart() {
+  currentStep.value = 0;
+  await nextTick();
+  wizardAnchor.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+  wizardAnchor.value?.focus({ preventScroll: true });
+}
 
 const wizardSteps = [
   { key: "lane",    title: "选择评测线", description: "勾选要跑的基础 / 压测 / 能力" },
@@ -277,6 +287,7 @@ function openStep(step: Record<string, any>) {
 }
 
 onMounted(() => {
+  store.load().catch(() => {});
   loadDatasets();
   loadStressDatasets();
   reload();
@@ -295,7 +306,7 @@ onUnmounted(() => {
 
 <template>
 <PageHero
-    eyebrow="ONE-CLICK SUITE"
+    eyebrow="三链路一键评测"
     title="一键完整评测"
     description="串联基础 / 压测 / 能力三条评测线, 一次启动, 生成统一总览报告。适合上线前 / 模型升级后做完整基线。"
   >
@@ -311,7 +322,7 @@ onUnmounted(() => {
     <el-card class="panel-card" shadow="never">
       <el-form label-position="top">
         <!-- Step 0: 选择评测线 + 模型 -->
-        <div v-show="currentStep === 0">
+        <div v-show="currentStep === 0" ref="wizardAnchor" tabindex="-1">
           <el-form-item label="评测线选择">
             <el-checkbox v-model="form.runGateway">基础评测</el-checkbox>
             <el-checkbox v-model="form.runStress">压测评测</el-checkbox>
@@ -425,7 +436,7 @@ onUnmounted(() => {
 
     <el-card class="panel-card" shadow="never">
       <div class="lb-suite-list-head">
-        <el-button size="small" @click="reload()">刷新</el-button>
+        <el-button size="small" @click="reload()">刷新任务</el-button>
       </div>
       <EmptyState
         v-if="!loading && tasks.length === 0"
@@ -444,9 +455,17 @@ onUnmounted(() => {
         @row-click="selectTask"
       >
         <el-table-column prop="suite_id" label="Suite" min-width="210" show-overflow-tooltip />
-        <el-table-column prop="model_id" label="模型" width="130" show-overflow-tooltip />
-        <el-table-column label="状态" width="100">
-          <template #default="{ row }"><StatusTag :cancelling="Boolean(row.cancel_requested_at)" :status="row.status" /></template>
+        <el-table-column prop="model_id" label="模型" width="130">
+          <template #default="{ row }">
+            <div>{{ modelDisplayName(row.model_id, store.models) }}</div>
+            <div v-if="row.model_id" class="lb-suite-model-id" :title="row.model_id">{{ row.model_id }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="130">
+          <template #default="{ row }">
+            <StatusTag :cancelling="Boolean(row.cancel_requested_at)" :status="row.status" />
+            <span v-if="taskErrorSummary(row)" class="lb-suite-error-line" :title="taskErrorSummary(row)">{{ taskErrorSummary(row) }}</span>
+          </template>
         </el-table-column>
         <el-table-column label="更新" width="170"><template #default="{ row }">{{ formatDate(row.updated_at) }}</template></el-table-column>
       </el-table>
@@ -458,6 +477,8 @@ onUnmounted(() => {
         title="还没有选择 Suite"
         description="从左侧列表选一个 Suite 查看详细步骤, 耗时, 总览报告链接。"
         variant="list"
+        action-label="配置一键评测"
+        @action="focusWizardStart"
       />
       <template v-else>
         <el-descriptions :column="2" border>
@@ -513,4 +534,6 @@ onUnmounted(() => {
   justify-content: flex-end;
   margin-bottom: 12px;
 }
+.lb-suite-model-id { overflow: hidden; color: var(--lb-muted); font-size: 10px; line-height: 1.4; white-space: nowrap; text-overflow: ellipsis; }
+.lb-suite-error-line { display: block; margin-top: 4px; overflow: hidden; color: var(--lb-danger); font-size: 10px; line-height: 1.4; white-space: nowrap; text-overflow: ellipsis; }
 </style>

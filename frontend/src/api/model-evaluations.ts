@@ -18,6 +18,7 @@ export interface LaneResults {
 export interface ModelEvaluation {
   model_id: string; name: string; upstream_model: string | null; protocol: string | null;
   archived: boolean; enabled: boolean; historical_only: boolean; coverage: number;
+  last_execution_at?: string | null;
   lanes: Record<Lane, LaneResults>;
 }
 export interface Comparison {
@@ -35,7 +36,7 @@ export function selectedEvidence(result: LaneResults): Evidence | null { return 
 export function displayStatus(e?: Evidence | null): string {
   if (!e) return "未评测";
   if (e.cancel_requested_at && ["pending", "running", "queued"].includes(e.status)) return "取消中";
-  return ({ completed: "已完成", failed: "失败", error: "失败", interrupted: "已中断", running: "运行中", queued: "排队中", pending: "排队中" } as Record<string, string>)[e.status] || e.status;
+  return ({ completed: "已完成", partial: "部分完成", failed: "失败", error: "失败", interrupted: "已中断", running: "运行中", queued: "排队中", pending: "排队中" } as Record<string, string>)[e.status] || e.status;
 }
 export function exportEvidence(items: Evidence[], filename: string) {
   const blob = new Blob([JSON.stringify(items, null, 2)], { type: "application/json;charset=utf-8" });

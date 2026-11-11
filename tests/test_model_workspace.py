@@ -33,6 +33,37 @@ def test_latest_success_is_not_limited_or_replaced_by_failure(tmp_path, monkeypa
     assert client.get("/api/model-evaluations").json()["total"] == 2
 
 
+def test_model_sorting_precedes_pagination_and_keeps_unknown_times_last(tmp_path, monkeypatch):
+    from app.storage.intelligence_task_store import IntelligenceTaskStore
+    from app.intelligence.schemas import IntelligenceTask
+    client = setup_models(tmp_path, monkeypatch)
+    TaskStore().save(task("task_recent", model="b", days=2))
+    TaskStore().save(task("task_old", model="a"))
+    # a 的覆盖更高，b 的执行更新，验证排序不被当前页大小影响。
+    item = IntelligenceTask(task_id="intel_task_extra", model_id="a", status="completed", evalscope_base_url="in-process",
+        datasets=["math"], created_at=utc_now(), raw_result={"results": [{"dataset": "math", "report": {"score": 0.8}}]})
+    IntelligenceTaskStore().save(item)
+    for sort_by, expected in [("coverage", "a"), ("last_execution", "b")]:
+        response = client.get("/api/model-evaluations", params={"sort_by": sort_by, "order": "desc", "page_size": 1})
+        assert response.status_code == 200
+        assert response.json()["items"][0]["model_id"] == expected
+        assert response.json()["total"] == 2
+    assert client.get("/api/model-evaluations", params={"sort_by": "invalid"}).status_code == 422
+    assert client.get("/api/model-evaluations", params={"order": "invalid"}).status_code == 422
+
+
+def test_last_execution_sort_does_not_guess_legacy_timezone(tmp_path, monkeypatch):
+    client = setup_models(tmp_path, monkeypatch)
+    item = task("task_unknown", model="a", days=10)
+    item.started_at = item.started_at.replace(tzinfo=None)
+    TaskStore().save(item)
+    TaskStore().save(task("task_known", model="b"))
+    for order in ["asc", "desc"]:
+        data = client.get("/api/model-evaluations", params={"sort_by": "last_execution", "order": order}).json()
+        assert [m["model_id"] for m in data["items"]] == ["b", "a"]
+        assert data["items"][1]["last_execution_at"] is None
+
+
 def test_archive_preserves_history_and_blocks_execution(tmp_path, monkeypatch):
     client = setup_models(tmp_path, monkeypatch)
     TaskStore().save(task("task_one"))
@@ -177,6 +208,7 @@ def test_missing_historical_time_does_not_become_current_time(tmp_path, monkeypa
     write_json_file_atomic(IntelligenceTaskStore().directory / "intel_task_no_time.json", payload)
     item = client.get("/api/model-evaluations/a/history").json()["items"][0]
     assert item["created_at"] is None and item["completed_at"] is None
+    assert client.get("/api/model-evaluations/a").json()["last_execution_at"] is None
 
 
 def test_legacy_stress_mixed_time_preserves_history_and_id(tmp_path, monkeypatch):

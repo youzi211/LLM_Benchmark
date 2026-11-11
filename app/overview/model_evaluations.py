@@ -48,6 +48,12 @@ def _timestamp(task, finished=False):
     return value.astimezone(timezone.utc) if value else datetime.min.replace(tzinfo=timezone.utc)
 
 
+def _known_execution_time(task):
+    value = next((getattr(task, key) for key in ("created_at", "started_at")
+                  if key in task.model_fields_set and getattr(task, key, None)), None)
+    return value.astimezone(timezone.utc) if value and value.tzinfo is not None else None
+
+
 def evidence(lane: str, task) -> dict[str, Any]:
     snapshot = getattr(task, "execution_snapshot", None)
     rows: list[dict[str, Any]] = []
@@ -126,10 +132,13 @@ class ModelEvaluations:
                     partial = item
             lanes[lane] = {"latest_success": success, "latest_attempt": evidence(lane, latest) if latest else None,
                            "partial_result": partial if success is None else None, "task_count": len(tasks)}
+        execution_times = [value for tasks in (groups or {}).values() for task in tasks
+                           if (value := _known_execution_time(task)) is not None]
         return {"model_id": model_id, "name": model.name if model else model_id,
                 "upstream_model": model.model if model else None, "protocol": model.protocol if model else None,
                 "enabled": model.enabled if model else False, "archived": bool(model.archived_at) if model else True,
                 "historical_only": model is None, "lanes": lanes,
+                "last_execution_at": max(execution_times).isoformat() if execution_times else None,
                 "coverage": sum(bool(v["latest_success"]) for v in lanes.values())}
 
     def history(self, model_id: str, lane: Lane | None, page: int, page_size: int):

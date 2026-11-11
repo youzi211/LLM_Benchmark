@@ -1,4 +1,5 @@
 import type { TaskLike } from "@/api/evaluations";
+import { timestamp } from "./time.ts";
 
 export const TASK_CENTER_LANES = ["basic", "stress", "intelligence"] as const;
 
@@ -32,23 +33,15 @@ export const TASK_CENTER_LANE_META: Record<TaskCenterLane, { label: string; path
 const ACTIVE_STATUSES = new Set(["queued", "running", "pending"]);
 const ATTENTION_STATUSES = new Set(["failed", "error", "interrupted"]);
 
-function timeValue(value: unknown): number {
-  if (!value) return 0;
-  const timestamp = new Date(String(value)).getTime();
-  return Number.isFinite(timestamp) ? timestamp : 0;
+export function taskActivityDate(lane: TaskCenterLane, task: TaskLike): string | undefined {
+  const fields = lane === "basic"
+    ? [task.finished_at, task.started_at, task.updated_at, task.created_at]
+    : [task.completed_at, task.updated_at, task.started_at, task.created_at];
+  return fields.find(value => Boolean(value));
 }
 
 function activityTime(lane: TaskCenterLane, task: TaskLike): number {
-  if (lane === "basic") {
-    return timeValue(task.finished_at)
-      || timeValue(task.started_at)
-      || timeValue(task.updated_at)
-      || timeValue(task.created_at);
-  }
-  return timeValue(task.completed_at)
-    || timeValue(task.updated_at)
-    || timeValue(task.started_at)
-    || timeValue(task.created_at);
+  return timestamp(taskActivityDate(lane, task)) ?? 0;
 }
 
 function durationValue(value: unknown): number | null {

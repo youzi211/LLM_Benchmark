@@ -3,9 +3,9 @@ import { test, expect } from "./fixtures";
 test("model identity, default evidence and history navigation", async ({ page }) => {
   await page.goto("/#/models");
   await expect(page.getByRole("heading", { name: "模型工作台" })).toBeVisible();
-  await expect(page.getByText("同名测试模型 · fixture")).toHaveCount(2);
-  await page.getByRole("link", { name: "ui-model", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "ui-model", exact: true })).toBeVisible({ timeout: 30000 });
+  await expect(page.getByRole("link", { name: "同名测试模型", exact: true })).toHaveCount(2);
+  await page.locator('a[href="#/models/ui-model"]').click();
+  await expect(page.getByRole("heading", { name: "同名测试模型", exact: true })).toBeVisible({ timeout: 30000 });
   await expect(page.getByText("最新执行：失败", { exact: true })).toHaveCount(3);
   await page.getByRole("tab", { name: "能力评测", exact: true }).click();
   await expect(page.locator(".echart-box canvas")).toBeVisible();

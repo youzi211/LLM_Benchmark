@@ -14,7 +14,9 @@ import type { TableInstance } from "element-plus";
 import { effectiveDatasetNames, modelDisplayName, progressPercentOf, scorePercent } from "@/evaluation/presentation";
 import DatasetPicker from "@/components/common/DatasetPicker.vue";
 import { shouldShowTaskListEmpty, taskById } from "@/utils/taskListState";
+import { taskErrorSummary } from "@/utils/taskError";
 import { taskIdFromQuery } from "@/utils/taskCenter";
+import { datasetSummary } from "@/utils/datasetPresentation";
 import {
   cancelIntelligenceTask,
   fetchDatasets,
@@ -340,12 +342,12 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
 
 <template>
   <PageHero
-    eyebrow="INTELLIGENCE EVAL"
+    eyebrow="数据集能力评估"
     title="能力评测"
     description="基于本地数据集评估知识、代码与推理表现，跟踪评测进度和分项得分。"
   >
     <template #actions>
-      <el-button :icon="Refresh" :loading="refreshing" @click="reload()">刷新数据</el-button>
+      <el-button :icon="Refresh" :loading="refreshing" @click="reload()">刷新任务</el-button>
       <el-button type="primary" :icon="Plus" @click="configurationVisible = true">新建能力评测</el-button>
     </template>
   </PageHero>
@@ -398,7 +400,7 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
         <el-input v-model="queryText" placeholder="搜索任务 ID / 模型" aria-label="搜索能力任务" clearable>
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <el-button text circle :icon="Refresh" :loading="refreshing" aria-label="刷新能力任务" @click="reload()" />
+        <el-button text circle :icon="Refresh" :loading="refreshing" aria-label="刷新任务" @click="reload()" />
       </div>
       <el-alert v-if="listError" class="lb-eval-alert" type="error" :closable="false" show-icon :title="`任务列表加载失败：${listError}`" />
       <div class="lb-eval-filters">
@@ -413,9 +415,9 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
       <el-table ref="taskTable" v-loading="loading" :data="filteredTasks" :max-height="520" :row-key="(row: any) => row.task_id" :current-row-key="selected?.task_id"
         @selection-change="(rows: TaskLike[]) => selectedIds = rows.map(row => row.task_id)" highlight-current-row @row-click="(row: any, column) => column?.type !== 'selection' && selectTaskAndSync(row.task_id)">
         <el-table-column type="selection" width="36" :reserve-selection="true" />
-        <el-table-column prop="task_id" label="任务 / 模型" min-width="130" show-overflow-tooltip><template #default="{ row }"><button type="button" class="lb-eval-task-link" :aria-label="`查看任务 ${row.task_id}`" @click.stop="selectTaskAndSync(row.task_id)"><strong>{{ modelName(row.model_id) }}</strong><small>{{ row.task_id }}</small></button></template></el-table-column>
-        <el-table-column label="状态" width="84"><template #default="{ row }"><StatusTag :cancelling="Boolean(row.cancel_requested_at)" :status="row.status" compact /></template></el-table-column>
-        <el-table-column label="数据集" width="76"><template #default="{ row }"><span class="lb-eval-numeric">{{ Array.isArray(row.datasets) ? row.datasets.length + ' 个' : '—' }}</span></template></el-table-column>
+        <el-table-column prop="task_id" label="任务 / 模型" min-width="100" show-overflow-tooltip><template #default="{ row }"><button type="button" class="lb-eval-task-link" :aria-label="`查看任务 ${row.task_id}`" @click.stop="selectTaskAndSync(row.task_id)"><strong>{{ modelName(row.model_id) }}</strong><small>{{ row.task_id }}</small></button><time class="lb-task-time">创建时间：{{ formatDate(row.created_at) }}</time></template></el-table-column>
+        <el-table-column label="状态" width="100"><template #default="{ row }"><StatusTag :cancelling="Boolean(row.cancel_requested_at)" :status="row.status" compact /><span v-if="taskErrorSummary(row)" class="lb-intel-error-line" :title="taskErrorSummary(row)">{{ taskErrorSummary(row) }}</span></template></el-table-column>
+        <el-table-column label="数据集" width="112"><template #default="{ row }"><span class="lb-intel-datasets" :title="datasetSummary(row.datasets, datasets).full || undefined">{{ datasetSummary(row.datasets, datasets).short }}</span></template></el-table-column>
         <template #empty><EmptyState
           v-if="shouldShowTaskListEmpty(loading, listError, filteredTasks.length)" :title="hasFilters ? '无匹配任务' : '暂无能力评测任务'"
           :description="hasFilters ? '试着清空筛选条件。' : '选择数据集发起评测，结果会保留在这里。'" :variant="hasFilters ? 'search' : 'list'"
@@ -426,7 +428,7 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
 
     <template #detail-actions><StatusTag v-if="selected" :cancelling="Boolean(selected.cancel_requested_at)" :status="selected.status ?? 'pending'" /><el-button v-if="selected && !finalStatus(selected.status)" size="small" type="danger" plain @click="cancelTask(selected.task_id)">取消任务</el-button></template>
     <template #detail>
-      <EmptyState v-if="!selected" title="尚未选择任务" description="选择一条能力评测任务，查看进度、数据集得分与分类结果。" />
+      <EmptyState v-if="!selected" title="尚未选择任务" description="选择一条能力评测任务，查看进度、数据集得分与分类结果。" action-label="新建能力评测" @action="configurationVisible = true" />
       <template v-else>
         <div class="lb-eval-task-title"><div><strong>{{ modelName(selected.model_id) }}</strong><code>{{ selected.task_id }}</code></div><el-link v-if="selected.report_path" type="primary" :icon="Document" :href="`/api/intelligence/reports/${selected.task_id}`" target="_blank">打开报告</el-link></div>
         <div class="lb-eval-stats">
@@ -478,7 +480,10 @@ watch(() => route.query.task_id, () => { void selectRequestedTask(); });
 </template>
 
 <style scoped>
+.lb-task-time { display: block; margin-top: 4px; color: var(--lb-muted); font-size: 10px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; }
 .lb-intel-results strong { color: var(--lb-fg-strong); font-size: 12px; font-weight: 500; }
 .lb-intel-dataset-id { display: block; margin-top: 5px; color: var(--lb-muted); font: 10px var(--font-mono); }
 .lb-intel-score { color: var(--lb-primary); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.lb-intel-error-line { display: block; margin-top: 4px; overflow: hidden; color: var(--lb-danger); font-size: 10px; line-height: 1.4; white-space: nowrap; text-overflow: ellipsis; }
+.lb-intel-datasets { color: var(--lb-fg-soft); font-size: 11px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; }
 </style>

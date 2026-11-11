@@ -11,7 +11,7 @@ test("configured disabled scheduler is neutral and Agent help stays dataset inde
   } }));
   await page.goto("/#/intelligence");
   await expect(page.locator(".lb-conn-banner")).toHaveCount(0);
-  await page.getByRole("button", { name: "新建能力评测", exact: true }).click();
+  await page.locator(".lb-page-hero").getByRole("button", { name: "新建能力评测", exact: true }).click();
   const drawer = page.getByRole("dialog", { name: "新建能力评测", exact: true });
   await drawer.locator(".el-form-item").filter({ hasText: "执行方式" }).locator(".el-select__wrapper").click();
   await page.getByRole("option", { name: "OpenCode", exact: true }).click();
@@ -19,7 +19,7 @@ test("configured disabled scheduler is neutral and Agent help stays dataset inde
   await expect(drawer.getByRole("alert")).not.toContainText(/SWE-bench|Pro V1|Terminal-Bench/);
   await page.screenshot({ path: testInfo.outputPath("agent-help.png"), animations: "disabled" });
   await page.goto("/#/overview");
-  await expect(page.locator(".lb-sh__summary")).toHaveText("3 / 3 正常");
+  await expect(page.locator(".lb-sh__summary")).toHaveText("已启用服务 3/3 正常，另有 1 项未启用");
   const scheduler = page.locator(".lb-sh__item").filter({ hasText: "调度服务" });
   await expect(scheduler).toContainText("已按配置禁用");
   await expect(scheduler).toContainText("未启用");
